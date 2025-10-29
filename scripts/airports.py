@@ -67,8 +67,10 @@ API_BASE_URL = (
     "https://services.arcgis.com/xOi1kZaI0eWDREZv/ArcGIS/rest/services/"
     "NTAD_Aviation_Facilities/FeatureServer/0/query"
 )
-# Filter for airports only (SITE_TYPE_CODE='A')
-AIRPORT_FILTER = "SITE_TYPE_CODE='A'"
+# Filter for public-use airports only (excludes private airstrips)
+# SITE_TYPE_CODE='A' = Airport
+# FACILITY_USE_CODE='PU' = Public Use (accessible to general public)
+AIRPORT_FILTER = "SITE_TYPE_CODE='A' AND FACILITY_USE_CODE='PU'"
 # Pagination settings
 PAGE_SIZE = 2000
 
@@ -92,8 +94,8 @@ def fetch_airport_data() -> list[dict[str, Any]]:
     """
     Fetch airport data from BTS Aviation Facilities dataset via ArcGIS REST API.
 
-    Retrieves all airport records (SITE_TYPE_CODE='A') from the BTS NTAD Aviation
-    Facilities service using pagination to handle the large dataset.
+    Retrieves public-use airport records (SITE_TYPE_CODE='A' AND FACILITY_USE_CODE='PU')
+    from the BTS NTAD Aviation Facilities service using pagination to handle the dataset.
 
     Returns
     -------
