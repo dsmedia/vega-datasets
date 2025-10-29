@@ -62,24 +62,26 @@ REPO_ROOT = Path(__file__).parent.parent
 DATA_DIR = REPO_ROOT / "data"
 OUTPUT_FILE = DATA_DIR / "airports.csv"
 
-# BTS Aviation Facilities data source
-# Note: The actual API endpoint may need to be updated based on current BTS data structure
-BTS_BASE_URL = "https://geodata.bts.gov"
-# Placeholder URL - needs to be updated with actual GeoJSON/CSV export endpoint
-# Common ArcGIS REST API pattern would be:
-# https://services.arcgis.com/{service_id}/ArcGIS/rest/services/{layer}/FeatureServer/{id}/query
-DATA_SOURCE_URL = "https://geodata.bts.gov/datasets/usdot::aviation-facilities"
+# BTS Aviation Facilities data source - ArcGIS REST API
+API_BASE_URL = (
+    "https://services.arcgis.com/xOi1kZaI0eWDREZv/ArcGIS/rest/services/"
+    "NTAD_Aviation_Facilities/FeatureServer/0/query"
+)
+# Filter for airports only (SITE_TYPE_CODE='A')
+AIRPORT_FILTER = "SITE_TYPE_CODE='A'"
+# Pagination settings
+PAGE_SIZE = 2000
 
 # Field mappings from source data to output schema
-# These will need to be adjusted based on actual API response
+# Based on actual BTS NTAD Aviation Facilities API response fields
 FIELD_MAPPINGS = {
-    "iata": "IATA",  # or "LOCID", "FAA_CODE", etc.
-    "name": "NAME",  # or "AIRPORTNAME", "FACILITY_NAME", etc.
-    "city": "CITY",  # or "SERVCITY", "LOCATION", etc.
-    "state": "STATE",  # or "ST", "STATE_CODE", etc.
-    "country": "COUNTRY",  # or may need to be hardcoded to "USA"
-    "latitude": "LATITUDE",  # or "LAT", "Y", etc.
-    "longitude": "LONGITUDE",  # or "LON", "X", etc.
+    "iata": "ARPT_ID",  # FAA Location ID (e.g., "00M", "JFK") - called "iata" for compatibility
+    "name": "ARPT_NAME",  # Airport facility name
+    "city": "CITY",  # City name
+    "state": "STATE_CODE",  # State abbreviation (2-letter code)
+    "country": "COUNTRY_CODE",  # Country code (will be converted from "US" to "USA")
+    "latitude": "LAT_DECIMAL",  # Latitude in decimal degrees
+    "longitude": "LONG_DECIMAL",  # Longitude in decimal degrees
 }
 
 # Expected output columns
@@ -88,105 +90,138 @@ OUTPUT_COLUMNS = ["iata", "name", "city", "state", "country", "latitude", "longi
 
 def fetch_airport_data() -> list[dict[str, Any]]:
     """
-    Fetch airport data from BTS Aviation Facilities dataset.
+    Fetch airport data from BTS Aviation Facilities dataset via ArcGIS REST API.
 
-    This is a placeholder implementation that demonstrates the expected structure.
-    The actual implementation will depend on the specific API endpoint and format
-    provided by BTS.
+    Retrieves all airport records (SITE_TYPE_CODE='A') from the BTS NTAD Aviation
+    Facilities service using pagination to handle the large dataset.
 
     Returns
     -------
     list[dict[str, Any]]
-        List of airport records from the source API.
+        List of airport feature records in GeoJSON format. Each feature contains
+        'properties' (attributes) and 'geometry' (coordinates).
 
     Raises
     ------
     HTTPError
-        If the data source is unavailable.
-    NotImplementedError
-        This is a skeleton implementation that needs completion.
+        If the data source is unavailable or returns an error.
+    json.JSONDecodeError
+        If the API response is not valid JSON.
 
     Notes
     -----
-    BTS provides data through ArcGIS REST API services. Common approaches include:
-
-    1. GeoJSON export:
-       {base_url}/datasets/{dataset_id}/FeatureServer/0/query?where=1=1&outFields=*&f=geojson
-
-    2. JSON export (paginated):
-       {base_url}/datasets/{dataset_id}/FeatureServer/0/query?where=1=1&outFields=*&f=json
-
-    3. CSV direct download (if available):
-       {base_url}/datasets/{dataset_id}.csv
-
-    The data may need to be fetched in batches if the dataset is large.
+    The API is paginated with PAGE_SIZE records per request. This function:
+    1. First queries for total record count
+    2. Iterates through pages using resultOffset
+    3. Collects all features into a single list
+    4. Returns GeoJSON features with properties and geometry
     """
-    logger.info("Fetching airport data from BTS Aviation Facilities")
-    logger.warning("fetch_airport_data() is not fully implemented - placeholder only")
+    logger.info("Fetching airport data from BTS Aviation Facilities API")
 
-    # Placeholder implementation
-    # TODO: Implement actual data fetching logic based on BTS API structure
-    # Example pattern:
-    #
-    # query_url = f"{BTS_BASE_URL}/...?where=1=1&outFields=*&f=json"
-    # with urlopen(query_url, timeout=30) as response:
-    #     data = json.loads(response.read().decode("utf-8"))
-    #     return data.get("features", [])
+    all_features = []
 
-    msg = (
-        "Data fetching not implemented. "
-        "Please update fetch_airport_data() with actual BTS API endpoint."
-    )
-    raise NotImplementedError(msg)
+    # Step 1: Get total record count
+    from urllib.parse import urlencode
+
+    count_params = urlencode({
+        "where": AIRPORT_FILTER,
+        "returnCountOnly": "true",
+        "f": "json",
+    })
+    count_url = f"{API_BASE_URL}?{count_params}"
+
+    logger.info("Querying total record count...")
+    with urlopen(count_url, timeout=30) as response:
+        count_data = json.loads(response.read().decode("utf-8"))
+        total_records = count_data.get("count")
+
+    if total_records is None:
+        msg = "Could not determine total record count from API"
+        raise RuntimeError(msg)
+
+    logger.info("Total airport records to download: %d", total_records)
+
+    # Step 2: Paginate through all records
+    for offset in range(0, total_records, PAGE_SIZE):
+        query_params = urlencode({
+            "where": AIRPORT_FILTER,
+            "outFields": "*",
+            "f": "geojson",
+            "resultOffset": str(offset),
+            "resultRecordCount": str(PAGE_SIZE),
+        })
+        query_url = f"{API_BASE_URL}?{query_params}"
+
+        logger.info(
+            "Downloading records %d to %d of %d...",
+            offset,
+            min(offset + PAGE_SIZE, total_records),
+            total_records,
+        )
+
+        with urlopen(query_url, timeout=30) as response:
+            data = json.loads(response.read().decode("utf-8"))
+            page_features = data.get("features", [])
+
+            if not page_features:
+                logger.warning("No features returned at offset %d, stopping pagination", offset)
+                break
+
+            all_features.extend(page_features)
+
+    logger.info("Download complete. Total features retrieved: %d", len(all_features))
+    return all_features
 
 
 def transform_record(record: dict[str, Any]) -> dict[str, str]:
     """
-    Transform a source record to the expected output schema.
+    Transform a GeoJSON feature record to the expected output schema.
 
     Parameters
     ----------
     record : dict[str, Any]
-        Raw record from the BTS API. May include geometry and additional fields.
+        GeoJSON feature from the BTS API with 'properties' and 'geometry' keys.
 
     Returns
     -------
     dict[str, str]
-        Transformed record with standardized field names.
+        Transformed record with standardized field names matching OUTPUT_COLUMNS.
 
     Notes
     -----
-    - Handles potential variations in field names from source data
-    - Extracts coordinates from geometry if needed
-    - Filters out records missing critical fields (IATA code, coordinates)
-    - Standardizes country code (defaults to "USA" if not present)
+    - Extracts attributes from 'properties' key in GeoJSON feature
+    - Extracts coordinates from 'geometry.coordinates' (GeoJSON format: [lon, lat])
+    - Falls back to coordinate fields in properties if geometry is not available
+    - Defaults country to "USA" if not present (BTS data is US-focused)
+    - Returns empty strings for missing fields
     """
-    # If data comes from ArcGIS with geometry, extract lat/lon from geometry
-    # Example: record might have structure like:
-    # {
-    #   "attributes": {"IATA": "JFK", "NAME": "John F Kennedy International", ...},
-    #   "geometry": {"x": -73.778889, "y": 40.639722}
-    # }
-
-    # Placeholder transformation logic
-    attributes = record.get("attributes", record)
+    # GeoJSON structure: {"type": "Feature", "properties": {...}, "geometry": {...}}
+    properties = record.get("properties", {})
+    geometry = record.get("geometry", {})
 
     # Extract fields using mappings
     transformed = {}
     for output_field, source_field in FIELD_MAPPINGS.items():
-        value = attributes.get(source_field, "")
+        value = properties.get(source_field, "")
 
         # Handle special cases
-        if output_field == "country" and not value:
-            value = "USA"  # Default to USA for BTS data
+        if output_field == "country":
+            # Convert country code from "US" to "USA" for consistency
+            if value == "US":
+                value = "USA"
+            elif not value:
+                value = "USA"  # Default to USA for BTS data
 
-        # Handle latitude/longitude from geometry if not in attributes
+        # Handle latitude/longitude from GeoJSON geometry
+        # GeoJSON Point format: {"type": "Point", "coordinates": [longitude, latitude]}
         if output_field in ["latitude", "longitude"] and not value:
-            if geometry := record.get("geometry"):
-                if output_field == "latitude":
-                    value = geometry.get("y", "")
-                else:  # longitude
-                    value = geometry.get("x", "")
+            if geometry and geometry.get("type") == "Point":
+                coordinates = geometry.get("coordinates", [])
+                if len(coordinates) >= 2:
+                    if output_field == "latitude":
+                        value = coordinates[1]  # GeoJSON: [lon, lat]
+                    else:  # longitude
+                        value = coordinates[0]
 
         transformed[output_field] = str(value) if value else ""
 
