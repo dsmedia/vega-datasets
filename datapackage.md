@@ -1,5 +1,5 @@
 # vega-datasets
-`3.2.1` | [GitHub](git+http://github.com/vega/vega-datasets.git) | 2026-04-07 23:22:31 [UTC]
+`3.2.1` | [GitHub](git+http://github.com/vega/vega-datasets.git) | 2026-04-12 03:01:01 [UTC]
 
 Common repository for example datasets used by Vega related projects. 
 BSD-3-Clause license applies only to package code and infrastructure. Users should verify their use of datasets 
@@ -1954,17 +1954,16 @@ Cross-reference mapping Vega, Vega-Lite, and Altair gallery examples
 to the vega-datasets resources they use. Each record links a gallery example to
 its datasets, categories, and source specification.
 ### schema
-    
-| name         | type    | description                                                            | constraints                               |
-|:-------------|:--------|:-----------------------------------------------------------------------|:------------------------------------------|
-| id           | integer | Unique sequential identifier for the example                           |                                           |
-| gallery_name | string  | Name of the gallery this example belongs to                            | {'enum': ['vega', 'vega-lite', 'altair']} |
-| example_name | string  | Human-readable example title                                           |                                           |
-| example_url  | string  | URL to rendered example in the gallery                                 |                                           |
-| spec_url     | string  | URL to source specification or code                                    |                                           |
-| categories   | array   | Tags or categories for the example (e.g., 'Bar Charts', 'Interactive') |                                           |
-| description  | string  | Optional description of what the example demonstrates (may be null)    |                                           |
-| datasets     | array   | Dataset names referencing resource.name in this package                |                                           |
+    - `primaryKey` ['spec_url']
+| name         | type   | description                                                            | constraints                               |
+|:-------------|:-------|:-----------------------------------------------------------------------|:------------------------------------------|
+| gallery_name | string | Name of the gallery this example belongs to                            | {'enum': ['vega', 'vega-lite', 'altair']} |
+| example_name | string | Human-readable example title                                           |                                           |
+| example_url  | string | URL to rendered example in the gallery                                 |                                           |
+| spec_url     | string | URL to source specification or code                                    |                                           |
+| categories   | array  | Tags or categories for the example (e.g., 'Bar Charts', 'Interactive') |                                           |
+| description  | string | Optional description of what the example demonstrates (may be null)    |                                           |
+| datasets     | array  | Dataset names referencing resource.name in this package                |                                           |
 ### sources
 | title             | path                                       |
 |:------------------|:-------------------------------------------|

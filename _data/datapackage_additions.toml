@@ -1917,11 +1917,7 @@ title = "The 3-Clause BSD License"
 path  = "https://opensource.org/license/bsd-3-clause"
 
 [resources.schema]
-
-[[resources.schema.fields]]
-name        = "id"
-type        = "integer"
-description = "Unique sequential identifier for the example"
+primaryKey = "spec_url"
 
 [[resources.schema.fields]]
 name        = "gallery_name"

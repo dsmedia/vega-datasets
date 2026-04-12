@@ -472,13 +472,10 @@ async def enrich_with_datasets(  # noqa: C901
         raise RuntimeError(msg)
 
 
-def assign_ids(examples: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Sort by (gallery_name, example_name) and assign sequential IDs."""
+def finalize_examples(examples: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Sort deterministically and strip internal `_filename` key."""
     examples.sort(key=operator.itemgetter("gallery_name", "example_name"))
-    return [
-        {"id": i, **{k: v for k, v in ex.items() if k != "_filename"}}
-        for i, ex in enumerate(examples, 1)
-    ]
+    return [{k: v for k, v in ex.items() if k != "_filename"} for ex in examples]
 
 
 async def async_main() -> None:
@@ -517,8 +514,8 @@ async def async_main() -> None:
         # Enrich with datasets
         await enrich_with_datasets(examples, session, name_map, valid_names)
 
-    # Assign IDs and write
-    examples = assign_ids(examples)
+    # Sort deterministically and strip internal keys
+    examples = finalize_examples(examples)
 
     # Summary
     by_gallery: dict[str, int] = {}
@@ -531,6 +528,16 @@ async def async_main() -> None:
     missing = expected_galleries - by_gallery.keys()
     if missing:
         msg = f"Missing galleries: {', '.join(sorted(missing))} — possible upstream format change"
+        raise RuntimeError(msg)
+
+    # Primary-key invariant: spec_url must be unique across all entries.
+    # Frictionless `primaryKey` in datapackage.json is declarative only in
+    # this pipeline — this assertion is the actual enforcement and catches
+    # future scraper bugs that would otherwise silently emit duplicates.
+    spec_urls = [ex["spec_url"] for ex in examples]
+    if len(set(spec_urls)) != len(spec_urls):
+        duplicates = sorted({u for u in spec_urls if spec_urls.count(u) > 1})
+        msg = f"duplicate spec_url in gallery_examples — primary key invariant violated: {duplicates}"
         raise RuntimeError(msg)
 
     output_path = REPO_ROOT / "gallery_examples.json"

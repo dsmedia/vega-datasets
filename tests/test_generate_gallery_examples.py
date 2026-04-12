@@ -403,7 +403,6 @@ def test_full_pipeline():
 
     # Required keys only
     required_keys = {
-        "id",
         "gallery_name",
         "example_name",
         "example_url",
@@ -419,6 +418,10 @@ def test_full_pipeline():
     for ex in examples:
         assert "techniques" not in ex
 
+    # No legacy id field (dropped in favor of spec_url as primary key)
+    for ex in examples:
+        assert "id" not in ex
+
     # Each gallery represented with > 0 examples
     for gallery in ("vega", "vega-lite", "altair"):
         count = sum(1 for ex in examples if ex["gallery_name"] == gallery)
@@ -428,6 +431,10 @@ def test_full_pipeline():
     with_datasets = [ex for ex in examples if ex["datasets"]]
     assert len(with_datasets) > 50
 
-    # IDs are sequential
-    ids = [ex["id"] for ex in examples]
-    assert ids == list(range(1, len(examples) + 1))
+    # spec_url is the declared primary key — must be unique across all entries
+    spec_urls = [ex["spec_url"] for ex in examples]
+    assert len(set(spec_urls)) == len(spec_urls), "duplicate spec_url in output"
+
+    # Output is sorted deterministically by (gallery_name, example_name)
+    sort_keys = [(ex["gallery_name"], ex["example_name"]) for ex in examples]
+    assert sort_keys == sorted(sort_keys), "output is not deterministically sorted"

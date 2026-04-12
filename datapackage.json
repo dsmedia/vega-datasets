@@ -20,7 +20,7 @@
     }
   ],
   "version": "3.2.1",
-  "created": "2026-04-07T23:22:31.267490+00:00",
+  "created": "2026-04-12T03:01:01.372816+00:00",
   "resources": [
     {
       "name": "icon_7zip",
@@ -4024,15 +4024,10 @@
       "format": "json",
       "mediatype": "application/json",
       "encoding": "utf-8",
-      "hash": "sha1:01ce8e61e91171165a571901f41c4c9a14f90d9c",
-      "bytes": 204648,
+      "hash": "sha1:5f03c02d90b0270abd9a27cab0b05d288247cf1e",
+      "bytes": 205031,
       "schema": {
         "fields": [
-          {
-            "name": "id",
-            "type": "integer",
-            "description": "Unique sequential identifier for the example"
-          },
           {
             "name": "gallery_name",
             "type": "string",
@@ -4075,6 +4070,9 @@
             "type": "array",
             "description": "Dataset names referencing resource.name in this package"
           }
+        ],
+        "primaryKey": [
+          "spec_url"
         ]
       }
     }
