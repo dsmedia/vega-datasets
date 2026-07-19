@@ -125,36 +125,51 @@ sphinx-computed metadata to a JSON file so any consumer can map examples
 without reimplementing the detection logic") and what joelostblom offered
 ("happy to reorganize if it helps, provided URLs remain unchanged").
 
-## 4. The manifest contract
+## 4. The manifest contract: a *gallery index*, not a dataset index
 
-A single JSON Schema, `gallery-manifest.schema.json`, versioned and published
-from vega-datasets (it can move to a `vega/schemas` home later; the schema
-`$id` URL is the contract, not the repo). Draft shape:
+The schema must be additive to the gallery-owning projects on their own
+terms — a normalization of gallery data they already maintain and duplicate —
+or the whole federation idea is the cart leading the horse. So the contract is
+deliberately framed as a **gallery index schema**: its center of gravity is
+the gallery domain (inventory, navigation, presentation), and dataset usage is
+one *optional* facet that vega-datasets happens to consume.
+
+A single JSON Schema, `gallery-index.schema.json`, versioned; proposed to the
+vega org as an RFC issue rather than imposed from vega-datasets (the schema
+`$id` URL — ideally `https://vega.github.io/schema/gallery-index/v1.json`,
+matching existing conventions — is the contract, not the repo it lives in).
+Draft shape:
 
 ```jsonc
 {
-  "manifestVersion": "1.0",
+  "$schema": "https://vega.github.io/schema/gallery-index/v1.json",
   "gallery": {
-    "name": "altair",                       // enum: vega | vega-lite | altair
-    "url": "https://altair-viz.github.io/gallery/",
-    "library": "altair",
-    "libraryVersion": "6.0.1",              // or commit SHA for site builds
+    "name": "vega-lite",                    // enum: vega | vega-lite | altair
+    "url": "https://vega.github.io/vega-lite/examples/",
+    "libraryVersion": "6.4.0",              // or commit SHA for site builds
     "generatedAt": "2026-07-18T04:12:09Z"
   },
   "examples": [
     {
-      "id": "histogram_heatmap",            // slug, unique within gallery,
-                                            // stability promised by the gallery
-      "title": "2D Histogram Heatmap",
-      "description": "This example shows how to make a heatmap…",
-      "categories": ["distributions"],
-      "exampleUrl": "https://altair-viz.github.io/gallery/histogram_heatmap.html",
-      "specUrl": "https://raw.githubusercontent.com/vega/altair/main/tests/examples_methods_syntax/histogram_heatmap.py",
-      "thumbnailUrl": "https://altair-viz.github.io/_images/histogram_heatmap-thumb.png",
-      "data": [
-        { "url": "https://cdn.jsdelivr.net/npm/vega-datasets@3/data/movies.json",
-          "role": "primary" }                // primary | lookup | geo
-      ]
+      // ---- required core: the intersection of what all three galleries
+      // ---- already have today
+      "id": "bar",                          // slug, unique within gallery; the
+                                            // ONLY hard stability promise
+      "title": "Simple Bar Chart",
+      "categories": ["Single-View Plots", "Bar Charts"],
+      "pageUrl": "https://vega.github.io/vega-lite/examples/bar.html",
+      "specUrl": "https://raw.githubusercontent.com/vega/vega-lite/main/examples/specs/bar.vl.json",
+      "specFormat": "vega-lite",            // vega | vega-lite | altair-python
+
+      // ---- optional facets
+      "description": "A bar chart encodes quantitative values as…",
+      "thumbnailUrl": "https://vega.github.io/vega-lite/examples/bar.svg",
+      "data": [                             // OPTIONAL — see below
+        { "url": "data/cars.json", "role": "primary" }   // primary | lookup | geo
+      ],
+      "display": { "style": "background-size: auto 105%;", "png": true }
+                                            // pass-through presentation hints,
+                                            // schema-opaque, gallery-owned
     }
   ]
 }
@@ -168,12 +183,25 @@ Design points:
   and spec-format migrations that would rewrite every `spec_url`. `specUrl`
   remains a required, unique field (useful for fetching source), it just
   stops being identity.
-- **`data[]` carries raw URLs, not vega-datasets names.** Upstream repos
-  should not need to know vega-datasets' naming; canonicalization is the
-  aggregator's job. Examples using inline or external data simply have fewer
-  or zero entries. The optional `role` distinguishes the main table from
-  lookup/topo references — cheap for upstream to emit (it knows the context
-  in which the URL appeared) and impossible to recover downstream.
+- **The required core is only what every gallery already has.** Slug, title,
+  categories, page/spec locations, and thumbnails all exist in all three
+  builds today. Nothing in the required set asks a gallery to *compute*
+  anything new — only to serialize what it has in one normalized shape.
+- **`data[]` is optional, and only Altair is asked to fill it.** For Vega and
+  Vega-Lite, specs are declarative JSON, and downstream extraction of data
+  URLs is cheap and robust (that part of the #776 scraper is *not* the
+  fragile part — the fragile parts are index-structure guessing and Altair
+  source-regex). Only Altair's build can know its data URLs reliably
+  (compiled specs inline data), and persisting that is *Altair's own open
+  request* (altair#4002), not new work created by this design. Where present,
+  `data[]` carries raw URLs, never vega-datasets names — canonicalization is
+  the aggregator's job — and `role` distinguishes primary from lookup/topo
+  references, which upstream knows from context and downstream cannot recover.
+- **`display` is a schema-opaque pass-through** for the presentation fields
+  galleries already keep (`style`, `png` in vega-lite's `examples.json`).
+  This matters for adoption: it means the index can *replace* the
+  hand-maintained file as the site template's source of truth rather than
+  becoming a second file to keep in sync (see §4.2).
 - **`thumbnailUrl` is first-class** because the flagship consumer use case
   (altair#4002 "Related gallery examples" sections) needs it, and only the
   gallery build knows where its thumbnails live.
@@ -182,34 +210,90 @@ Design points:
   cross-gallery invariants instead of guessing "roughly how many examples
   should exist" (~15% floors in #776).
 
-### Upstream cost, per repo
+### 4.1 What this actually asks of each maintainer
 
-Each emitter is a ~50-line addition to a build that already computes the data:
+Honest accounting, grounded in each repo's current build. In every case the
+initial PR is written by the contributor driving this (as altair#4002 already
+is); the maintainer cost is **one review, plus accepting a narrow contract**.
 
-- **vega-lite**: the site build already produces `site/_data/examples.json`
-  and parses every spec into the example pages; add a jekyll/build step that
-  emits the manifest (titles, descriptions, categories, and data URLs pulled
-  from the parsed specs — including the "Maps" empty-subcategory case, which
-  upstream resolves correctly because it *defined* the convention).
-- **vega**: same shape, from `docs/_data/examples.json` plus its spec parses.
-- **altair**: exactly the persistence step already proposed in altair#4002 —
-  during the sphinx build, each example is executed; serialize
-  `chart.to_dict()`-discovered URLs plus the doc metadata into the manifest.
+| Repo | What exists today | The emitter | Ongoing obligation |
+|---|---|---|---|
+| **vega-lite** | Hand-maintained `site/_data/examples.json` (nested category → subcategory → `{name, title, description?, style?, png?}`, with an empty-string subcategory hack for Maps); descriptions split between that file and the specs' own `description` fields; the site build already joins them per page | ~60–100 line Node script in the existing site build: walk `examples.json`, join `examples/specs/*.vl.json`, emit the normalized index. No new toolchain, no new computation | Schema check in CI (ms); slug stability — already de facto policy since slugs are the page URLs |
+| **vega** | `docs/_data/examples.json` is name-only (`{"Bar Charts": [{"name": "bar-chart"}, …]}`); titles live in per-example page front matter; specs alongside in `docs/` | Same shape of script, joining the index, front matter, and specs. The repo is low-activity, so the realistic model is: contributed PR, maintainer reviews and merges | Same as vega-lite |
+| **altair** | `sphinxext/altairgallery.py` already discovers every example, parses docstring metadata, executes each chart, and writes thumbnails — then discards all of it ("everything is ephemeral — computed during the Sphinx build, rendered into HTML, discarded") | Serialize the per-example records the gallery build already holds, plus ~20 lines walking `chart.to_dict()` for URL fields (exact, since this runs before data inlining). This is altair#4002 verbatim; joelostblom is already receptive | Same, plus keeping `data[]` populated — which their build computes as a side effect of rendering anyway |
 
-Manifests are committed to each repo (or published with its site), fetched by
-the aggregator at a raw URL — one config line per gallery in
+The real ask is not the code — it is the **contract**: publishing a
+schema-validated file converts an internal build detail into a public API
+whose breakage generates downstream issues. Three mitigations keep that
+contract acceptably small: (1) the stability promise is explicitly limited to
+`id` and `pageUrl` — exactly what joelostblom already volunteered — with every
+other field best-effort; (2) the schema ships with a `manifestVersion` and a
+CI validation step contributed *in the same PR* as the emitter, so conformance
+is never a thing maintainers check by hand; (3) `display` and `x-`-prefixed
+extension fields give each gallery room to evolve without schema churn.
+
+Publication norms differ per repo and the design accommodates both: vega and
+vega-lite already commit generated/curated `_data` files, so committing the
+index is natural; Altair avoids committing build products, so it publishes the
+index with its docs site (e.g. `altair-viz.github.io/gallery-index.json`).
+The aggregator just needs a fetchable URL — one config line per gallery in
 `_data/gallery_examples.toml`, as today.
+
+### 4.2 Why each project would want this anyway
+
+The pitch to each upstream repo must stand without mentioning vega-datasets.
+It does, because the vega org already pays real duplication costs that a
+gallery index retires:
+
+- **The Vega Editor re-vendors everything.** `vega/editor` runs
+  `scripts/vendor.sh` on every build (`"prepare": "npm run vendor"`) to clean
+  and re-copy example specs into `public/spec`, and maintains its own
+  `generate-example-images.sh` to re-render thumbnails the docs sites already
+  render. Its Examples menu is a third hand-wired copy of gallery inventory.
+  An index with slugs, titles, categories, spec URLs, and thumbnail URLs is
+  the editor's vendoring script, replaced by one fetch — an intra-org consumer
+  with zero connection to datasets.
+- **vega-lite's `examples.json` is acknowledged tech debt.** Hand-maintained
+  nesting, the empty-string subcategory convention, descriptions split across
+  two locations, duplicate slugs across sections (#776 needed longest-wins
+  merge logic purely because of this). Because the schema's `display` field
+  preserves the presentation hints, the generated index can become the file
+  their own site template consumes — the hand-maintained file becomes an
+  input or disappears, and the normalization is a cleanup on its own merits.
+- **Altair's docs want this data for themselves.** altair#4001/#4002 —
+  "Learn more" links and related-example navigation in the user guide — are
+  blocked on exactly this persistence. The index is the implementation of
+  their own roadmap item, and coverage-gap analysis ("which features lack
+  gallery examples?") is joelostblom's own stated wish.
+- **LLM-facing docs quality.** Every one of these projects now cares that
+  assistants generate correct Vega/VL/Altair code. A machine-readable example
+  inventory with descriptions and categories is the gallery equivalent of
+  `llms.txt`, and each project benefits independently of any aggregation.
+- **Gallery integrity in CI.** A manifest makes "every example has a page, a
+  spec, and a thumbnail that resolve" a trivial check in each repo's own CI —
+  broken gallery entries currently surface only when a human notices.
+
+Each repo also has two adoption modes, and the initial PR only ever proposes
+the first: **emit-alongside** (index generated from existing files; zero
+behavior change, trivially revertible) versus **adopt-as-source** (site
+template consumes the index; the hand-maintained predecessor retires). The
+second mode is where the index becomes durable, but it is each project's own
+call to make, on its own schedule.
 
 ## 5. The aggregator (in vega-datasets)
 
 Replaces the 626-line scraper with roughly:
 
 1. Fetch each configured manifest.
-2. Validate against `gallery-manifest.schema.json` (a real JSON Schema
+2. Validate against `gallery-index.schema.json` (a real JSON Schema
    validation, replacing hand-rolled type guards).
-3. Canonicalize each `data[].url` through the datapackage name map (the one
-   piece of #776 worth keeping nearly verbatim: `normalize_dataset_reference`
-   and `build_name_map`). A URL that prefix-matches vega-datasets but resolves
+3. Fill in `data[]` where the manifest omits it: for Vega and Vega-Lite,
+   fetch each `specUrl` and extract data URLs from the declarative JSON —
+   the robust, keep-forever part of #776's extractor. (Only Altair needs
+   upstream-supplied `data[]`, and only Altair is asked for it.) Then
+   canonicalize each URL through the datapackage name map (the piece of #776
+   worth keeping nearly verbatim: `normalize_dataset_reference` and
+   `build_name_map`). A URL that prefix-matches vega-datasets but resolves
    to no resource is a **hard error** — that invariant from #776 is exactly
    right, it catches renames on either side.
 4. Enforce cross-gallery invariants: `(gallery, id)` uniqueness, `specUrl`
@@ -232,9 +316,12 @@ url = "https://raw.githubusercontent.com/vega/vega-lite/main/site/_data/gallery-
 emitting the *same manifest shape* internally, then flowing through the same
 validate → canonicalize → merge pipeline. This means: ship now with three
 legacy adapters (identical output to #776 plus the new fields it can fake),
-then flip each gallery to `manifest` independently as upstream lands, deleting
-its heuristics — Altair's regex family first, since it is the most fragile and
-its upstream issue is already primed.
+then flip each gallery to `manifest` independently as upstream lands. What
+gets deleted at each flip is the *fragile* half of that gallery's adapter —
+index-structure guessing, description-rescue fallbacks, the empty-subcategory
+workaround, and above all Altair's source-regex family. What stays forever is
+the robust half: declarative-spec data-URL extraction (as the `data[]`
+backfill in the shared pipeline) and dataset-name canonicalization.
 
 ## 6. Freshness: scheduled regeneration as reviewable PRs
 
@@ -294,8 +381,8 @@ PRs keep days-fresh instead of release-fresh.
 | Phase | Where | Work | Exit criterion |
 |---|---|---|---|
 | 0 | vega-datasets | Land #776 refactored into the adapter pipeline: three `legacy-scrape` adapters + shared validate/canonicalize/merge core; add `(gallery, id)` keys (slug from `example_url`), schema file, scheduled-PR workflow | Index ships; freshness automated |
-| 1 | vega-datasets | Publish `gallery-manifest.schema.json` v1.0 with docs for gallery implementers | Schema URL stable |
-| 2 | altair, vega-lite, vega | Upstream PRs adding manifest emission to doc builds (altair first — altair#4002 is already the same ask) | Each repo publishes a valid manifest |
+| 1 | vega org | Propose `gallery-index.schema.json` v1.0 as an org RFC issue, pitched on the intra-org duplication it retires (Editor vendoring, `examples.json` debt, altair#4002) — not on the dataset index | Schema URL stable, org buy-in |
+| 2 | altair, vega-lite, vega | Contributed PRs adding index emission to doc builds — asymmetric asks: vega/vega-lite only normalize what they already publish (no `data[]`); altair persists what its build already computes, `data[]` included (altair#4002 verbatim, so altair goes first) | Each repo publishes a valid index |
 | 3 | vega-datasets | Flip adapters to `manifest` per gallery as upstream lands; delete that gallery's heuristics | All galleries on manifests; scraper code gone |
 
 Phase 0 alone is a strict improvement over #776 (stable identity, automated
