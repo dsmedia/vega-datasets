@@ -146,7 +146,12 @@ Draft shape:
   "gallery": {
     "name": "vega-lite",                    // enum: vega | vega-lite | altair
     "url": "https://vega.github.io/vega-lite/examples/",
-    "libraryVersion": "6.4.0",              // or commit SHA for site builds
+    "libraryVersion": "6.4.0",
+    "sourceRevision": "v6.4.0",             // REQUIRED: tag or commit SHA of the
+                                            // source tree this index was built
+                                            // from — lets static consumers pin
+                                            // spec downloads to an immutable
+                                            // revision instead of a live branch
     "generatedAt": "2026-07-18T04:12:09Z"
   },
   "examples": [
@@ -204,7 +209,16 @@ Design points:
   becoming a second file to keep in sync (see §4.2).
 - **`thumbnailUrl` is first-class** because the flagship consumer use case
   (altair#4002 "Related gallery examples" sections) needs it, and only the
-  gallery build knows where its thumbnails live.
+  gallery build knows where its thumbnails live. Its stability tier is
+  explicitly *weaker* than `id`/`pageUrl`: thumbnails are best-effort URLs
+  valid as of `generatedAt`, and consumers that need durability snapshot them
+  at build time (see §4.4) rather than hotlinking.
+- **`id` is identity, not a filename.** Consumers must not assume `id`,
+  spec filename, route segment, and thumbnail basename are interchangeable —
+  the Vega Editor's current `spec.name` does exactly that triple duty, which
+  is why upstream file moves are breaking changes for it today. The schema
+  guarantees only that `id` is a stable, URL-safe key unique within its
+  gallery; everything path-like is carried in explicit fields.
 - **Count floors become unnecessary.** A manifest is a complete, upstream-
   asserted inventory; the aggregator validates schema conformance and
   cross-gallery invariants instead of guessing "roughly how many examples
@@ -250,9 +264,12 @@ gallery index retires:
   and re-copy example specs into `public/spec`, and maintains its own
   `generate-example-images.sh` to re-render thumbnails the docs sites already
   render. Its Examples menu is a third hand-wired copy of gallery inventory.
-  An index with slugs, titles, categories, spec URLs, and thumbnail URLs is
-  the editor's vendoring script, replaced by one fetch — an intra-org consumer
-  with zero connection to datasets.
+  The index retires the fragile parts of that pipeline — the copied catalog
+  files, the hardcoded upstream paths, and (with fallback) the duplicate
+  thumbnail rendering — by making vendoring contract-driven and
+  revision-pinned; the spec files themselves stay local by design (see the
+  static-consumer profile in §4.4). An intra-org consumer with zero
+  connection to datasets.
 - **vega-lite's `examples.json` is acknowledged tech debt.** Hand-maintained
   nesting, the empty-string subcategory convention, descriptions split across
   two locations, duplicate slugs across sections (#776 needed longest-wins
@@ -354,6 +371,57 @@ Cross-cutting process rules that keep doc builds sane:
 - **Build-time cost is noise.** Every emitter serializes data the build
   already holds in memory or joins files it already reads; there is no new
   compilation, execution, or rendering anywhere.
+
+### 4.4 Consumer profiles: how a static consumer uses the index
+
+The index is a metadata contract, not an asset-delivery mechanism, and the
+schema documentation should say so by defining two consumer profiles:
+
+**Live consumers** (docs-site cross-links, the vega-datasets aggregator,
+search pages) fetch the site-published index at read time and follow its URLs.
+Freshness matters more than reproducibility; the atomicity rule in §4.3
+already serves them.
+
+**Static consumers** — build-time bundlers of which the Vega Editor is the
+canonical case — must *not* fetch specs or thumbnails at runtime (offline
+behavior, CORS, CSP, and reproducible deploys all forbid it). Their pattern is
+**manifest-driven vendoring**: at build time, fetch the index, pin every
+download to `gallery.sourceRevision` (rewriting branch-relative spec URLs to
+that immutable tag/SHA), copy specs and thumbnails into local assets, and
+record the index revision in the build. The index replaces the consumer's
+*knowledge of upstream internals*, never its local assets.
+
+Worked through for the Editor, whose current coupling is verified in its
+source: `vendor.sh` hardcodes the internal paths of two sibling repos;
+`src/constants/specs.ts` imports the raw upstream catalog files directly, so
+their differing shapes propagate into the UI as parallel `renderVega` /
+`renderVegaLite` traversals; and `spec.name` serves as menu key, spec
+filename, and thumbnail basename at once. Migration is incremental and
+UI-invisible at first:
+
+1. **Manifest adapter in `vendor.sh`** — consume the index, emit the exact
+   local files the app already reads. Upstream-layout assumptions gone; UI
+   untouched; runtime contract unchanged.
+2. **Normalize the internal model** — one `{gallery, id, title, categories,
+   specPath, specFormat, thumbnailPath}` shape, one gallery renderer instead
+   of two, and stable `/examples/{gallery}/{id}` routes decoupled from
+   filenames.
+3. **Prefer upstream thumbnails, generate as fallback** — download
+   manifest-listed thumbnails at vendor time; run local rendering only for
+   examples the manifest doesn't cover. The Editor's separate
+   thumbnail-rendering step becomes a fallback, not a maintenance obligation.
+   (Before deleting it outright: confirm format, dimensions, and background
+   conventions match the menu's needs.)
+4. **Vendor-time validation** — schema conformance, unique `(gallery, id)`,
+   every listed spec downloads and parses as its declared `specFormat`, every
+   menu entry has a local asset.
+
+Scoping honestly: the index retires the Editor's *catalog* layer (the copied
+`examples.json` files and shape-specific UI code) and most of its *thumbnail*
+layer; the spec files themselves remain vendored locally, by design. What
+changes is that vendoring becomes contract-driven and revision-pinned instead
+of tarball-and-hardcoded-paths — strictly more reproducible than today, since
+the manifest names the revision it describes.
 
 ## 5. The aggregator (in vega-datasets)
 
