@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vega.github.io/schema/gallery-index/v1.json",
+  "title": "Vega ecosystem gallery index",
+  "description": "A gallery-owned inventory of examples. The contract describes gallery facts; consumers such as vega-datasets may derive additional indexes from it.",
+  "type": "object",
+  "required": [
+    "$schema",
+    "manifestVersion",
+    "gallery",
+    "examples"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "https://vega.github.io/schema/gallery-index/v1.json"
+    },
+    "manifestVersion": {
+      "const": "1.0"
+    },
+    "gallery": {
+      "$ref": "#/$defs/gallery"
+    },
+    "examples": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/example"
+      }
+    }
+  },
+  "patternProperties": {
+    "^x-": {}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "gallery": {
+      "type": "object",
+      "required": [
+        "name",
+        "url",
+        "sourceRevision"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "enum": [
+            "vega",
+            "vega-lite",
+            "altair"
+          ]
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://"
+        },
+        "libraryVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceRevision": {
+          "type": "string",
+          "minLength": 1,
+          "description": "An immutable source tag or full commit SHA for the tree from which this index was built. Moving branch names are not valid revisions."
+        },
+        "generatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Optional for site-published indexes and omitted from byte-deterministic committed indexes unless derived from source control."
+        }
+      },
+      "patternProperties": {
+        "^x-": {}
+      },
+      "additionalProperties": false
+    },
+    "example": {
+      "type": "object",
+      "required": [
+        "id",
+        "title",
+        "categories",
+        "pageUrl",
+        "specUrl",
+        "specFormat"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "description": "A URL-safe identifier unique within the gallery. It is derived from and must remain aligned with the final slug of pageUrl."
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "categories": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "pageUrl": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://"
+        },
+        "specUrl": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://"
+        },
+        "specFormat": {
+          "type": "string",
+          "enum": [
+            "vega",
+            "vega-lite",
+            "altair-python"
+          ]
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "thumbnailUrl": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://",
+          "description": "A best-effort thumbnail URL valid for the published gallery state. Static consumers should vendor it at build time."
+        },
+        "data": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/dataReference"
+          }
+        },
+        "display": {
+          "type": "object",
+          "description": "Schema-opaque, gallery-owned presentation hints.",
+          "additionalProperties": true
+        }
+      },
+      "patternProperties": {
+        "^x-": {}
+      },
+      "additionalProperties": false
+    },
+    "dataReference": {
+      "type": "object",
+      "required": [
+        "url",
+        "role"
+      ],
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A raw absolute or spec-relative data URL. It is not a vega-datasets resource name."
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "examples": [
+            "primary",
+            "lookup",
+            "geo"
+          ],
+          "description": "An open vocabulary. primary, lookup, and geo are the recommended v1 values."
+        }
+      },
+      "patternProperties": {
+        "^x-": {}
+      },
+      "additionalProperties": false
+    }
+  }
+}

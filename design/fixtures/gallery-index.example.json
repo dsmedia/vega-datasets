@@ -1,0 +1,48 @@
+{
+  "$schema": "https://vega.github.io/schema/gallery-index/v1.json",
+  "manifestVersion": "1.0",
+  "gallery": {
+    "name": "vega-lite",
+    "url": "https://vega.github.io/vega-lite/examples/",
+    "libraryVersion": "6.4.0",
+    "sourceRevision": "0123456789abcdef0123456789abcdef01234567"
+  },
+  "examples": [
+    {
+      "id": "bar",
+      "title": "Simple Bar Chart",
+      "categories": [
+        "Single-View Plots",
+        "Bar Charts"
+      ],
+      "pageUrl": "https://vega.github.io/vega-lite/examples/bar.html",
+      "specUrl": "https://raw.githubusercontent.com/vega/vega-lite/main/examples/specs/bar.vl.json",
+      "specFormat": "vega-lite",
+      "description": "A bar chart encodes quantitative values as rectangular marks.",
+      "thumbnailUrl": "https://vega.github.io/vega-lite/examples/bar.svg",
+      "data": [
+        {
+          "url": "data/cars.json",
+          "role": "primary"
+        }
+      ],
+      "display": {
+        "style": "background-size: auto 105%;",
+        "png": true
+      }
+    },
+    {
+      "id": "layer-bar-labels",
+      "title": "Layered Bar Chart with Labels",
+      "categories": [
+        "Layered Plots",
+        "Bar Charts"
+      ],
+      "pageUrl": "https://vega.github.io/vega-lite/examples/layer-bar-labels.html",
+      "specUrl": "https://raw.githubusercontent.com/vega/vega-lite/main/examples/specs/layer_bar_labels.vl.json",
+      "specFormat": "vega-lite",
+      "description": null,
+      "x-gallery-note": "Extension fields are allowed when prefixed with x-."
+    }
+  ]
+}
