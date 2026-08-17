@@ -65,7 +65,7 @@ uv run scripts/generate_gallery_examples.py         # Regenerate the file
 npm run build                                       # Then refresh datapackage.json/md
 ```
 
-Configuration lives in `_data/gallery-examples.toml` (source URLs). Runtime is a few seconds (async fetching of ~400 specs). Note that `datapackage.json` records the committed git-blob hash of each data file, so commit the regenerated `data/gallery-examples.json` first, then rebuild and amend the descriptor into the same commit.
+Configuration lives in `_data/gallery-examples.toml` (source URLs). Runtime is a few seconds: the generator fetches the three gallery indexes plus roughly 280 Vega and Vega-Lite specs; Altair publishes its dataset metadata directly in its index. Note that `datapackage.json` records the committed git-blob hash of each data file, so commit the regenerated `data/gallery-examples.json` first, then rebuild and amend the descriptor into the same commit.
 
 ## Metadata and Documentation
 

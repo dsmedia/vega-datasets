@@ -14,20 +14,11 @@ import json
 import logging
 import operator
 import os
-import re
 import tomllib
 from collections import Counter
 from pathlib import Path
 from types import MappingProxyType
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Final,
-    Literal,
-    NamedTuple,
-    NotRequired,
-    TypedDict,
-)
+from typing import TYPE_CHECKING, Any, Final, Literal, NamedTuple, TypedDict
 
 import httpx
 
@@ -55,11 +46,10 @@ class Example(TypedDict):
     """
     Intermediate gallery-example record carried through build + enrichment.
 
-    ``_filename`` (underscore-prefixed) is an internal back-channel from
-    construction to altair enrichment; ``finalize_examples`` strips any
-    underscore-prefixed key before output. ``example_name`` is ``str | None``
-    during construction — a vega-lite entry without a real upstream title in
-    any section falls back to a slug-humanized synthesis before output.
+    ``example_name`` is ``str | None`` during Vega-Lite construction: an entry
+    without a real upstream title in any section gets a slug-humanized fallback
+    before output. Altair records arrive fully populated from its published
+    examples index.
     """
 
     gallery_name: Literal["vega", "vega-lite", "altair"]
@@ -69,12 +59,10 @@ class Example(TypedDict):
     categories: list[str]
     description: str | None
     datasets: list[str]
-    _filename: NotRequired[str]
 
 
 class ResolvedRef(TypedDict):
     commit: str
-    tree: str
 
 
 class Config(TypedDict):
@@ -92,7 +80,7 @@ class Config(TypedDict):
 class FetchedIndexes(NamedTuple):
     vl_index: dict[str, Any]
     vega_index: dict[str, Any]
-    altair_files: list[dict[str, str]]
+    altair_index: dict[str, Any]
 
 
 # ---------------------------------------------------------------------------
@@ -102,8 +90,8 @@ class FetchedIndexes(NamedTuple):
 # Per-gallery URL conventions, kept in one table so the URL shapes are
 # reviewable side by side. NOTE: adding a gallery is more than an entry
 # here — it also touches _format_refs, fetch_indexes, build_example_list,
-# _SPEC_EXTRACTORS/enrich_one, and _MIN_EXPECTED_PER_GALLERY. `spec` and
-# `example_page` use str.format placeholders substituted at build time;
+# _SPEC_EXTRACTORS/enrich_one, and _MIN_EXPECTED_PER_GALLERY. `spec` and the
+# Vega/Vega-Lite `example_page` values use str.format placeholders;
 # jsDelivr spec URLs pin an immutable commit SHA so the CDN caches with
 # 100 % hit rate and zero invalidation risk. See also the TOML read-path
 # strategy in _data/gallery-examples.toml.
@@ -121,7 +109,6 @@ _GALLERY_URLS: Final[Mapping[str, Mapping[str, str]]] = MappingProxyType({
     }),
     "altair": MappingProxyType({
         "repo": "vega/altair",
-        "example_page": "https://altair-viz.github.io/gallery/{stem}.html",
         "spec": "https://cdn.jsdelivr.net/gh/vega/altair@{sha}/{path}",
     }),
 })
@@ -299,79 +286,6 @@ def extract_vega_datasets(spec: dict[str, Any], name_map: dict[str, str]) -> lis
 
 
 # ---------------------------------------------------------------------------
-# Altair source-level patterns (convention-based, transitional)
-# ---------------------------------------------------------------------------
-
-# Three explicit patterns covering Altair v6+ API usage.
-_ALTAIR_PATTERNS: Final = [
-    re.compile(r"data\.(\w+)\s*\("),  # data.cars()
-    re.compile(r"data\.(\w+)\.url"),  # data.cars.url
-    re.compile(r"alt\.topo_feature\s*\(\s*data\.(\w+)\.url"),
-]
-
-# Patterns that indicate inline data (not a missing dataset reference).
-_INLINE_DATA_PATTERNS: Final = re.compile(
-    r"pd\.DataFrame|alt\.InlineData|DataFrame\(|\.from_dict\("
-)
-
-# Pattern that indicates an import of the vega_datasets data object.
-_DATA_IMPORT: Final = re.compile(
-    r"from\s+(?:vega_datasets|altair\.datasets)\s+import\s+data"
-)
-
-# Pattern that indicates unrecognized vega_datasets API usage
-# (method call with args). Singular because it's a single regex.
-_UNRECOGNIZED_DATA_API: Final = re.compile(r"data\.\w+\(['\"\w]")
-
-
-def extract_altair_datasets(code: str, valid_names: set[str]) -> list[str]:
-    """
-    Extract dataset references from Altair Python source code.
-
-    Convention-based: matches three explicit source-level patterns. Raises
-    ValueError when the file imports `data` but yields nothing usable — either
-    because no pattern matched (patterns may need updating) or because every
-    matched name is unknown to vega-datasets (likely an upstream rename).
-    Mixed known/unknown is permitted: unknowns are dropped with a warning.
-
-    Transitional. Vega + Vega-Lite ship a structured ``examples.json`` and the
-    generator walks specs mechanically; altair ships no such index today, so
-    this function scrapes source text. If altair begins publishing an index
-    with a ``datasets`` field (see vega/altair#4002), this collapses to a
-    field read. Note that ``data.cars()`` returns a DataFrame and compiles to
-    inline ``values``, losing the filename — only altair itself can recover
-    the dataset name, which is why an upstream-published index matters.
-    """
-    has_data_import = bool(_DATA_IMPORT.search(code))
-
-    extracted: set[str] = set()
-    for pattern in _ALTAIR_PATTERNS:
-        extracted.update(pattern.findall(code))
-
-    known = sorted(extracted & valid_names)
-    unknown = sorted(extracted - valid_names)
-
-    for name in unknown:
-        logger.warning("External Altair dataset (not in vega-datasets): %s", name)
-
-    if has_data_import and not known and not _INLINE_DATA_PATTERNS.search(code):
-        if extracted and not _UNRECOGNIZED_DATA_API.search(code):
-            msg = (
-                f"Altair example uses recognized pattern but dataset name(s) "
-                f"{unknown} not in vega-datasets. Likely upstream rename — "
-                f"update valid_names or the example."
-            )
-            raise ValueError(msg)
-        msg = (
-            "Altair example imports `data` but no recognized dataset pattern "
-            "was found. Patterns may need updating."
-        )
-        raise ValueError(msg)
-
-    return known
-
-
-# ---------------------------------------------------------------------------
 # Name map + config
 # ---------------------------------------------------------------------------
 
@@ -437,50 +351,6 @@ def load_config() -> Config:
 
 
 # ---------------------------------------------------------------------------
-# Altair metadata parsing (transitional — see vega/altair#4002)
-# ---------------------------------------------------------------------------
-
-# Docstring delimiter is captured so the description regex can reuse it —
-# supports both triple-double and triple-single quote docstrings.
-_TITLE_PATTERN: Final = re.compile(
-    r'^(?P<q>"""|\'\'\')\s*\n(?P<title>.*?)\n[-=]+\s*\n', re.MULTILINE | re.DOTALL
-)
-_DESCRIPTION_PATTERN: Final = re.compile(
-    r'^(?P<q>"""|\'\'\')\s*\n.*?\n[-=]+\s*\n(?P<body>.*?)(?P=q)',
-    re.MULTILINE | re.DOTALL,
-)
-_CATEGORY_PATTERN: Final = re.compile(r"^#\s*category:\s*(.+)", re.MULTILINE)
-
-
-def _parse_altair_metadata(code: str, filename: str) -> dict[str, Any]:
-    """
-    Extract title, description, and category from Altair source code.
-
-    Transitional. Vega-Lite and Vega publish title/description/category
-    as fields in their respective ``examples.json``; altair embeds the same
-    data in docstrings and ``# category:`` comments, so this function exists
-    to recover it from source. If altair publishes an examples index
-    (vega/altair#4002), this is replaced by a field read.
-    """
-    title_match = _TITLE_PATTERN.search(code)
-    if title_match:
-        # Collapse multi-line titles (rare but upstream permits them).
-        title = " ".join(title_match.group("title").split())
-    else:
-        title = _humanize_slug(filename.removesuffix(".py"))
-
-    desc_match = _DESCRIPTION_PATTERN.search(code)
-    description = desc_match.group("body").strip() if desc_match else None
-    if not description:
-        description = None
-
-    cat_match = _CATEGORY_PATTERN.search(code)
-    categories = [cat_match.group(1).strip()] if cat_match else []
-
-    return {"example_name": title, "description": description, "categories": categories}
-
-
-# ---------------------------------------------------------------------------
 # HTTP + ref resolution
 # ---------------------------------------------------------------------------
 
@@ -540,10 +410,9 @@ async def _fetch_text(session: httpx.AsyncClient, url: str) -> str:
     """
     GET ``url`` and return the response body as text.
 
-    Used for altair ``.py`` source, which isn't JSON. For JSON endpoints use
-    ``_fetch_json``. Raises ``RuntimeError`` on an empty body so that a
-    silently truncated upstream response doesn't cascade into a parser error
-    two stages downstream.
+    Used for Vega and Vega-Lite specification bodies. For index endpoints use
+    ``_fetch_json``. Raises ``RuntimeError`` on an empty body so a truncated
+    upstream response does not cascade into an opaque parser error.
     """
     resp = await _get_checked(session, url)
     if not resp.text:
@@ -562,14 +431,10 @@ async def resolve_refs(
     session: httpx.AsyncClient, refs: dict[str, str]
 ) -> dict[str, ResolvedRef]:
     """
-    Resolve each gallery's ref (branch/tag/SHA) to the commit + tree SHAs.
+    Resolve each gallery's ref (branch/tag/SHA) to an immutable commit SHA.
 
-    Returns ``{"vega-lite": {"commit": "<sha>", "tree": "<sha>"}, ...}``.
-    One GitHub API call per repo (three total) — fetches
-    ``/repos/{owner}/{repo}/commits/{ref}`` which returns both the commit
-    SHA and ``commit.tree.sha`` in the same payload. This pins every
-    subsequent URL in the run to one immutable snapshot per upstream repo
-    and gives us the tree SHA the altair Trees API call needs, for free.
+    One GitHub API call per repo pins every subsequent index and source URL in
+    the run to one immutable upstream snapshot.
     """
 
     async def one(name: str) -> tuple[str, ResolvedRef]:
@@ -577,7 +442,7 @@ async def resolve_refs(
         ref = refs[name]
         url = f"https://api.github.com/repos/{slug}/commits/{ref}"
         data = await _fetch_json(session, url)
-        return name, {"commit": data["sha"], "tree": data["commit"]["tree"]["sha"]}
+        return name, {"commit": data["sha"]}
 
     pairs = await asyncio.gather(*(one(name) for name in _GALLERIES))
     return dict(pairs)
@@ -600,48 +465,22 @@ async def fetch_indexes(
     """
     Fetch all three gallery indexes concurrently, pinned to resolved SHAs.
 
-    vega-lite and vega indexes come via jsDelivr (URL templates in TOML
-    are substituted with commit SHAs). Altair uses the GitHub Trees API
-    at the repo's tree SHA, filtered to ``tests/examples_arguments_syntax/*.py``
-    (the directory the published altair gallery is built from).
-    The Contents API was dropped in favor of Trees API because the payload
-    is ~4x smaller and composes cleanly with SHA pinning.
+    All three projects publish JSON example indexes. Altair's index uses the
+    attribute/arguments-syntax file as the canonical source for each rendered
+    gallery page; method-syntax variants are alternate presentations of that
+    same page and do not create additional records.
     """
     fmt = _format_refs(refs)
     vl_url = sources["vega_lite_examples_url"].format(**fmt)
     vega_url = sources["vega_examples_url"].format(**fmt)
-    altair_tree_url = (
-        f"https://api.github.com/repos/vega/altair/git/trees/"
-        f"{refs['altair']['tree']}?recursive=1"
-    )
+    altair_url = sources["altair_examples_url"].format(**fmt)
 
-    vl_index, vega_index, altair_tree = await asyncio.gather(
+    vl_index, vega_index, altair_index = await asyncio.gather(
         _fetch_json(session, vl_url),
         _fetch_json(session, vega_url),
-        _fetch_json(session, altair_tree_url),
+        _fetch_json(session, altair_url),
     )
-
-    # Trees API returns {"sha": ..., "tree": [{"path": ..., "type": ...}, ...],
-    # "truncated": bool}. Our three repos all fit within the 100k-entry /
-    # 7 MB limits (measured 2026-04-12: altair=603, vl=3498, vega=2022).
-    if altair_tree.get("truncated"):
-        msg = (
-            "Altair git tree response was truncated. The repo has grown past "
-            "the Trees API single-response limit; switch to a pagination "
-            "strategy or a sub-tree fetch."
-        )
-        raise RuntimeError(msg)
-
-    altair_dir = sources["altair_examples_dir"]
-    altair_files = [
-        {"path": entry["path"]}
-        for entry in altair_tree["tree"]
-        if entry.get("type") == "blob"
-        and entry["path"].startswith(f"{altair_dir}/")
-        and entry["path"].endswith(".py")
-        and not Path(entry["path"]).name.startswith("__")
-    ]
-    return FetchedIndexes(vl_index, vega_index, altair_files)
+    return FetchedIndexes(vl_index, vega_index, altair_index)
 
 
 # ---------------------------------------------------------------------------
@@ -719,19 +558,117 @@ def _build_vegalite_examples(
     return list(seen.values())
 
 
+def _altair_string_list(
+    record: dict[str, Any],
+    field: str,
+    name: str,
+    *,
+    allow_empty: bool = True,
+) -> list[str]:
+    """Read a string-array field from one Altair index record."""
+    value = record.get(field)
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        msg = f"Altair example {name!r} must have a string {field} array"
+        raise TypeError(msg)
+    if not allow_empty and not value:
+        msg = f"Altair example {name!r} must have at least one {field} value"
+        raise ValueError(msg)
+    return value
+
+
+def _build_altair_example(
+    record: Any,
+    position: int,
+    commit_sha: str,
+    valid_names: set[str],
+) -> Example:
+    """Validate and normalize one record from Altair's published index."""
+    if not isinstance(record, dict):
+        msg = f"Altair example at index {position} is not an object"
+        raise TypeError(msg)
+
+    string_fields = ("name", "title", "url", "path", "description")
+    invalid_strings = [
+        field for field in string_fields if not isinstance(record.get(field), str)
+    ]
+    if invalid_strings:
+        msg = (
+            f"Altair example at index {position} has invalid string fields: "
+            f"{invalid_strings}"
+        )
+        raise TypeError(msg)
+
+    name = record["name"]
+    path = record["path"]
+    categories = _altair_string_list(record, "categories", name, allow_empty=False)
+    datasets = _altair_string_list(record, "datasets", name)
+
+    canonical_prefix = "tests/examples_arguments_syntax/"
+    if not path.startswith(canonical_prefix) or not path.endswith(".py"):
+        msg = (
+            f"Altair example {name!r} has non-canonical source path {path!r}; "
+            "expected an arguments-syntax Python file"
+        )
+        raise ValueError(msg)
+    if Path(path).stem != name:
+        msg = f"Altair example name {name!r} does not match source path {path!r}"
+        raise ValueError(msg)
+
+    unknown = sorted(set(datasets) - valid_names)
+    if unknown:
+        msg = f"Altair example {name!r} references unknown datasets: {unknown}"
+        raise ValueError(msg)
+
+    spec_template = _GALLERY_URLS["altair"]["spec"]
+    return {
+        "gallery_name": "altair",
+        "example_name": record["title"],
+        "example_url": record["url"],
+        "spec_url": spec_template.format(sha=commit_sha, path=path),
+        "categories": list(categories),
+        "description": record["description"] or None,
+        "datasets": list(datasets),
+    }
+
+
+def _build_altair_examples(
+    altair_index: dict[str, Any], commit_sha: str, valid_names: set[str]
+) -> list[Example]:
+    """Normalize Altair's published page-level gallery index."""
+    gallery = altair_index.get("gallery")
+    if not isinstance(gallery, dict):
+        msg = "Altair examples index must contain a gallery object"
+        raise TypeError(msg)
+    if gallery.get("name") != "altair":
+        msg = "Altair examples index is missing gallery.name='altair'"
+        raise ValueError(msg)
+    if gallery.get("repository") != "https://github.com/vega/altair":
+        msg = "Altair examples index has an unexpected gallery.repository"
+        raise ValueError(msg)
+
+    records = altair_index.get("examples")
+    if not isinstance(records, list):
+        msg = "Altair examples index must contain an examples array"
+        raise TypeError(msg)
+
+    return [
+        _build_altair_example(record, position, commit_sha, valid_names)
+        for position, record in enumerate(records)
+    ]
+
+
 def build_example_list(
     vl_index: dict[str, Any],
     vega_index: dict[str, Any],
-    altair_files: list[dict[str, Any]],
+    altair_index: dict[str, Any],
     refs: dict[str, ResolvedRef],
+    valid_names: set[str],
 ) -> list[Example]:
     """Normalize three gallery indexes into a flat example list."""
     examples = _build_vegalite_examples(vl_index, refs["vega-lite"]["commit"])
 
     vega_sha = refs["vega"]["commit"]
-    altair_sha = refs["altair"]["commit"]
     vega_urls = _GALLERY_URLS["vega"]
-    altair_urls = _GALLERY_URLS["altair"]
 
     # Vega: index is {category: [list of {name}]}. A slug repeated under
     # multiple categories merges its categories, mirroring the vega-lite
@@ -760,24 +697,13 @@ def build_example_list(
                 "datasets": [],
             }
     examples.extend(seen_vega.values())
-
-    # Altair: Trees API-filtered listing -> stubs (metadata filled during
-    # enrichment). Entries have shape {"path": "tests/examples_arguments_syntax/foo.py"};
-    # fetch_indexes already filtered out non-blob, non-.py, and dunder files.
-    for file_info in altair_files:
-        path = file_info["path"]
-        name = Path(path).name
-        stem = name.removesuffix(".py")
-        examples.append({
-            "gallery_name": "altair",
-            "example_name": _humanize_slug(stem),
-            "example_url": altair_urls["example_page"].format(stem=stem),
-            "spec_url": altair_urls["spec"].format(sha=altair_sha, path=path),
-            "categories": [],
-            "description": None,
-            "datasets": [],
-            "_filename": name,  # internal, stripped by finalize_examples
-        })
+    examples.extend(
+        _build_altair_examples(
+            altair_index,
+            refs["altair"]["commit"],
+            valid_names,
+        )
+    )
 
     return examples
 
@@ -787,9 +713,8 @@ def build_example_list(
 # ---------------------------------------------------------------------------
 
 
-# vega-lite and vega enrichment share a shape: parse JSON, run an extractor,
-# fall back to the spec-level description. Altair is structurally different
-# (text source, needs docstring parsing), so it keeps its own branch.
+# Vega-Lite and Vega require spec enrichment. Altair's published index already
+# contains its authoritative dataset list and description.
 _SPEC_EXTRACTORS: Final = {
     "vega-lite": extract_vegalite_datasets,
     "vega": extract_vega_datasets,
@@ -800,60 +725,37 @@ async def enrich_with_datasets(
     examples: list[Example],
     session: httpx.AsyncClient,
     name_map: dict[str, str],
-    valid_names: set[str],
 ) -> None:
-    """Fetch specs concurrently and fill in datasets (and Altair metadata)."""
+    """Fetch Vega and Vega-Lite specs concurrently and fill in datasets."""
     sem = asyncio.Semaphore(_ENRICH_CONCURRENCY)
 
     async def enrich_one(example: Example) -> None:
+        gallery = example["gallery_name"]
+        extractor = _SPEC_EXTRACTORS.get(gallery)
+        if extractor is None:
+            msg = f"Unhandled gallery_name during enrichment: {gallery!r}"
+            raise ValueError(msg)
+
         async with sem:
             text = await _fetch_text(session, example["spec_url"])
 
-        gallery = example["gallery_name"]
-        if gallery == "altair":
-            # Response-health canary: a file missing BOTH markers is not an
-            # altair example file (HTML error page, 404, or misrouted body).
-            # `and` is intentional — many legitimate altair examples have
-            # only one of the two markers, so `or` would reject valid files.
-            if not _DATA_IMPORT.search(text) and not _CATEGORY_PATTERN.search(text):
-                msg = (
-                    f"Not an altair example file — response missing both "
-                    f"`from … import data` and `# category:` markers "
-                    f"(likely HTML error page, 404, or misrouted body): "
-                    f"{example['spec_url']}"
-                )
-                raise ValueError(msg)
-            # build_example_list always sets _filename on altair entries;
-            # assert documents the invariant and narrows the NotRequired type.
-            assert "_filename" in example
-            meta = _parse_altair_metadata(text, example["_filename"])
-            example["example_name"] = meta["example_name"]
-            example["description"] = meta["description"]
-            example["categories"] = meta["categories"]
-            example["datasets"] = extract_altair_datasets(text, valid_names)
-        elif gallery in _SPEC_EXTRACTORS:
-            spec = json.loads(text)
-            example["datasets"] = _SPEC_EXTRACTORS[gallery](spec, name_map)
-            if not example.get("description"):
-                example["description"] = spec.get("description")
-        else:
-            # Contract invariant: gallery_name is Literal["vega","vega-lite","altair"]
-            # and every value must have a branch above. Fires only if
-            # build_example_list introduces a new gallery without updating here.
-            msg = f"Unhandled gallery_name during enrichment: {gallery!r}"
-            raise ValueError(msg)
+        spec = json.loads(text)
+        example["datasets"] = extractor(spec, name_map)
+        if not example.get("description"):
+            example["description"] = spec.get("description")
 
         # Deduplicate datasets, preserve order
         example["datasets"] = list(dict.fromkeys(example["datasets"]))
 
+    pending = [ex for ex in examples if ex["gallery_name"] != "altair"]
     # asyncio.gather(return_exceptions=True) propagates BaseException subclasses
     # (KeyboardInterrupt, SystemExit) directly and captures only Exception.
     results = await asyncio.gather(
-        *(enrich_one(ex) for ex in examples), return_exceptions=True
+        *(enrich_one(ex) for ex in pending), return_exceptions=True
     )
     errors = [
         (ex, r)
-        for ex, r in zip(examples, results, strict=True)
+        for ex, r in zip(pending, results, strict=True)
         if isinstance(r, Exception)
     ]
     if errors:
@@ -869,19 +771,14 @@ async def enrich_with_datasets(
 
 
 def finalize_examples(examples: list[Example]) -> list[dict[str, Any]]:
-    """
-    Sort deterministically and strip any underscore-prefixed internal keys.
-
-    Underscore-prefixed keys (``_filename``) are build-time back-channels
-    that must not appear in the public dataset.
-    """
+    """Sort deterministically and return plain JSON-serializable mappings."""
     examples.sort(key=operator.itemgetter("gallery_name", "example_name"))
-    return [{k: v for k, v in ex.items() if not k.startswith("_")} for ex in examples]
+    return [dict(ex) for ex in examples]
 
 
 # Per-gallery count floors. Trip-wires for catastrophic regressions
 # (upstream restructuring, parser breakage), not tight estimates. Current
-# counts (2026-07): altair=187, vega=93, vega-lite=189. Bump if upstream
+# counts (2026-08): altair=188, vega=93, vega-lite=189. Bump if upstream
 # genuinely prunes a gallery; loosen if you want to tolerate more attrition.
 _MIN_EXPECTED_PER_GALLERY: Final[Mapping[str, int]] = MappingProxyType({
     "altair": 160,
@@ -1010,12 +907,13 @@ async def run_pipeline() -> list[dict[str, Any]]:
         examples = build_example_list(
             indexes.vl_index,
             indexes.vega_index,
-            indexes.altair_files,
+            indexes.altair_index,
             resolved_refs,
+            valid_names,
         )
         logger.info("Built example list: %d examples", len(examples))
 
-        await enrich_with_datasets(examples, session, name_map, valid_names)
+        await enrich_with_datasets(examples, session, name_map)
 
     finalized = finalize_examples(examples)
     assert_expected_galleries(finalized)
@@ -1028,7 +926,10 @@ async def async_main() -> None:
     examples = await run_pipeline()
     output_path = REPO_ROOT / "data" / "gallery-examples.json"
     tmp_path = output_path.with_suffix(".json.tmp")
-    tmp_path.write_text(json.dumps(examples, indent=2, ensure_ascii=False) + "\n")
+    tmp_path.write_text(
+        json.dumps(examples, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
     # Atomic replace: a mid-write crash cannot leave the tracked file
     # half-written (which git would notice as a phantom change).
     Path(tmp_path).replace(output_path)

@@ -4,21 +4,21 @@ from __future__ import annotations
 
 import asyncio
 import os
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
 
+from scripts import generate_gallery_examples as gallery_examples
 from scripts.generate_gallery_examples import (
     _build_vegalite_examples,  # noqa: PLC2701
     _fetch_text,  # noqa: PLC2701
     _format_refs,  # noqa: PLC2701
-    _parse_altair_metadata,  # noqa: PLC2701
     _raw_github_fallback,  # noqa: PLC2701
     assert_expected_galleries,
     assert_unique_urls,
     build_example_list,
     build_name_map,
-    extract_altair_datasets,
     extract_vega_datasets,
     extract_vegalite_datasets,
     load_config,
@@ -28,9 +28,9 @@ from scripts.generate_gallery_examples import (
 
 # Fixture: fake resolved-refs struct matching resolve_refs() return shape.
 FAKE_REFS = {
-    "vega-lite": {"commit": "abcdef0123456789", "tree": "tree-vl-sha"},
-    "vega": {"commit": "1234567890abcdef", "tree": "tree-vega-sha"},
-    "altair": {"commit": "fedcba9876543210", "tree": "tree-altair-sha"},
+    "vega-lite": {"commit": "abcdef0123456789"},
+    "vega": {"commit": "1234567890abcdef"},
+    "altair": {"commit": "fedcba9876543210"},
 }
 
 # Fixture: minimal name map matching real datapackage.json structure
@@ -41,6 +41,33 @@ NAME_MAP = {
     "data/world-110m.json": "world_110m",
     "data/flights-200k.arrow": "flights_200k_arrow",
 }
+VALID_NAMES = set(NAME_MAP.values())
+
+
+def _altair_index(*records):
+    return {
+        "gallery": {
+            "name": "altair",
+            "repository": "https://github.com/vega/altair",
+            "docs_url": "https://altair-viz.github.io/",
+        },
+        "examples": list(records),
+    }
+
+
+def _altair_record(**overrides):
+    record = {
+        "name": "scatter_plot",
+        "title": "Scatter Plot",
+        "url": "https://altair-viz.github.io/gallery/scatter_plot.html",
+        "path": "tests/examples_arguments_syntax/scatter_plot.py",
+        "description": "A scatter plot example.",
+        "categories": ["scatter plots"],
+        "datasets": ["cars"],
+        "related_docs": {"explicit": [], "inferred": []},
+    }
+    record.update(overrides)
+    return record
 
 
 def test_normalize_relative_path():
@@ -235,141 +262,6 @@ def test_extract_vega_lookup_transform():
 
 
 # ---------------------------------------------------------------------------
-# extract_altair_datasets
-# ---------------------------------------------------------------------------
-
-VALID_NAMES = {
-    "cars",
-    "movies",
-    "world_110m",
-    "us_state_capitals",
-    "flights_200k_arrow",
-}
-
-
-def test_extract_altair_data_call():
-    code = """\
-from vega_datasets import data
-source = data.cars()
-"""
-    assert extract_altair_datasets(code, VALID_NAMES) == ["cars"]
-
-
-def test_extract_altair_data_url():
-    code = """\
-from vega_datasets import data
-chart = alt.Chart(data.cars.url)
-"""
-    assert extract_altair_datasets(code, VALID_NAMES) == ["cars"]
-
-
-def test_extract_altair_topo():
-    code = """\
-from vega_datasets import data
-source = alt.topo_feature(data.world_110m.url, "countries")
-"""
-    assert extract_altair_datasets(code, VALID_NAMES) == ["world_110m"]
-
-
-def test_extract_altair_unknown_raises():
-    """Recognized pattern with a name not in valid_names raises — likely upstream rename."""
-    code = """\
-from vega_datasets import data
-source = data.unknown_thing()
-"""
-    with pytest.raises(ValueError, match="not in vega-datasets"):
-        extract_altair_datasets(code, VALID_NAMES)
-
-
-def test_extract_altair_mixed_known_unknown():
-    """When at least one known name is extracted, unknown names are dropped with a warning."""
-    code = """\
-from vega_datasets import data
-a = data.cars()
-b = data.gone_dataset()
-"""
-    assert extract_altair_datasets(code, VALID_NAMES) == ["cars"]
-
-
-def test_extract_altair_import_no_match():
-    code = """\
-from vega_datasets import data
-# Uses data in some unrecognized way
-chart = alt.Chart(data.get_dataset("cars"))
-"""
-    with pytest.raises(ValueError, match="no recognized dataset pattern"):
-        extract_altair_datasets(code, VALID_NAMES)
-
-
-def test_extract_altair_inline_data_ok():
-    code = """\
-from vega_datasets import data
-import pandas as pd
-source = pd.DataFrame({"x": [1, 2], "y": [3, 4]})
-chart = alt.Chart(source)
-"""
-    assert extract_altair_datasets(code, VALID_NAMES) == []
-
-
-# ---------------------------------------------------------------------------
-# _parse_altair_metadata
-# ---------------------------------------------------------------------------
-
-
-def test_parse_altair_metadata_title():
-    code = '"""\nScatter Plot\n------------\nA scatter plot.\n"""\n# category: basic\n'
-    result = _parse_altair_metadata(code, "scatter_plot.py")
-    assert result["example_name"] == "Scatter Plot"
-
-
-def test_parse_altair_metadata_title_fallback():
-    """When no docstring title exists, falls back to humanized filename."""
-    code = "import altair as alt\n"
-    result = _parse_altair_metadata(code, "scatter_plot.py")
-    assert result["example_name"] == "Scatter Plot"
-
-
-def test_parse_altair_metadata_description():
-    code = '"""\nScatter Plot\n------------\nA basic scatter plot example.\n"""\n'
-    result = _parse_altair_metadata(code, "scatter_plot.py")
-    assert result["description"] == "A basic scatter plot example."
-
-
-def test_parse_altair_metadata_description_null():
-    """Description is None when docstring has no body after the underline."""
-    code = '"""\nScatter Plot\n------------\n"""\n'
-    result = _parse_altair_metadata(code, "scatter_plot.py")
-    assert result["description"] is None
-
-
-def test_parse_altair_metadata_category():
-    code = '"""\nTitle\n-----\n"""\n# category: interactive charts\n'
-    result = _parse_altair_metadata(code, "example.py")
-    assert result["categories"] == ["interactive charts"]
-
-
-def test_parse_altair_metadata_no_category():
-    code = '"""\nTitle\n-----\n"""\nimport altair\n'
-    result = _parse_altair_metadata(code, "example.py")
-    assert result["categories"] == []
-
-
-def test_parse_altair_metadata_triple_single_quote():
-    """Title and description work with ''' docstrings."""
-    code = "'''\nScatter Plot\n------------\nA basic scatter plot example.\n'''\n"
-    result = _parse_altair_metadata(code, "scatter_plot.py")
-    assert result["example_name"] == "Scatter Plot"
-    assert result["description"] == "A basic scatter plot example."
-
-
-def test_parse_altair_metadata_multi_line_title():
-    """Multi-line titles are collapsed into a single line."""
-    code = '"""\nA Long\nMulti-Line Title\n----------------\nbody.\n"""\n'
-    result = _parse_altair_metadata(code, "example.py")
-    assert result["example_name"] == "A Long Multi-Line Title"
-
-
-# ---------------------------------------------------------------------------
 # _build_vegalite_examples
 # ---------------------------------------------------------------------------
 
@@ -548,7 +440,7 @@ def test_load_config_parses_ref_and_sources():
         assert isinstance(ref, str) and ref
     assert "vega_lite_examples_url" in config["sources"]
     assert "vega_examples_url" in config["sources"]
-    assert "altair_examples_dir" in config["sources"]
+    assert "altair_examples_url" in config["sources"]
 
 
 def test_load_config_urls_use_jsdelivr_template():
@@ -556,8 +448,10 @@ def test_load_config_urls_use_jsdelivr_template():
     config = load_config()
     assert "cdn.jsdelivr.net/gh/" in config["sources"]["vega_lite_examples_url"]
     assert "cdn.jsdelivr.net/gh/" in config["sources"]["vega_examples_url"]
+    assert "cdn.jsdelivr.net/gh/" in config["sources"]["altair_examples_url"]
     assert "{vega_lite_ref}" in config["sources"]["vega_lite_examples_url"]
     assert "{vega_ref}" in config["sources"]["vega_examples_url"]
+    assert "{altair_ref}" in config["sources"]["altair_examples_url"]
 
 
 def test_format_refs_maps_hyphen_keys_to_placeholder_names():
@@ -574,8 +468,13 @@ def test_build_example_list_vega_spec_url_uses_jsdelivr_with_sha():
     """Vega example spec_urls embed the resolved vega SHA via jsDelivr."""
     vl_index: dict[str, dict[str, list[dict[str, str]]]] = {}
     vega_index = {"Basic": [{"name": "bar"}]}
-    altair_files: list[dict[str, str]] = []
-    examples = build_example_list(vl_index, vega_index, altair_files, FAKE_REFS)
+    examples = build_example_list(
+        vl_index,
+        vega_index,
+        _altair_index(),
+        FAKE_REFS,
+        VALID_NAMES,
+    )
     vega_entries = [ex for ex in examples if ex["gallery_name"] == "vega"]
     assert len(vega_entries) == 1
     assert (
@@ -584,25 +483,36 @@ def test_build_example_list_vega_spec_url_uses_jsdelivr_with_sha():
     )
 
 
-def test_build_example_list_altair_spec_url_uses_jsdelivr_with_path():
-    """Altair entries derive spec_url from the full Trees API path +
-    altair commit SHA. No regression to Contents API `name`-only shape."""
-    altair_files = [
-        {"path": "tests/examples_arguments_syntax/scatter_plot.py"},
-        {
-            "path": "tests/examples_arguments_syntax/__init__.py"
-        },  # should be present here; filtering upstream
-    ]
-    examples = build_example_list({}, {}, altair_files, FAKE_REFS)
+def test_build_example_list_maps_altair_published_index():
+    """Altair metadata is copied while spec_url pins its canonical source."""
+    index = _altair_index(_altair_record(description=""))
+    examples = build_example_list({}, {}, index, FAKE_REFS, VALID_NAMES)
     altair_entries = [ex for ex in examples if ex["gallery_name"] == "altair"]
-    # build_example_list itself doesn't re-filter; fetch_indexes does.
-    assert len(altair_entries) == 2
-    scatter = next(ex for ex in altair_entries if ex["_filename"] == "scatter_plot.py")
+    assert len(altair_entries) == 1
+    scatter = altair_entries[0]
     assert scatter["spec_url"] == (
         "https://cdn.jsdelivr.net/gh/vega/altair@fedcba9876543210/"
         "tests/examples_arguments_syntax/scatter_plot.py"
     )
     assert scatter["example_name"] == "Scatter Plot"
+    assert scatter["example_url"].endswith("/gallery/scatter_plot.html")
+    assert scatter["categories"] == ["scatter plots"]
+    assert scatter["datasets"] == ["cars"]
+    assert scatter["description"] is None
+
+
+def test_build_example_list_rejects_altair_method_source_as_canonical():
+    index = _altair_index(
+        _altair_record(path="tests/examples_methods_syntax/scatter_plot.py")
+    )
+    with pytest.raises(ValueError, match="non-canonical source path"):
+        build_example_list({}, {}, index, FAKE_REFS, VALID_NAMES)
+
+
+def test_build_example_list_rejects_unknown_altair_dataset():
+    index = _altair_index(_altair_record(datasets=["unknown_dataset"]))
+    with pytest.raises(ValueError, match="unknown datasets"):
+        build_example_list({}, {}, index, FAKE_REFS, VALID_NAMES)
 
 
 # ---------------------------------------------------------------------------
@@ -695,10 +605,36 @@ def test_build_example_list_vega_merges_categories_for_repeated_slug():
         "Basic": [{"name": "bar"}],
         "Advanced": [{"name": "bar"}, {"name": "pie"}],
     }
-    examples = build_example_list({}, vega_index, [], FAKE_REFS)
+    examples = build_example_list(
+        {},
+        vega_index,
+        _altair_index(),
+        FAKE_REFS,
+        VALID_NAMES,
+    )
     bar = next(ex for ex in examples if ex["example_url"].endswith("/bar/"))
     assert bar["categories"] == ["Basic", "Advanced"]
     assert sum(ex["gallery_name"] == "vega" for ex in examples) == 2
+
+
+# ---------------------------------------------------------------------------
+# Output serialization
+# ---------------------------------------------------------------------------
+
+
+def test_async_main_writes_utf8(tmp_path, monkeypatch):
+    (tmp_path / "data").mkdir()
+    monkeypatch.setattr(gallery_examples, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(
+        gallery_examples,
+        "run_pipeline",
+        AsyncMock(return_value=[{"description": "Estimating π via random sampling."}]),
+    )
+
+    asyncio.run(gallery_examples.async_main())
+
+    output = tmp_path / "data" / "gallery-examples.json"
+    assert "π" in output.read_text(encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
