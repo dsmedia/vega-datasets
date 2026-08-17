@@ -929,6 +929,7 @@ async def async_main() -> None:
     tmp_path.write_text(
         json.dumps(examples, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
     # Atomic replace: a mid-write crash cannot leave the tracked file
     # half-written (which git would notice as a phantom change).

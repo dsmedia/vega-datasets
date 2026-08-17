@@ -635,6 +635,7 @@ def test_async_main_writes_utf8(tmp_path, monkeypatch):
 
     output = tmp_path / "data" / "gallery-examples.json"
     assert "π" in output.read_text(encoding="utf-8")
+    assert b"\r\n" not in output.read_bytes()
 
 
 # ---------------------------------------------------------------------------
