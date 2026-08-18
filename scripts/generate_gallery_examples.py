@@ -1,10 +1,4 @@
 #!/usr/bin/env -S uv run
-# /// script
-# requires-python = ">=3.12"
-# dependencies = [
-#     "httpx>=0.27,<1",
-# ]
-# ///
 """Generate gallery-examples.json from Vega ecosystem galleries."""
 
 from __future__ import annotations

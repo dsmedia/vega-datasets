@@ -1688,13 +1688,13 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "httpx", specifier = ">=0.27,<1" },
+    { name = "httpx", specifier = ">=0.28.1,<0.29" },
     { name = "ipython", extras = ["kernel"], specifier = ">=8.30.0" },
     { name = "pytest", specifier = ">=9" },
     { name = "ruff", specifier = ">=0.14.2" },
     { name = "taplo", specifier = ">=0.9.3" },
 ]
-gallery-examples = [{ name = "httpx", specifier = ">=0.27,<1" }]
+gallery-examples = [{ name = "httpx", specifier = ">=0.28.1,<0.29" }]
 geo-species = [
     { name = "exactextract", specifier = ">=0.2.1" },
     { name = "geopandas" },

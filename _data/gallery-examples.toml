@@ -21,8 +21,8 @@ vega      = "main"
 altair    = "main"
 
 [sources]
-# `{…_ref}` placeholders are substituted with the resolved SHAs (or the
-# literal tag/branch if the ref is pinned in [ref] above).
+# `{…_ref}` placeholders are always substituted with the commit SHAs resolved
+# from [ref], whether the configured values are branches, tags, or SHAs.
 vega_lite_examples_url = "https://cdn.jsdelivr.net/gh/vega/vega-lite@{vega_lite_ref}/site/_data/examples.json"
 vega_examples_url      = "https://cdn.jsdelivr.net/gh/vega/vega@{vega_ref}/docs/_data/examples.json"
 # Altair publishes one record per rendered gallery page. Its index treats the
