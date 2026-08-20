@@ -7,7 +7,6 @@ import asyncio
 import json
 import logging
 import operator
-import os
 import tomllib
 from collections import Counter
 from pathlib import Path
@@ -859,25 +858,12 @@ async def run_pipeline() -> list[dict[str, Any]]:
     valid_names = set(name_map.values())
     logger.info("Built name map: %d datasets", len(valid_names))
 
-    # Opportunistic auth: lifts api.github.com rate limit from 60/hr to
-    # 5000/hr when a token is available. No-op when absent. jsDelivr
-    # ignores the header, so scoping isn't needed.
-    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
-    logger.info(
-        "GitHub auth: %s",
-        "authenticated (5000/hr)"
-        if token
-        else "unauthenticated (60/hr — set GITHUB_TOKEN to raise the ceiling)",
-    )
-
     # httpx default: HTTP/1.1 only, no multiplexing — avoids the
     # concurrent-body-swapping bug we hit with niquests when fetching
     # across multiple hosts (jsDelivr + api.github.com) under asyncio
     # concurrency. Timeout is set client-wide so per-call argument isn't
     # needed.
     async with httpx.AsyncClient(
-        headers=headers,
         timeout=_CLIENT_TIMEOUT,
         follow_redirects=True,
     ) as session:
