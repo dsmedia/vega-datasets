@@ -1,9 +1,3 @@
-# /// script
-# requires-python = ">=3.12"
-# dependencies = [
-#     "niquests>=3.11.2",
-# ]
-# ///
 """
 Retrieves and saves U.S. state capital locations with their coordinates from the National Map API.
 
