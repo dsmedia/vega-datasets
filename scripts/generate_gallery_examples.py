@@ -138,7 +138,7 @@ def normalize_dataset_reference(ref: str, name_map: dict[str, str]) -> str | Non
     for prefix in _VEGA_DATASETS_PREFIXES:
         if ref.startswith(prefix):
             is_vega_datasets = True
-            idx = ref.find("/data/", len(prefix))
+            idx = ref.find("/data/", len(prefix.rstrip("/")))
             if idx != -1:
                 path = "data/" + ref[idx + len("/data/") :]
             break

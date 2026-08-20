@@ -79,6 +79,11 @@ def test_normalize_cdn_url():
     assert normalize_dataset_reference(url, NAME_MAP) == "cars"
 
 
+def test_normalize_unversioned_cdn_url():
+    url = "https://cdn.jsdelivr.net/npm/vega-datasets/data/cars.json"
+    assert normalize_dataset_reference(url, NAME_MAP) == "cars"
+
+
 def test_normalize_github_url():
     url = "https://raw.githubusercontent.com/vega/vega-datasets/main/data/cars.json"
     assert normalize_dataset_reference(url, NAME_MAP) == "cars"
