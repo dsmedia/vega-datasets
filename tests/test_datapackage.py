@@ -124,6 +124,20 @@ def test_sha1_matches_git_blob(resource: dict) -> None:
     assert expected == actual, f"declared={expected[:10]}... disk={actual[:10]}..."
 
 
+def test_gallery_dataset_references_exist() -> None:
+    """Ensure gallery dataset names remain valid Data Package join keys."""
+    examples = json.loads((DATA / "gallery-examples.json").read_text(encoding="utf-8"))
+    resource_names = {resource["name"] for resource in _RESOURCES}
+    referenced_names = {
+        dataset for example in examples for dataset in example["datasets"]
+    }
+
+    unknown = sorted(referenced_names - resource_names)
+    assert not unknown, (
+        f"gallery-examples.json references unknown Data Package resources: {unknown}"
+    )
+
+
 def _slow_param(resource: dict) -> Any:  # pytest.ParameterSet; not in public API
     """Build the parametrize entry for the slow tier; attach xfail strict if allowlisted."""
     name = resource["name"]

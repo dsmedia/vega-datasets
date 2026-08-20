@@ -1897,7 +1897,11 @@ path  = "https://creativecommons.org/licenses/by/4.0/"
 path = "gallery-examples.json"
 description = """Cross-reference mapping Vega, Vega-Lite, and Altair gallery examples
 to the vega-datasets resources they use. Each record links a gallery example to
-its datasets, categories, and source specification."""
+its datasets, categories, and source specification.
+
+This resource is a generated, release-versioned snapshot pinned to one upstream
+commit per gallery. Its schema remains stable while its examples and source
+revisions may change between releases."""
 
 [[resources.sources]]
 title = "Vega Gallery"
@@ -1947,7 +1951,7 @@ description = "URL to rendered example in the gallery"
 name        = "spec_url"
 type        = "string"
 format      = "uri"
-description = "URL to source specification or code"
+description = "Immutable, commit-pinned URL to the source specification or code"
 
 [[resources.schema.fields]]
 name        = "categories"
@@ -1963,4 +1967,3 @@ description = "Optional description of what the example demonstrates (may be nul
 name        = "datasets"
 type        = "array"
 description = "Dataset names referencing resource.name in this package"
-

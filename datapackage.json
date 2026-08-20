@@ -20,7 +20,7 @@
     }
   ],
   "version": "3.2.1",
-  "created": "2026-08-17T10:29:46.904069+00:00",
+  "created": "2026-08-20T10:17:25.431424+00:00",
   "resources": [
     {
       "name": "icon_7zip",
@@ -1673,7 +1673,7 @@
     {
       "name": "gallery_examples",
       "type": "json",
-      "description": "Cross-reference mapping Vega, Vega-Lite, and Altair gallery examples\nto the vega-datasets resources they use. Each record links a gallery example to\nits datasets, categories, and source specification.",
+      "description": "Cross-reference mapping Vega, Vega-Lite, and Altair gallery examples\nto the vega-datasets resources they use. Each record links a gallery example to\nits datasets, categories, and source specification.\n\nThis resource is a generated, release-versioned snapshot pinned to one upstream\ncommit per gallery. Its schema remains stable while its examples and source\nrevisions may change between releases.",
       "licenses": [
         {
           "name": "BSD-3-Clause",
@@ -1730,7 +1730,7 @@
           {
             "name": "spec_url",
             "type": "string",
-            "description": "URL to source specification or code",
+            "description": "Immutable, commit-pinned URL to the source specification or code",
             "format": "uri"
           },
           {

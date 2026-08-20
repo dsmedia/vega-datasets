@@ -1,5 +1,5 @@
 # vega-datasets
-`3.2.1` | [GitHub](git+http://github.com/vega/vega-datasets.git) | 2026-08-17 10:29:46 [UTC]
+`3.2.1` | [GitHub](git+http://github.com/vega/vega-datasets.git) | 2026-08-20 10:17:25 [UTC]
 
 Common repository for example datasets used by Vega related projects. 
 BSD-3-Clause license applies only to package code and infrastructure. Users should verify their use of datasets 
@@ -780,6 +780,10 @@ gallery-examples.json
 Cross-reference mapping Vega, Vega-Lite, and Altair gallery examples
 to the vega-datasets resources they use. Each record links a gallery example to
 its datasets, categories, and source specification.
+
+This resource is a generated, release-versioned snapshot pinned to one upstream
+commit per gallery. Its schema remains stable while its examples and source
+revisions may change between releases.
 ### schema
     - `primaryKey` ['example_url']
     - `$schema` https://datapackage.org/profiles/2.0/tableschema.json
@@ -791,7 +795,7 @@ its datasets, categories, and source specification.
 | gallery_name | string | Name of the gallery this example belongs to                            | {'enum': ['vega', 'vega-lite', 'altair']} |          |
 | example_name | string | Human-readable example title                                           |                                           |          |
 | example_url  | string | URL to rendered example in the gallery                                 |                                           | uri      |
-| spec_url     | string | URL to source specification or code                                    |                                           | uri      |
+| spec_url     | string | Immutable, commit-pinned URL to the source specification or code       |                                           | uri      |
 | categories   | array  | Tags or categories for the example (e.g., 'Bar Charts', 'Interactive') |                                           |          |
 | description  | string | Optional description of what the example demonstrates (may be null)    |                                           |          |
 | datasets     | array  | Dataset names referencing resource.name in this package                |                                           |          |

@@ -100,7 +100,7 @@ Visualizations built with these datasets are showcased in several galleries:
 - [Altair Example Gallery](https://altair-viz.github.io/gallery/index.html)
 - [Observable Vega Examples](https://observablehq.com/@vega)
 
-The [gallery-examples.json](data/gallery-examples.json) file maps gallery examples from Vega, Vega-Lite, and Altair to the datasets they use.
+The [gallery-examples.json](data/gallery-examples.json) file maps gallery examples from Vega, Vega-Lite, and Altair to the datasets they use. It is a generated snapshot pinned to one upstream commit per gallery and refreshed for `vega-datasets` releases; each value in a record's `datasets` array is a `resources[].name` from [`datapackage.json`](datapackage.json), so flattening the array joins examples to datasets and reveals gallery and category coverage, including datasets that no example uses.
 
 ### Publishing your own index
 

@@ -55,9 +55,8 @@ For datasets requiring processing:
 The `data/gallery-examples.json` file catalogs examples from Vega, Vega-Lite, and Altair galleries, tracking which datasets each example uses.
 
 **When to regenerate:**
-- After new releases of Vega, Vega-Lite, or Altair that add/remove examples
-- When examples are renamed or reorganized upstream
-- Periodically (e.g., quarterly) to pick up new examples
+
+Unlike the repository's stable example inputs, this file is a generated catalog of evolving upstream galleries. Regenerate it while preparing a `vega-datasets` release, or sooner after a material upstream change such as added, removed, renamed, or reorganized examples. Each generated file is a snapshot pinned to one upstream commit per gallery, not a continuously synchronized mirror.
 
 **Commands:**
 ```bash
