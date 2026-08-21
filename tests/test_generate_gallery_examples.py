@@ -381,7 +381,7 @@ def test_assert_unique_urls_raises_on_duplicate_spec_url():
 
 
 def test_assert_unique_urls_raises_on_duplicate_example_url():
-    """example_url is the declared primary key; duplicates must fail."""
+    """The stable example URL must remain unique within a snapshot."""
     with pytest.raises(RuntimeError, match=r"example_url.*uniqueness invariant"):
         assert_unique_urls([
             {"example_url": "https://g/a.html", "spec_url": "https://example.com/a"},

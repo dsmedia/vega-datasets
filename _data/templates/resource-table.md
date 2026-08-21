@@ -10,7 +10,10 @@
 {% endif %}
 {% if resource.schema %}
 ### schema
-{{ resource.schema | filter_dict(exclude=['fields']) | dict_to_markdown(level=2) }}
+{% set schema_metadata = resource.schema | filter_dict(exclude=['fields']) %}
+{% if schema_metadata %}
+{{ schema_metadata | dict_to_markdown(level=2) }}
+{% endif %}
 {{ resource.schema.fields | tabulate() }}
 {% endif %}
 {% if resource.sources %}

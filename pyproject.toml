@@ -147,7 +147,6 @@ include = [
   "./scripts/generate_gallery_examples.py",
   "./scripts/income.py",
   "./scripts/species.py",
-  "./scripts/us-state-capitals.py",
 ]
 pythonPlatform = "All"
 pythonVersion = "3.12"

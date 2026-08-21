@@ -810,14 +810,12 @@ def assert_expected_galleries(examples: list[dict[str, Any]]) -> None:
 
 def assert_unique_urls(examples: list[dict[str, Any]]) -> None:
     """
-    Enforce the key invariants declared in datapackage.json.
+    Enforce the registry's URL uniqueness invariants.
 
-    ``example_url`` is the primary key (stable across regenerations);
-    ``spec_url`` is declared via ``uniqueKeys`` (unique within a snapshot but
-    embeds the pinned commit SHA, so it changes every regeneration). The
-    schema declarations are validation-time only — this check is the
-    generator-side enforcement and catches scraper bugs that would otherwise
-    silently emit duplicates.
+    ``example_url`` is stable across regenerations, while ``spec_url`` embeds
+    the pinned commit SHA and therefore changes as upstream galleries change.
+    Both must be unique within a snapshot; this generator-side check catches
+    scraper bugs that would otherwise silently emit duplicates.
     """
     for field in ("example_url", "spec_url"):
         counts = Counter(ex[field] for ex in examples)

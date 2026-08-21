@@ -20,7 +20,7 @@
     }
   ],
   "version": "3.2.1",
-  "created": "2026-08-20T10:17:25.431424+00:00",
+  "created": "2026-08-21T09:22:22.949067+00:00",
   "resources": [
     {
       "name": "icon_7zip",
@@ -1672,8 +1672,8 @@
     },
     {
       "name": "gallery_examples",
-      "type": "json",
-      "description": "Cross-reference mapping Vega, Vega-Lite, and Altair gallery examples\nto the vega-datasets resources they use. Each record links a gallery example to\nits datasets, categories, and source specification.\n\nThis resource is a generated, release-versioned snapshot pinned to one upstream\ncommit per gallery. Its schema remains stable while its examples and source\nrevisions may change between releases.",
+      "type": "table",
+      "description": "An index of examples published in the Vega, Vega-Lite, and Altair\ngalleries. Each record describes one example, links to its rendered page and source,\nlists its gallery categories, and identifies any vega-datasets resources it uses. The\n`datasets` array is empty when it uses none.\n\nThe contents of `gallery-examples.json` are a snapshot of the three galleries,\ncreated for a particular vega-datasets release from one pinned commit per gallery.\nWhen a newer version of vega-datasets is released, the file may be regenerated to\nreflect examples added, removed, or updated in those galleries.",
       "licenses": [
         {
           "name": "BSD-3-Clause",
@@ -1702,12 +1702,17 @@
       "encoding": "utf-8",
       "hash": "sha1:307b1f2b283102ef3a086ffb50c16abf763599df",
       "bytes": 259668,
+      "dialect": {
+        "json": {
+          "keyed": true
+        }
+      },
       "schema": {
         "fields": [
           {
             "name": "gallery_name",
             "type": "string",
-            "description": "Name of the gallery this example belongs to",
+            "description": "Gallery that publishes the example",
             "constraints": {
               "enum": [
                 "vega",
@@ -1724,41 +1729,31 @@
           {
             "name": "example_url",
             "type": "string",
-            "description": "URL to rendered example in the gallery",
+            "description": "Stable, unique URL of the rendered gallery example",
             "format": "uri"
           },
           {
             "name": "spec_url",
             "type": "string",
-            "description": "Immutable, commit-pinned URL to the source specification or code",
+            "description": "Immutable, commit-pinned URL of the source specification or code",
             "format": "uri"
           },
           {
             "name": "categories",
             "type": "array",
-            "description": "Tags or categories for the example (e.g., 'Bar Charts', 'Interactive')"
+            "description": "Array of category-name strings assigned by the source gallery"
           },
           {
             "name": "description",
             "type": "string",
-            "description": "Optional description of what the example demonstrates (may be null)"
+            "description": "Description of what the example demonstrates, or null when unavailable"
           },
           {
             "name": "datasets",
             "type": "array",
-            "description": "Dataset names referencing resource.name in this package"
+            "description": "Array of Data Package resource names (`resources[].name`) used by the example"
           }
-        ],
-        "primaryKey": [
-          "example_url"
-        ],
-        "$schema": "https://datapackage.org/profiles/2.0/tableschema.json",
-        "uniqueKeys": [
-          [
-            "spec_url"
-          ]
-        ],
-        "fieldsMatch": "exact"
+        ]
       }
     },
     {
