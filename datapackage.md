@@ -1,5 +1,5 @@
 # vega-datasets
-`3.2.1` | [GitHub](git+http://github.com/vega/vega-datasets.git) | 2026-08-21 09:22:22 [UTC]
+`3.2.1` | [GitHub](git+http://github.com/vega/vega-datasets.git) | 2026-08-25 01:00:14 [UTC]
 
 Common repository for example datasets used by Vega related projects. 
 BSD-3-Clause license applies only to package code and infrastructure. Users should verify their use of datasets 
@@ -42,6 +42,7 @@ coordinates), identification codes, name, city, state, and country. While the ex
 source of this file is unknown, this data is consistent with files provided on a monthly 
 frequency by the FAA's [National Airspace System Resource](https://www.faa.gov/air_traffic/flight_info/aeronav/aero_data/NASR_Subscription/).
 ### schema
+    
 | name      | type   |
 |:----------|:-------|
 | iata      | string |
@@ -89,6 +90,7 @@ as a powerful demonstration that identical summary statistics can mask radically
 statistical analysis should combine both numerical calculations and graphical examination.  
 
 ### schema
+    
 | name   | type    |
 |:-------|:--------|
 | Series | string  |
@@ -114,6 +116,7 @@ R.A. Fisher popularized its use in the field of statistics when he included it i
 Since then it has been used to demonstrate new visualization techniques, including the trellis charts developed by Richard Becker, William Cleveland and others in the 1990s.
 
 ### schema
+    
 | name    | type    |
 |:--------|:--------|
 | yield   | number  |
@@ -135,6 +138,7 @@ birdstrikes.csv
 ### description
 Records of reported wildlife strikes received by the U.S. FAA
 ### schema
+    
 | name                      | type    |
 |:--------------------------|:--------|
 | Airport Name              | string  |
@@ -165,6 +169,7 @@ budget.json
 ### description
 Historical and forecasted federal revenue/receipts produced in 2016 by the U.S. Office of Management and Budget.
 ### schema
+    
 | name                    | type    |
 |:------------------------|:--------|
 | Source Category Code    | integer |
@@ -256,6 +261,7 @@ Reveals how budget forecasts made in any given year compared to what actually ha
 with positive values indicating surpluses (briefly seen around 2000) and negative values 
 representing deficits (reaching a particularly large value of -$1.78 trillion during the 2008-2009 financial crisis).
 ### schema
+    
 | name         | type    | description                                                           |
 |:-------------|:--------|:----------------------------------------------------------------------|
 | budgetYear   | integer | The year for which the budget outcome is being reported               |
@@ -304,6 +310,7 @@ reads as follows:
 > It also inhibits actinomycetes, but is inactive against viruses and fungi. Its mode of action is not understood.
 
 ### schema
+    
 | name          | type   |
 |:--------------|:-------|
 | Bacteria      | string |
@@ -327,6 +334,7 @@ cars.json
 ### description
 Collection of car specifications and performance metrics from various automobile manufacturers.
 ### schema
+    
 | name             | type    |
 |:-----------------|:--------|
 | Name             | string  |
@@ -361,6 +369,7 @@ Values are adjusted to 24:00 hours on the 15th of each month.
 Only includes rows with valid data.
 
 ### schema
+    
 | name         | type   |
 |:-------------|:-------|
 | Date         | date   |
@@ -386,6 +395,7 @@ current values and adjacent time period values (previous and next) for each indi
 estimates and use current geographic boundaries for historical data. Gapminder states that it 
 aims to "show people the big picture" rather than support detailed numeric analysis.
 ### schema
+    
 | name          | type    | description                                                              |
 |:--------------|:--------|:-------------------------------------------------------------------------|
 | _comment      | string  |                                                                          |
@@ -424,6 +434,7 @@ innovative visualizations proved that "far more men died of disease, infection, 
 than in battle—a fact that shocked the British nation." Her work also vividly illustrated 
 the dramatic impact of sanitary reforms, particularly in reducing preventable deaths.
 ### schema
+    
 | name      | type    | description                                                                                                                                                                                                                                                                             |
 |:----------|:--------|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | date      | date    | First day of each month during the observation period, in ISO 8601 format (YYYY-MM-DD)                                                                                                                                                                                                  |
@@ -448,6 +459,7 @@ maintained by the Centre for Research on the Epidemiology of Disasters (CRED) at
 Processed by Our World in Data to standardize country names and world region definitions, converting units,
 calculating derived indicators, and adapting metadata. Deaths are reported as absolute numbers.
 ### schema
+    
 | name   | type    |
 |:-------|:--------|
 | Entity | string  |
@@ -473,6 +485,7 @@ the cheap gas era, Arab oil embargo, energy crisis, record low prices, and the
 "swing backward" from 1956 to 2010.
 
 ### schema
+    
 | name   | type    | description                                                                        | categories                         |
 |:-------|:--------|:-----------------------------------------------------------------------------------|:-----------------------------------|
 | side   | string  | Label positioning indicator used in the original visualization to optimize         | ['left', 'right', 'top', 'bottom'] |
@@ -520,6 +533,7 @@ Network of class dependencies for the Flare visualization library. Each entry
 represents a directed edge where the `source` class depends on (imports) the `target` class.
 IDs correspond to those in `flare.json`.
 ### schema
+    
 | name   | type    | description                                            | constraints        |
 |:-------|:--------|:-------------------------------------------------------|:-------------------|
 | source | integer | ID of the class that has the dependency (the importer) | {'required': True} |
@@ -537,6 +551,7 @@ Represents a tree structure where nodes have different fields depending on their
 - Leaf nodes: `id`, `name`, `parent`, and `size`
 
 ### schema
+    
 | name   | type    | description                       | constraints        |
 |:-------|:--------|:----------------------------------|:-------------------|
 | id     | integer | Unique identifier for the node    | {'required': True} |
@@ -550,6 +565,7 @@ Collected under regulatory reporting requirements (14 CFR Part 234), which manda
 that qualifying airlines report on-time performance data to BTS. Transformed using 
 `/scripts/flights.py`
 ### schema
+    
 | name        | type     | format         |
 |:------------|:---------|:---------------|
 | date        | datetime | %Y/%m/%d %H:%M |
@@ -574,6 +590,7 @@ Collected under regulatory reporting requirements (14 CFR Part 234), which manda
 that qualifying airlines report on-time performance data to BTS. Transformed using 
 `/scripts/flights.py`
 ### schema
+    
 | name     | type    |
 |:---------|:--------|
 | delay    | integer |
@@ -596,6 +613,7 @@ Collected under regulatory reporting requirements (14 CFR Part 234), which manda
 that qualifying airlines report on-time performance data to BTS. Transformed using 
 `/scripts/flights.py`
 ### schema
+    
 | name     | type    |
 |:---------|:--------|
 | delay    | integer |
@@ -618,6 +636,7 @@ Collected under regulatory reporting requirements (14 CFR Part 234), which manda
 that qualifying airlines report on-time performance data to BTS. Transformed using 
 `/scripts/flights.py`
 ### schema
+    
 | name        | type     | format         |
 |:------------|:---------|:---------------|
 | date        | datetime | %Y/%m/%d %H:%M |
@@ -642,6 +661,7 @@ Collected under regulatory reporting requirements (14 CFR Part 234), which manda
 that qualifying airlines report on-time performance data to BTS. Transformed using 
 `/scripts/flights.py`
 ### schema
+    
 | name        | type     | format         |
 |:------------|:---------|:---------------|
 | date        | datetime | %Y/%m/%d %H:%M |
@@ -666,6 +686,7 @@ Collected under regulatory reporting requirements (14 CFR Part 234), which manda
 that qualifying airlines report on-time performance data to BTS. Transformed using 
 `/scripts/flights.py`
 ### schema
+    
 | name        | type     | format         |
 |:------------|:---------|:---------------|
 | date        | datetime | %Y/%m/%d %H:%M |
@@ -690,6 +711,7 @@ Collected under regulatory reporting requirements (14 CFR Part 234), which manda
 that qualifying airlines report on-time performance data to BTS. Transformed using 
 `/scripts/flights.py`
 ### schema
+    
 | name        | type     | format         |
 |:------------|:---------|:---------------|
 | date        | datetime | %Y/%m/%d %H:%M |
@@ -712,6 +734,7 @@ flights-airport.csv
 Flight information for the year 2008. Each record consists of an origin airport (identified by IATA id),
 a destination airport, and the count of flights along this route.
 ### schema
+    
 | name        | type    |
 |:------------|:--------|
 | origin      | string  |
@@ -733,6 +756,7 @@ Football match outcomes across multiple divisions from 2013 to 2017, part of a
 larger dataset from OpenFootball. The subset was made such that there are records for all five
 chosen divisions over the time period.
 ### schema
+    
 | name       | type    |
 |:-----------|:--------|
 | date       | date    |
@@ -763,15 +787,18 @@ created for a particular vega-datasets release from one pinned commit per galler
 When a newer version of vega-datasets is released, the file may be regenerated to
 reflect examples added, removed, or updated in those galleries.
 ### schema
-| name         | type   | description                                                                   | constraints                               | format   |
-|:-------------|:-------|:------------------------------------------------------------------------------|:------------------------------------------|:---------|
-| gallery_name | string | Gallery that publishes the example                                            | {'enum': ['vega', 'vega-lite', 'altair']} |          |
-| example_name | string | Human-readable example title                                                  |                                           |          |
-| example_url  | string | Stable, unique URL of the rendered gallery example                            |                                           | uri      |
-| spec_url     | string | Immutable, commit-pinned URL of the source specification or code              |                                           | uri      |
-| categories   | array  | Array of category-name strings assigned by the source gallery                 |                                           |          |
-| description  | string | Description of what the example demonstrates, or null when unavailable        |                                           |          |
-| datasets     | array  | Array of Data Package resource names (`resources[].name`) used by the example |                                           |          |
+    - `primaryKey` ['example_url']
+    - `$schema` https://datapackage.org/profiles/2.0/tableschema.json
+    - `fieldsMatch` equal
+| name         | type   | description                                                                   | constraints                               | format   | arrayItem          |
+|:-------------|:-------|:------------------------------------------------------------------------------|:------------------------------------------|:---------|:-------------------|
+| gallery_name | string | Gallery that publishes the example                                            | {'enum': ['vega', 'vega-lite', 'altair']} |          |                    |
+| example_name | string | Human-readable example title                                                  |                                           |          |                    |
+| example_url  | string | Stable, unique URL of the rendered gallery example                            |                                           | uri      |                    |
+| spec_url     | string | Immutable, commit-pinned URL of the source specification or code              | {'unique': True}                          | uri      |                    |
+| categories   | array  | Array of category-name strings assigned by the source gallery                 |                                           |          | {'type': 'string'} |
+| description  | string | Description of what the example demonstrates, or null when unavailable        |                                           |          |                    |
+| datasets     | array  | Array of Data Package resource names (`resources[].name`) used by the example |                                           |          | {'type': 'string'} |
 ### sources
 | title             | path                                       |
 |:------------------|:-------------------------------------------|
@@ -795,6 +822,7 @@ Gapminder (v30, 2023) defines per-capita income as follows:
 >has the same purchasing power over GDP as the U.S. dollar has in the United States."
 
 ### schema
+    
 | name       | type    |
 |:-----------|:--------|
 | country    | string  |
@@ -836,6 +864,7 @@ Notes:
    name 'cluster' instead of renaming it to 'six_regions'. 
 
 ### schema
+    
 | name        | type    | description                                          | categories                                                                                                                                                                                                                                                        |
 |:------------|:--------|:-----------------------------------------------------|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | year        | integer | Years from 1955 to 2005 at 5-year intervals          |                                                                                                                                                                                                                                                                   |
@@ -881,6 +910,7 @@ Simulated GitHub contribution data showing hourly commit counts across
 different times of day. Designed to demonstrate typical patterns of developer activity 
 in a GitHub-style punchcard visualization format.
 ### schema
+    
 | name   | type    | description                                         |
 |:-------|:--------|:----------------------------------------------------|
 | time   | string  | Hourly timestamp from January 1st to May 30th, 2015 |
@@ -899,6 +929,7 @@ global-temp.csv
 ### description
 Combined Land-Surface Air and Sea-Surface Water Temperature Anomalies (Land-Ocean Temperature Index, L-OTI), 1880-2023.
 ### schema
+    
 | name   | type    |
 |:-------|:--------|
 | year   | integer |
@@ -921,6 +952,7 @@ shows the percentage of households within different income brackets for each sta
 Generated using `/scripts/income.py`. This product uses the Census Bureau Data API 
 but is not endorsed or certified by the Census Bureau.
 ### schema
+    
 | name   | type    |
 |:-------|:--------|
 | name   | string  |
@@ -945,6 +977,7 @@ iowa-electricity.csv
 Annual net generation of electricity in Iowa by source, in thousand megawatthours. U.S. EIA data downloaded on May 6, 2018. 
 Useful for illustrating stacked area charts. Demonstrates dramatic increase in wind power production.
 ### schema
+    
 | name           | type    |
 |:---------------|:--------|
 | year           | date    |
@@ -983,6 +1016,7 @@ The organization requests use of the following citation for this json file:
 Steven Ruggles, Katie Genadek, Ronald Goeken, Josiah Grover, and Matthew Sobek. Integrated Public Use Microdata Series: Version 6.0. Minneapolis: University of Minnesota, 2015. http://doi.org/10.18128/D010.V6.0
 
 ### schema
+    
 | name   | type    | description                                   |
 |:-------|:--------|:----------------------------------------------|
 | job    | string  | The occupation title                          |
@@ -1006,6 +1040,7 @@ A comprehensive record of fatalities during the five days of civil unrest in Los
 April 29, 1992, documenting over 60 deaths with associated geographic coordinates where each person lost their life.
 Originally compiled and published by the Los Angeles Times Data Desk.
 ### schema
+    
 | name         | type    |
 |:-------------|:--------|
 | first_name   | string  |
@@ -1044,6 +1079,7 @@ londonCentroids.json
 ### description
 Calculated from `londonBoroughs.json` using [`d3.geoCentroid`](https://d3js.org/d3-geo/math#geoCentroid).
 ### schema
+    
 | name   | type   |
 |:-------|:-------|
 | name   | string |
@@ -1081,6 +1117,7 @@ lookup_groups.csv
 A nine-row lookup table for the `lookup_people.csv` dataset, 
 mapping people to groups. Used to [demonstrate](https://vega.github.io/vega-lite/examples/lookup.html) `lookup` transforms.
 ### schema
+    
 | name   | type    |
 |:-------|:--------|
 | group  | integer |
@@ -1101,6 +1138,7 @@ A synthetic list of nine people and their associated name, age,
 and height in centimeters. Used in conjunction with `lookup_groups.csv` 
 to [demonstrate](https://vega.github.io/vega-lite/examples/lookup.html) `lookup` transforms.
 ### schema
+    
 | name   | type    |
 |:-------|:--------|
 | name   | string  |
@@ -1154,6 +1192,7 @@ from the original dataset is retained for backwards compatibility.
 Source data has been verified against the kings & queens and interregnum pages of the official website of the British royal family (retrieved in Aug. 2024).
 
 ### schema
+    
 | name   | type    | description                                                                                                 |
 |:-------|:--------|:------------------------------------------------------------------------------------------------------------|
 | name   | string  | The ruler's name or identifier (e.g., "W&M" for William and Mary, "Cromwell" for the period of interregnum) |
@@ -1181,6 +1220,7 @@ and audience ratings. Contains known data quality issues typical of real-world d
 These characteristics make it suitable as a teaching resource for developing data cleaning
 and validation skills in real-world analysis workflows.
 ### schema
+    
 | name                   | type    | format   |
 |:-----------------------|:--------|:---------|
 | Title                  | string  |          |
@@ -1214,6 +1254,7 @@ in data visualization and statistics.
 A contrast to uniformly distributed data in `uniform-2d.json`
 
 ### schema
+    
 | name   | type   | description                                                      |
 |:-------|:-------|:-----------------------------------------------------------------|
 | u      | number | mean: 0.005, std: 0.192, range: [-0.578, 0.533], p-value: 0.680  |
@@ -1233,6 +1274,7 @@ obesity.json
 State-level obesity rates (BMI >= 30) for the U.S. in 1995. 
 Originally [Behavioral Risk Factor Surveillance System (BRFSS)](https://www.cdc.gov/brfss/index.html) statistics.
 ### schema
+    
 | name   | type    |
 |:-------|:--------|
 | id     | integer |
@@ -1256,6 +1298,7 @@ Performance of the Chicago Board Options Exchange
 The precise methodology used to derive the signal and calculate the ret columns is unclear.
 
 ### schema
+    
 | name   | type   |
 |:-------|:-------|
 | date   | date   |
@@ -1281,6 +1324,7 @@ ecosystems and penguin biology. All measurements follow standardized units, enab
 variations between species and sexual dimorphism in Antarctic penguins. 
 
 ### schema
+    
 | name                | type    | description                                                         |
 |:--------------------|:--------|:--------------------------------------------------------------------|
 | Species             | string  | Penguin species (Adelie, Gentoo, or Chinstrap)                      |
@@ -1305,6 +1349,7 @@ platformer-terrain.json
 ### description
 Assets from the video game Celeste. Added in [#376](https://github.com/vega/vega-datasets/pull/376)
 ### schema
+    
 | name       | type    |
 |:-----------|:--------|
 | x          | integer |
@@ -1342,6 +1387,7 @@ Additionally, the FEC's Github [repository](https://github.com/fecgov/FEC) state
 > contributor lists for commercial purposes or to solicit donations. Learn more on 
 > [FEC.gov](https://www.fec.gov/).
 ### schema
+    
 | name                                          | type    | format   |
 |:----------------------------------------------|:--------|:---------|
 | Candidate_Identification                      | string  |          |
@@ -1394,6 +1440,7 @@ Public Use Microdata Series: Version 6.0. Minneapolis: University of Minnesota, 
 http://doi.org/10.18128/D010.V6.0
 
 ### schema
+    
 | name   | type    | description                                                         |
 |:-------|:--------|:--------------------------------------------------------------------|
 | year   | integer | Four-digit year of the survey                                       |
@@ -1415,6 +1462,7 @@ population_engineers_hurricanes.csv
 Per-state population (2016 ACS 1-Year), ratio of engineers to total civilian employed population (2016 ACS 1-Year), and total hurricane landfalls (possibly 1851-2015). Used in Vega-Lite example,
 [Three Choropleths Representing Disjoint Data from the Same Table](https://vega.github.io/vega-lite/examples/geo_repeat.html)
 ### schema
+    
 | name       | type    |
 |:-----------|:--------|
 | state      | string  |
@@ -1442,6 +1490,7 @@ precipitation. Learn more in the [documentation](https://www1.ncdc.noaa.gov/pub/
 We only included temperature, wind, and pressure 
 and updated the format to be easier to parse.
 ### schema
+    
 | name        | type     |
 |:------------|:---------|
 | date        | datetime |
@@ -1464,6 +1513,7 @@ Daily weather in metric units. Transformed using `/scripts/weather.py`.
 The categorical "weather" field is synthesized from multiple fields in the original dataset. 
 This data is intended for instructional purposes.
 ### schema
+    
 | name          | type   | description                                                                                                                 | categories                                |
 |:--------------|:-------|:----------------------------------------------------------------------------------------------------------------------------|:------------------------------------------|
 | date          | date   | Date of the weather observation                                                                                             |                                           |
@@ -1486,6 +1536,7 @@ sp500-2000.csv
 ### description
 S&amp;P 500 index values from 2000 to 2020.
 ### schema
+    
 | name     | type    |
 |:---------|:--------|
 | date     | date    |
@@ -1508,6 +1559,7 @@ from January 2000 to March 2010. Captures several significant market events incl
 the dot-com bubble burst (2000-2002), the mid-2000s bull market, and the 2008 financial crisis. 
 
 ### schema
+    
 | name   | type   | description                                            | format   |
 |:-------|:-------|:-------------------------------------------------------|:---------|
 | date   | date   | Date of monthly observation in the format 'MMM D YYYY' | %b %d %Y |
@@ -1531,6 +1583,7 @@ The original raster data also contains values for summer and winter habitat, whi
 for zonal statistics.
 
 ### schema
+    
 | name                  | type    | description                                                                                                           |
 |:----------------------|:--------|:----------------------------------------------------------------------------------------------------------------------|
 | item_id               | string  | Unique identifier for the species data item on ScienceBase.                                                           |
@@ -1554,6 +1607,7 @@ stocks.csv
 ### description
 Monthly stock prices for five companies from 2000 to 2010.
 ### schema
+    
 | name   | type   | format   |
 |:-------|:-------|:---------|
 | symbol | string |          |
@@ -1568,6 +1622,7 @@ District, categorized by cuisine type. Used to create a [ridgeline plot example]
 showing the prevalence of various food and beverage categories. The example graphic 
 using this dataset states that it originally appeared in Alaska Airlines Beyond Magazine (Sep 2017, p. 120)
 ### schema
+    
 | name   | type   |
 |:-------|:-------|
 | key    | string |
@@ -1591,6 +1646,7 @@ The BLS Web site states:
 
 See full BLS [terms of service](https://www.bls.gov/developers/termsOfService.htm).
 ### schema
+    
 | name   | type     | description                                                       |
 |:-------|:---------|:------------------------------------------------------------------|
 | series | string   | Industry name                                                     |
@@ -1640,6 +1696,7 @@ and [annual](https://www.bls.gov/lau/tables.htm#cntyaa) county data.
 
 When using BLS public data API and datasets, users should adhere to the [BLS Terms of Service](https://www.bls.gov/developers/termsOfService.htm).
 ### schema
+    
 | name   | type    | description                             |
 |:-------|:--------|:----------------------------------------|
 | id     | integer | The combined state and county FIPS code |
@@ -1663,6 +1720,7 @@ correlation (-0.019), suggesting independence, as expected for a uniform distrib
 A contrast to normally distributed data in `normal-2d.json`.
 
 ### schema
+    
 | name   | type   | description                                      |
 |:-------|:-------|:-------------------------------------------------|
 | u      | number | mean: 0.015, std: 0.277, range: [-0.499, 0.500]  |
@@ -1714,6 +1772,7 @@ supersector's employment. It is useful for illustrating how to make bar charts t
 negative and positive values.
 
 ### schema
+    
 | name                               | type    |
 |:-----------------------------------|:--------|
 | month                              | date    |
@@ -1765,6 +1824,7 @@ According to [USGS]((https://www.usgs.gov/faqs/what-are-terms-uselicensing-map-s
 > Geological Survey, National Geospatial Program."
 
 ### schema
+    
 | name   | type   |
 |:-------|:-------|
 | lon    | number |
@@ -1801,6 +1861,7 @@ Transformed from NOAA data using the script `/scripts/weather.py`.
 The categorical "weather" field is synthesized from multiple fields in the original dataset.
 Intended for instructional purposes.
 ### schema
+    
 | name          | type   | description                                                                                                                 | categories                                |
 |:--------------|:-------|:----------------------------------------------------------------------------------------------------------------------------|:------------------------------------------|
 | location      | string | City location of the weather observation (Seattle or New York)                                                              |                                           |
@@ -1839,6 +1900,7 @@ He intended to demonstrate that:
 > 'never at any former period was wheat so cheap, in proportion to mechanical labour, as it is at the present time.'"
 
 ### schema
+    
 | name   | type    |
 |:-------|:--------|
 | year   | integer |
@@ -1858,6 +1920,7 @@ windvectors.csv
 ### description
 Simulated wind patterns over northwestern Europe.
 ### schema
+    
 | name      | type    |
 |:----------|:--------|
 | longitude | number  |
@@ -1902,6 +1965,7 @@ Administrative boundaries have been redrawn, counties reorganized and renamed, a
 codes modified. Latitude/longitude coordinates have been updated by Geonames since this 
 data was collected. For current postal code data, refer to the main GeoNames database.
 ### schema
+    
 | name      | type    |
 |:----------|:--------|
 | zip_code  | integer |

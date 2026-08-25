@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from unittest.mock import AsyncMock
 
@@ -40,6 +41,9 @@ NAME_MAP = {
     "data/us-state-capitals.json": "us_state_capitals",
     "data/world-110m.json": "world_110m",
     "data/flights-200k.arrow": "flights_200k_arrow",
+    "data/ffox.png": "ffox",
+    "data/gimp.png": "gimp",
+    "data/7zip.png": "icon_7zip",
 }
 VALID_NAMES = set(NAME_MAP.values())
 
@@ -121,6 +125,35 @@ def test_normalize_external_url():
 def test_extract_vegalite_simple():
     spec = {"data": {"url": "data/cars.json"}}
     assert extract_vegalite_datasets(spec, NAME_MAP) == ["cars"]
+
+
+def test_extract_vegalite_inline_asset_references():
+    """Image paths nested in inline values are dataset references too."""
+    spec = {
+        "data": {
+            "values": [
+                {
+                    "name": "Firefox",
+                    "image": "data/ffox.png",
+                    "metadata": {
+                        "icon": (
+                            "https://cdn.jsdelivr.net/npm/vega-datasets@2.11.0/"
+                            "data/gimp.png"
+                        ),
+                        "homepage": "https://example.com/data/not-a-dataset.png",
+                        "note": "data is embedded inline",
+                    },
+                },
+                {"name": "7-Zip", "image": "data/7zip.png"},
+            ]
+        }
+    }
+
+    assert extract_vegalite_datasets(spec, NAME_MAP) == [
+        "ffox",
+        "gimp",
+        "icon_7zip",
+    ]
 
 
 def test_extract_vegalite_layers():
@@ -223,6 +256,20 @@ def test_extract_vega_simple():
         ]
     }
     assert extract_vega_datasets(spec, NAME_MAP) == ["cars"]
+
+
+def test_extract_vega_inline_asset_references():
+    """Vega inline values receive the same recursive asset handling."""
+    spec = {
+        "data": [
+            {
+                "name": "icons",
+                "values": [{"image": "data/ffox.png"}, ["data/gimp.png"]],
+            }
+        ]
+    }
+
+    assert extract_vega_datasets(spec, NAME_MAP) == ["ffox", "gimp"]
 
 
 def test_extract_vega_signal():
@@ -387,6 +434,18 @@ def test_assert_unique_urls_raises_on_duplicate_example_url():
             {"example_url": "https://g/a.html", "spec_url": "https://example.com/a"},
             {"example_url": "https://g/a.html", "spec_url": "https://example.com/b"},
         ])
+
+
+def test_committed_registry_satisfies_pipeline_invariants():
+    """Keep the checked-in snapshot behind the generator's safety rails."""
+    examples = json.loads(
+        (gallery_examples.REPO_ROOT / "data" / "gallery-examples.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert_expected_galleries(examples)
+    assert_unique_urls(examples)
 
 
 # ---------------------------------------------------------------------------

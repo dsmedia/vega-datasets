@@ -193,9 +193,6 @@ uv run taplo fmt --check --diff
 # Python linting and formatting
 uv run ruff check
 uv run ruff format --check
-
-# Python tests
-uv run pytest
 ```
 
 To automatically fix issues:
@@ -248,7 +245,7 @@ test flips XFAIL → XPASS and the run fails, prompting allowlist removal.
 
 3. Run checks and build:
    ```
-   uv run taplo fmt --check --diff && uv run ruff check && uv run ruff format --check && uv run pytest
+   uv run taplo fmt --check --diff && uv run ruff check && uv run ruff format --check
    npm run build
    ```
 

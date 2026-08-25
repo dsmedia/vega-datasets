@@ -156,7 +156,12 @@ def test_gallery_resource_has_documented_table_schema() -> None:
         "description",
         "datasets",
     ]
-    assert "primaryKey" not in schema
+    assert schema["$schema"] == "https://datapackage.org/profiles/2.0/tableschema.json"
+    assert schema["fieldsMatch"] == "equal"
+    assert schema["primaryKey"] == ["example_url"]
+    assert fields["spec_url"]["constraints"]["unique"] is True
+    for name in ("categories", "datasets"):
+        assert fields[name]["arrayItem"] == {"type": "string"}
     assert fields["example_url"]["description"].startswith("Stable, unique URL")
     assert "resources[].name" in fields["datasets"]["description"]
 

@@ -178,6 +178,25 @@ def _append_ref(datasets: list[str], url: Any, name_map: dict[str, str]) -> None
         datasets.append(ref)
 
 
+def _inline_value_refs(values: Any, name_map: dict[str, str]) -> list[str]:
+    """Extract dataset paths embedded anywhere beneath inline ``data.values``."""
+    datasets: list[str] = []
+
+    def walk(value: Any) -> None:
+        if isinstance(value, str):
+            if value.startswith(("data/", *_VEGA_DATASETS_PREFIXES)):
+                _append_ref(datasets, value, name_map)
+        elif isinstance(value, dict):
+            for child in value.values():
+                walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child)
+
+    walk(values)
+    return datasets
+
+
 def _vegalite_lookup_refs(spec: dict[str, Any], name_map: dict[str, str]) -> list[str]:
     """Extract dataset refs from Vega-Lite transform lookup nodes."""
     datasets: list[str] = []
@@ -199,8 +218,11 @@ def extract_vegalite_datasets(
     """Extract dataset references from a Vega-Lite spec by recursive walk."""
     datasets: list[str] = []
 
-    if isinstance(spec.get("data"), dict) and "url" in spec["data"]:
-        _append_ref(datasets, spec["data"]["url"], name_map)
+    if isinstance(data := spec.get("data"), dict):
+        if "url" in data:
+            _append_ref(datasets, data["url"], name_map)
+        if "values" in data:
+            datasets.extend(_inline_value_refs(data["values"], name_map))
 
     datasets.extend(_vegalite_lookup_refs(spec, name_map))
 
@@ -272,6 +294,9 @@ def extract_vega_datasets(spec: dict[str, Any], name_map: dict[str, str]) -> lis
             _append_ref(datasets, url_value, name_map)
         elif isinstance(url_value, dict) and "signal" in url_value:
             datasets.extend(_vega_signal_refs(url_value, spec, name_map))
+
+        if "values" in data_item:
+            datasets.extend(_inline_value_refs(data_item["values"], name_map))
 
         datasets.extend(_vega_lookup_transform_refs(data_item, name_map))
 

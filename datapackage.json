@@ -20,7 +20,7 @@
     }
   ],
   "version": "3.2.1",
-  "created": "2026-08-21T09:22:22.949067+00:00",
+  "created": "2026-08-25T01:00:14.083703+00:00",
   "resources": [
     {
       "name": "icon_7zip",
@@ -1700,8 +1700,8 @@
       "format": "json",
       "mediatype": "text/json",
       "encoding": "utf-8",
-      "hash": "sha1:307b1f2b283102ef3a086ffb50c16abf763599df",
-      "bytes": 259668,
+      "hash": "sha1:e77e15765e62904cc0962f487e403f8cb97243e0",
+      "bytes": 259719,
       "dialect": {
         "json": {
           "keyed": true
@@ -1736,12 +1736,18 @@
             "name": "spec_url",
             "type": "string",
             "description": "Immutable, commit-pinned URL of the source specification or code",
-            "format": "uri"
+            "format": "uri",
+            "constraints": {
+              "unique": true
+            }
           },
           {
             "name": "categories",
             "type": "array",
-            "description": "Array of category-name strings assigned by the source gallery"
+            "description": "Array of category-name strings assigned by the source gallery",
+            "arrayItem": {
+              "type": "string"
+            }
           },
           {
             "name": "description",
@@ -1751,9 +1757,17 @@
           {
             "name": "datasets",
             "type": "array",
-            "description": "Array of Data Package resource names (`resources[].name`) used by the example"
+            "description": "Array of Data Package resource names (`resources[].name`) used by the example",
+            "arrayItem": {
+              "type": "string"
+            }
           }
-        ]
+        ],
+        "primaryKey": [
+          "example_url"
+        ],
+        "$schema": "https://datapackage.org/profiles/2.0/tableschema.json",
+        "fieldsMatch": "equal"
       }
     },
     {

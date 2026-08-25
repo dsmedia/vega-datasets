@@ -1924,6 +1924,9 @@ title = "The 3-Clause BSD License"
 path  = "https://opensource.org/license/bsd-3-clause"
 
 [resources.schema]
+"$schema"   = "https://datapackage.org/profiles/2.0/tableschema.json"
+fieldsMatch = "equal"
+primaryKey  = ["example_url"]
 
 [[resources.schema.fields]]
 name        = "gallery_name"
@@ -1947,11 +1950,13 @@ name        = "spec_url"
 type        = "string"
 format      = "uri"
 description = "Immutable, commit-pinned URL of the source specification or code"
+constraints = { unique = true }
 
 [[resources.schema.fields]]
 name        = "categories"
 type        = "array"
 description = "Array of category-name strings assigned by the source gallery"
+arrayItem   = { type = "string" }
 
 [[resources.schema.fields]]
 name        = "description"
@@ -1962,3 +1967,4 @@ description = "Description of what the example demonstrates, or null when unavai
 name        = "datasets"
 type        = "array"
 description = "Array of Data Package resource names (`resources[].name`) used by the example"
+arrayItem   = { type = "string" }
