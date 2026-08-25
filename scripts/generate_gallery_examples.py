@@ -542,7 +542,7 @@ def _build_vegalite_examples(
             if not isinstance(items, list):
                 continue
             category = category or section_name
-            for item in items:
+            for item in (raw for raw in items if isinstance(raw, dict)):
                 slug = item["name"]
                 title = item.get("title")  # None → synthesized after the walk
                 description = item.get("description")

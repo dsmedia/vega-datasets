@@ -377,6 +377,22 @@ def test_build_vegalite_examples_spec_url_uses_jsdelivr_with_sha():
     )
 
 
+def test_build_vegalite_examples_skips_non_dict_items():
+    """Non-dict entries in an items list are skipped, matching the vega parser."""
+    vl_index = {
+        "Single-View Plots": {
+            "Bar Charts": [
+                "stray_string",
+                None,
+                ["nested", "list"],
+                {"name": "bar_simple", "title": "Simple Bar"},
+            ],
+        }
+    }
+    examples = _build_vegalite_examples(vl_index, _VL_SHA)
+    assert [e["example_name"] for e in examples] == ["Simple Bar"]
+
+
 # ---------------------------------------------------------------------------
 # build_name_map
 # ---------------------------------------------------------------------------
