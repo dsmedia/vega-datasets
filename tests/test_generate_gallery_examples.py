@@ -93,6 +93,11 @@ def test_normalize_github_url():
     assert normalize_dataset_reference(url, NAME_MAP) == "cars"
 
 
+def test_normalize_github_pages_url():
+    url = "https://vega.github.io/vega-datasets/data/cars.json"
+    assert normalize_dataset_reference(url, NAME_MAP) == "cars"
+
+
 def test_normalize_kebab_to_snake():
     assert (
         normalize_dataset_reference("data/us-state-capitals.json", NAME_MAP)
@@ -311,6 +316,28 @@ def test_extract_vega_lookup_transform():
     }
     result = extract_vega_datasets(spec, NAME_MAP)
     assert sorted(result) == ["cars", "movies"]
+
+
+def test_extract_vega_nested_group_data():
+    """Group marks can load data and contain further group scopes."""
+    spec = {
+        "data": [],
+        "marks": [
+            {
+                "type": "group",
+                "data": [{"name": "cars", "url": "data/cars.json"}],
+                "marks": [
+                    {
+                        "type": "group",
+                        "signals": [{"name": "dataset", "value": "data/movies.json"}],
+                        "data": [{"name": "movies", "url": {"signal": "dataset"}}],
+                    }
+                ],
+            }
+        ],
+    }
+
+    assert extract_vega_datasets(spec, NAME_MAP) == ["cars", "movies"]
 
 
 # ---------------------------------------------------------------------------

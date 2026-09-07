@@ -112,6 +112,7 @@ _VEGA_DATASETS_PREFIXES: Final[tuple[str, ...]] = (
     "https://cdn.jsdelivr.net/npm/vega-datasets/",
     "https://cdn.jsdelivr.net/npm/vega-datasets@",
     "https://raw.githubusercontent.com/vega/vega-datasets/",
+    "https://vega.github.io/vega-datasets/",
 )
 
 
@@ -282,7 +283,7 @@ def _vega_lookup_transform_refs(
 
 
 def extract_vega_datasets(spec: dict[str, Any], name_map: dict[str, str]) -> list[str]:
-    """Extract dataset references from a Vega spec."""
+    """Extract dataset references from a Vega spec, including group scopes."""
     datasets: list[str] = []
 
     for data_item in spec.get("data") or []:
@@ -299,6 +300,13 @@ def extract_vega_datasets(spec: dict[str, Any], name_map: dict[str, str]) -> lis
             datasets.extend(_inline_value_refs(data_item["values"], name_map))
 
         datasets.extend(_vega_lookup_transform_refs(data_item, name_map))
+
+    # Group marks introduce nested scopes that can declare their own signals,
+    # data, and marks. Recurse with the group as the current spec so signal-
+    # based URLs resolve against the correct local scope.
+    for mark in spec.get("marks") or []:
+        if isinstance(mark, dict) and mark.get("type") == "group":
+            datasets.extend(extract_vega_datasets(mark, name_map))
 
     return datasets
 

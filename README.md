@@ -28,9 +28,9 @@ npm install vega-datasets
 
 ### HTTP Direct Access
 
-You can get the data directly via HTTP served by GitHub or jsDelivr (a fast CDN):
+You can get the data directly via HTTP served by GitHub Pages or jsDelivr (a fast CDN):
 
-- GitHub: https://vega.github.io/vega-datasets/data/cars.json
+- GitHub Pages (unversioned): https://vega.github.io/vega-datasets/data/cars.json
 - jsDelivr (with fixed version, recommended): https://cdn.jsdelivr.net/npm/vega-datasets@3/data/cars.json
 
 You can find a full listing of available datasets at https://cdn.jsdelivr.net/npm/vega-datasets/data/.
