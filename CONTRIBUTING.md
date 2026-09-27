@@ -50,6 +50,22 @@ For datasets requiring processing:
 - Ensure reproducibility with deterministic outputs and fixed random seeds when applicable
 - See `scripts/flights.py` as an example
 
+### Gallery Examples Registry
+
+The `data/gallery-examples.json` file catalogs examples from the Vega, Vega-Lite, and Altair galleries and identifies any `vega-datasets` resources each example uses.
+
+**When to regenerate:**
+
+Unlike the repository's stable example inputs, this file is a generated catalog of evolving upstream galleries. Regenerate it while preparing a `vega-datasets` release, or sooner after a material upstream change such as added, removed, renamed, or reorganized examples. Each generated file is a snapshot pinned to one upstream commit per gallery, not a continuously synchronized mirror.
+
+**Commands:**
+```bash
+uv run scripts/generate_gallery_examples.py         # Regenerate the file
+npm run build                                       # Then refresh datapackage.json/md
+```
+
+Configuration lives in `_data/gallery-examples.toml` (upstream refs and source URLs). Runtime is a few seconds: the generator fetches the three gallery indexes plus roughly 280 Vega and Vega-Lite specs; Altair publishes its dataset metadata directly in its index. Note that `datapackage.json` records the committed git-blob hash of each data file, so commit the regenerated `data/gallery-examples.json` first, then rebuild and amend the descriptor into the same commit.
+
 ## Metadata and Documentation
 
 We follow the [Data Package Standard 2.0](https://datapackage.org/) with:
@@ -217,6 +233,21 @@ example, `movies` whose schema is intentionally aspirational, or
 The slow-tier test for each is marked `xfail(strict=True)`, so it does
 not fail the run today — but if the upstream issue ever resolves, the
 test flips XFAIL → XPASS and the run fails, prompting allowlist removal.
+
+## The Field Guide Site
+
+[vega.github.io/vega-datasets](https://vega.github.io/vega-datasets/) is deployed from `main` by `.github/workflows/site.yml`. It runs GitHub Pages' usual Jekyll build of the repository, so `data/`, `datapackage.json` and the other files keep their URLs, and puts the Field Guide from `site/` on top as the home page.
+
+The Field Guide is generated from `datapackage.json`, `data/` and `data/gallery-examples.json`, so documenting a dataset (see [Metadata and Documentation](#metadata-and-documentation)) also updates its page. The home page is `README.md`.
+
+```bash
+npm run site:build        # catalog and thumbnails (scripts/build_site_catalog.py), then the bundle, into site/dist
+npm run site:serve        # preview at http://localhost:8000
+npm run site:test         # starter charts and the gapminder animation, offline (Node 22.12+)
+npm run site:check-links  # every outbound link; needs the network
+```
+
+A snapshot test lists the starter chart each dataset gets. If a change alters one on purpose, check the new chart and update the snapshot with `npx vitest run --config site/vitest.config.ts --project unit -u`.
 
 ## Contributing Process
 
