@@ -31,7 +31,11 @@
     "d3-dsv": "^3.0.1"
   },
   "devDependencies": {
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "@fontsource/public-sans": "^5.3.0",
+    "@fontsource/spectral": "^5.3.0",
     "@release-it/conventional-changelog": "^12.0.0",
+    "@rollup/plugin-commonjs": "^29.0.3",
     "@rollup/plugin-json": "^6.1.0",
     "@rollup/plugin-node-resolve": "^16.0.1",
     "@rollup/plugin-terser": "^1.0.0",
@@ -40,10 +44,17 @@
     "datalib": "^1.9.3",
     "husky": "^9.1.7",
     "lint-staged": "^16.2.7",
+    "lz-string": "^1.5.0",
+    "marked": "^18.0.14",
     "release-it": "^21.0.1",
     "rollup": "^4.47.1",
     "rollup-plugin-bundle-size": "^1.0.3",
-    "typescript": "^6.0.2"
+    "typescript": "^6.0.2",
+    "vega": "^6.4.0",
+    "vega-embed": "^7.3.0",
+    "vega-interpreter": "^2.3.2",
+    "vega-lite": "^6.4.3",
+    "vitest": "^5.0.2"
   },
   "scripts": {
     "prebuild": "./scripts/make-url-index.sh > src/urls.ts && ./scripts/build_datapackage.py",
@@ -51,7 +62,12 @@
     "github": "python scripts/github.py",
     "release": "release-it",
     "prepare": "husky",
-    "update-gallery": "uv run scripts/generate_gallery_examples.py"
+    "update-gallery": "uv run scripts/generate_gallery_examples.py",
+    "site:build": "uv run --group site scripts/build_site_catalog.py && rollup -c site/rollup.config.mjs",
+    "site:bundle": "rollup -c site/rollup.config.mjs",
+    "site:serve": "node site/scripts/serve.mjs",
+    "site:test": "vitest run --config site/vitest.config.ts --project unit",
+    "site:check-links": "vitest run --config site/vitest.config.ts --project links"
   },
   "lint-staged": {
     "*.py": ["uv run ruff check --fix", "uv run ruff format"]

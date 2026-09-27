@@ -6,3 +6,5 @@ node_modules
 .venv
 */**/*.ipynb
 .claude/
+site/dist
+site/.cache

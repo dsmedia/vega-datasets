@@ -1,0 +1,22 @@
+/** Test helpers: the built catalog and the repository's data files. */
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { Catalog, type CatalogFile } from '../src/catalog';
+
+export const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+export function loadCatalog(): Catalog {
+  const file = path.join(REPO, 'site', 'dist', 'catalog.json');
+  if (!existsSync(file)) throw new Error(`${file} is missing: run \`npm run site:build\` first.`);
+  return new Catalog(JSON.parse(readFileSync(file, 'utf8')) as CatalogFile);
+}
+
+/** Read the local copy of a dataset URL (jsDelivr or GitHub Pages), so tests run offline. */
+export function readDataUrl(url: string): string {
+  const rel = url.split('/data/').pop();
+  if (!rel || !/^https:\/\/(cdn\.jsdelivr\.net\/npm\/vega-datasets@\d+|vega\.github\.io\/vega-datasets)\/data\//.test(url)) {
+    throw new Error(`Not a vega-datasets data URL: ${url}`);
+  }
+  return readFileSync(path.join(REPO, 'data', rel), 'utf8');
+}

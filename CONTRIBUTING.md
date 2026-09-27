@@ -234,6 +234,21 @@ The slow-tier test for each is marked `xfail(strict=True)`, so it does
 not fail the run today — but if the upstream issue ever resolves, the
 test flips XFAIL → XPASS and the run fails, prompting allowlist removal.
 
+## The Field Guide Site
+
+[vega.github.io/vega-datasets](https://vega.github.io/vega-datasets/) is deployed from `main` by `.github/workflows/site.yml`. It runs GitHub Pages' usual Jekyll build of the repository, so `data/`, `datapackage.json` and the other files keep their URLs, and puts the Field Guide from `site/` on top as the home page.
+
+The Field Guide is generated from `datapackage.json`, `data/` and `data/gallery-examples.json`, so documenting a dataset (see [Metadata and Documentation](#metadata-and-documentation)) also updates its page. The home page is `README.md`.
+
+```bash
+npm run site:build        # catalog and thumbnails (scripts/build_site_catalog.py), then the bundle, into site/dist
+npm run site:serve        # preview at http://localhost:8000
+npm run site:test         # starter charts and the gapminder animation, offline (Node 22.12+)
+npm run site:check-links  # every outbound link; needs the network
+```
+
+A snapshot test lists the starter chart each dataset gets. If a change alters one on purpose, check the new chart and update the snapshot with `npx vitest run --config site/vitest.config.ts --project unit -u`.
+
 ## Contributing Process
 
 1. Create a branch:
