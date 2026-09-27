@@ -11,14 +11,31 @@
 <link rel="stylesheet" href="assets/site.css">
 </head>
 <body>
+<header class="vbar">
+  <nav class="vbar-inner" aria-label="Vega project">
+    <div class="vbar-menu">
+      <a class="vbar-title" href="./" data-home>vega-datasets</a>
+      <div class="vbar-drop">
+        <a href="https://vega.github.io/vega/">Vega</a>
+        <a href="https://vega.github.io/vega-lite/">Vega-Lite</a>
+        <a href="https://altair-viz.github.io/">Altair</a>
+        <a href="https://vega.github.io/vega-lite-api/">Vega-Lite API</a>
+      </div>
+    </div>
+    <div class="vbar-links">
+      <a href="./" data-home aria-current="page">Field Guide</a>
+      <a href="datapackage.html">Data Package</a>
+      <a href="https://github.com/vega/vega-datasets/blob/main/CONTRIBUTING.md">Contributing</a>
+    </div>
+    <div class="vbar-links vbar-secondary">
+      <a href="https://github.com/vega/vega-datasets">GitHub</a>
+      <a href="https://vega.github.io/editor/">Try Online</a>
+    </div>
+  </nav>
+</header>
 <div class="layout">
   <nav class="index" aria-label="All datasets">
     <p class="index-title"><a href="./" data-home>The vega-datasets field guide</a><small id="guide-count"></small></p>
-    <p class="index-links">
-      <a href="./" data-home>About</a>
-      <a href="https://github.com/vega/vega-datasets">GitHub</a>
-      <a href="datapackage.json">datapackage.json</a>
-    </p>
     <div class="index-search">
       <label class="visually-hidden" for="index-q">Find a dataset</label>
       <input id="index-q" type="search" placeholder="Find a dataset" autocomplete="off">
@@ -28,6 +45,9 @@
   </nav>
   <main id="plate" tabindex="-1" aria-live="polite"></main>
 </div>
+<footer class="vfoot">
+  <p>vega-datasets is part of the <a href="https://vega.github.io/">Vega project</a>. Found a problem with a dataset? <a href="https://github.com/vega/vega-datasets/issues">Open an issue</a>.</p>
+</footer>
 <noscript><p style="padding: 24px">The Field Guide needs JavaScript. The datasets and their documentation are in <a href="datapackage.html">datapackage.html</a>.</p></noscript>
 <script type="module" src="assets/main.js"></script>
 </body>
