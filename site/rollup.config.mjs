@@ -55,6 +55,7 @@ function staticFiles() {
     writeBundle() {
       copyFileSync(path.join(here, 'static', 'index.html'), path.join(dist, 'index.html'));
       copyFileSync(path.join(here, 'static', 'site.css'), path.join(dist, 'assets', 'site.css'));
+      copyFileSync(path.join(here, 'static', 'theme-init.js'), path.join(dist, 'assets', 'theme-init.js'));
       writeFonts();
     },
   };

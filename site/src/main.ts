@@ -23,6 +23,7 @@ import { formatBytes, formatCount, FORMAT_LABEL, plural } from "./format";
 import { renderMarkdown } from "./markdown";
 import { motionSection, stopMotion } from "./motion";
 import { fieldProfile, missingNote, typeLabel } from "./profile";
+import { initThemeToggle } from "./theme";
 
 const PER_GALLERY = 6;
 let current = "";
@@ -236,6 +237,7 @@ function renderBuildNote(c: Catalog): void {
 }
 
 async function main(): Promise<void> {
+  initThemeToggle($("#theme-toggle") as HTMLButtonElement);
   let c: Catalog;
   try {
     c = await loadCatalog();
