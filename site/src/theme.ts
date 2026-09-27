@@ -30,6 +30,34 @@ export function onThemeChange(fn: () => void): () => void {
   };
 }
 
+const STORAGE_KEY = "vega-datasets-theme";
+
+/**
+ * Wire the light/dark button. The page starts light (like the other Vega sites);
+ * site/static/theme-init.js restores a saved dark choice before first paint.
+ */
+export function initThemeToggle(button: HTMLButtonElement): void {
+  const sync = () => {
+    const dark = isDark();
+    button.setAttribute("aria-pressed", String(dark));
+    const label = dark ? "Light mode" : "Dark mode";
+    button.setAttribute("aria-label", label);
+    button.title = label;
+  };
+  sync();
+  button.addEventListener("click", () => {
+    const next = isDark() ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    try {
+      if (next === "dark") localStorage.setItem(STORAGE_KEY, "dark");
+      else localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // Storage blocked: the choice lasts for this page view only.
+    }
+    sync();
+  });
+}
+
 export function reducedMotion(): boolean {
   return matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
