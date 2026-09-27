@@ -184,6 +184,7 @@ table.preview tr:last-child td { border-bottom: 0; }
   --font-body: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-data: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
   --radius-btn: 3px;
+  --vbar-h: 44px;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -207,18 +208,45 @@ table.preview tr:last-child td { border-bottom: 0; }
 }
 
 body { margin: 0; }
+
+/*
+ * Vega project bar and footer: the frame vega.github.io/vega and /vega-lite
+ * share (a deep bar in the project's own hue — plum for Vega, blue for
+ * Vega-Lite, green here — a bold title with the sibling projects on hover, and
+ * light links that turn gold). Fixed colors, identical in light and dark.
+ */
+.vbar { position: sticky; top: 0; z-index: 20; background: #234a3b; font-family: var(--font-body); font-size: 15px; }
+.vbar-inner { display: flex; flex-wrap: wrap; align-items: center; gap: 0 28px; max-width: 1320px; margin: 0 auto; padding: 0 24px; min-height: var(--vbar-h); }
+.vbar a { color: #eeeeee; text-decoration: none; }
+.vbar a:hover, .vbar a:focus-visible { color: #e5b928; }
+.vbar a[aria-current] { color: #ffffff; font-weight: 600; }
+.vbar :focus-visible { outline-color: #e5b928; }
+.vbar-menu { position: relative; }
+.vbar a.vbar-title { display: inline-block; font-weight: 700; font-size: 17px; line-height: var(--vbar-h); color: #ffffff; }
+.vbar-drop {
+  position: absolute; top: 100%; left: -16px; min-width: 190px; padding: 6px 0; display: none;
+  background: #e2e2e2; box-shadow: 0 0 20px 5px rgb(0 0 0 / 0.2);
+}
+.vbar-menu:hover .vbar-drop, .vbar-menu:focus-within .vbar-drop { display: grid; }
+.vbar-drop a { color: #444444; font-weight: 600; padding: 6px 16px; }
+.vbar-drop a:hover, .vbar-drop a:focus-visible { color: #000000; background: #d2d2d2; }
+.vbar-links { display: flex; flex-wrap: wrap; gap: 0 20px; line-height: var(--vbar-h); }
+.vbar-secondary { margin-left: auto; }
+
+.vfoot { border-top: 1px solid var(--line); }
+.vfoot p { max-width: 1320px; margin: 0 auto; padding: 16px 24px 20px; font-size: 12.5px; color: var(--muted); }
+
 .layout { display: grid; grid-template-columns: 272px minmax(0, 1fr); max-width: 1320px; margin: 0 auto; }
 
 /* Index */
 .index {
-  position: sticky; top: 0; height: 100vh; display: grid; grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  position: sticky; top: var(--vbar-h); height: calc(100vh - var(--vbar-h)); display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto;
   border-right: 1px solid var(--line); padding: 28px 0 0;
 }
 .index-title { padding-inline: 24px; font-family: var(--font-display); font-weight: 600; font-size: 22px; line-height: 1.15; }
 .index-title a { color: inherit; text-decoration: none; }
 .index-title a:hover { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
 .index-title small { display: block; margin-top: 6px; font-family: var(--font-data); font-weight: 400; font-size: 11.5px; color: var(--muted); }
-.index-links { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 10px 24px 0; font-size: 12.5px; }
 .index-search { padding: 18px 24px 12px; }
 .index-search input {
   width: 100%; height: 34px; border: 1px solid var(--line-strong); border-radius: 3px; background: var(--surface);
@@ -311,10 +339,15 @@ body { margin: 0; }
 .btn { font-size: 13px; }
 
 @media (max-width: 900px) {
+  .vbar { position: static; }
+  .vbar-inner { padding: 4px 16px; gap: 0 20px; }
+  .vbar-links { line-height: 32px; }
+  .vbar-secondary { margin-left: 0; }
+  .vfoot p { padding-inline: 16px; }
   .layout { grid-template-columns: 1fr; }
   .index { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); padding-top: 20px; }
   .index-title { padding-inline: 16px; }
-  .index-search, .index-links, .build-note { padding-inline: 16px; }
+  .index-search, .build-note { padding-inline: 16px; }
   #index-list { max-height: 220px; padding-inline: 4px; }
   #plate { padding: 28px 16px 48px; }
   .lede { font-size: 18px; }
