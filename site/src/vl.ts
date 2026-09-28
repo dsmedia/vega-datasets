@@ -30,5 +30,6 @@ export function themeConfig(): Config {
     header: { labelColor: ink, titleColor: ink },
     title: { color: strong },
     text: { color: ink },
+    selection: { interval: { mark: { fill: ink, fillOpacity: 0.08, stroke: muted, strokeWidth: 1 } } },
   };
 }

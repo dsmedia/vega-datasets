@@ -1,7 +1,8 @@
-// Every outbound link the Field Guide generates must resolve: gallery pages, example
-// sources, Vega Editor example routes, and each dataset's file URL (which the starter
-// charts load). Needs the network; run with `npm run site:check-links`.
-import { existsSync } from 'node:fs';
+// Every outbound link the site generates must resolve: gallery pages, example
+// sources, Vega Editor example routes, each dataset's file URL (which the starter
+// charts load), and the links written into the page shell and the page code.
+// Needs the network; run with `npm run site:check-links`.
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test } from 'vitest';
 import { starterSpec } from '../../src/starter';
@@ -15,6 +16,28 @@ const PAGES_DATA = 'https://vega.github.io/vega-datasets/data/';
 
 const ATTEMPTS = 4;
 const CONCURRENCY = 12;
+
+/**
+ * Fixed links in index.html and site/src: literal https URLs, and `${REPO}…` templates
+ * with the repository URL filled in. Links built from other values (a dataset's file,
+ * an encoded spec) are covered by the catalog loop instead. Fragments are dropped:
+ * a HEAD request can't see them (home.test.ts checks the README anchors).
+ */
+function writtenLinks(): string[] {
+  const repo = 'https://github.com/vega/vega-datasets';
+  const src = path.join(REPO, 'site', 'src');
+  const texts = [
+    readFileSync(path.join(REPO, 'site', 'static', 'index.html'), 'utf8'),
+    ...readdirSync(src).map((f) => readFileSync(path.join(src, f), 'utf8')),
+  ];
+  const urls = texts.flatMap((t) => [
+    ...[...t.matchAll(/https:\/\/[^\s"'`)<>]+/g)].map((m) => m[0]),
+    ...[...t.matchAll(/`\$\{REPO\}([^`]*)`/g)].map((m) => repo + m[1]),
+  ]);
+  return [...new Set(urls
+    .map((u) => u.split('#')[0]!)
+    .filter((u) => !u.includes('${') && !u.startsWith('https://vega.github.io/schema/')))];
+}
 
 /** Final HTTP status after redirects, retrying transient failures (jsDelivr can 403 under bursts). */
 async function status(url: string): Promise<number> {
@@ -52,6 +75,10 @@ test('every link target resolves', async () => {
     const data = (starterSpec(d) as { data?: { url?: string } } | null)?.data?.url;
     if (data) links.set(data, `starter data of ${d.name}`);
   }
+
+  const written = writtenLinks();
+  expect(written).toContain('https://github.com/vega/vega-datasets/blob/main/_data/datapackage_additions.toml');
+  for (const url of written) links.set(url, 'link in the page code');
 
   const queue = [...links];
   const broken: string[] = [];

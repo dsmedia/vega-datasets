@@ -33,6 +33,24 @@ test('the header marks Datasets as the current section and has the theme switch'
   expect(html).toMatch(/<button [^>]*id="theme-toggle"[^>]*aria-pressed="false"/);
 });
 
+test('the stylesheet parses: every block closes, none closes twice', () => {
+  // A stray brace makes browsers drop the rule after it (a whole @media block, say).
+  let depth = 0;
+  const stray: number[] = [];
+  // Blank out comments but keep their line breaks, so the reported line numbers are the file's.
+  css.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, '')).split('\n').forEach((line, i) => {
+    for (const ch of line) {
+      if (ch === '{') depth++;
+      if (ch === '}' && --depth < 0) {
+        stray.push(i + 1);
+        depth = 0;
+      }
+    }
+  });
+  expect(stray).toEqual([]);
+  expect(depth).toBe(0);
+});
+
 /** Custom properties declared in a stretch of CSS. */
 function declared(block: string): Set<string> {
   return new Set([...block.matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1]!));

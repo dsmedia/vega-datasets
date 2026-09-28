@@ -1,9 +1,8 @@
 /** UI pieces of a dataset plate. */
 import { type Dataset, type Example, type Gallery, GALLERIES, GALLERY_LABEL, githubSource } from "./catalog";
-import { h, svg } from "./dom";
-import { formatCount, FORMAT_LABEL, plural } from "./format";
+import { h } from "./dom";
+import { formatCount, FORMAT_LABEL } from "./format";
 import { starterEditorUrl } from "./starter";
-import { attachTip } from "./tooltip";
 
 /** Gallery identity: a colored dot always paired with its name (color is never the only cue). */
 export function galleryTag(g: Gallery, count?: number): HTMLElement {
@@ -16,40 +15,19 @@ export function galleryTag(g: Gallery, count?: number): HTMLElement {
 
 
 /**
- * A thin stacked bar of example counts per gallery, scaled to `max` so rows compare.
- * Segments are separated by a 2px surface gap; the total is labeled at the end.
+ * A flat stacked bar of example counts per gallery (Vega-Lite, Vega, Altair),
+ * scaled to `max` so cards compare. The counts are also given as text.
  */
-export function usageBar(counts: Record<Gallery, number>, max: number, width = 120): HTMLElement {
-  const total = GALLERIES.reduce((s, g) => s + counts[g], 0);
-  const height = 8;
-  const root = svg("svg", { width, height, viewBox: `0 0 ${width} ${height}`, class: "usage", "aria-hidden": "true" });
-  root.append(svg("rect", { x: 0, y: 0, width, height, rx: 4, class: "usage-track" }));
-  let x = 0;
-  const scale = max > 0 ? width / max : 0;
-  const segs = GALLERIES.filter((g) => counts[g] > 0);
-  segs.forEach((g, i) => {
-    const w = Math.max(2, counts[g] * scale - (i < segs.length - 1 ? 2 : 0));
-    const first = i === 0;
-    const last = i === segs.length - 1;
-    const r = Math.min(4, w / 2);
-    // Round only the outer ends of the stack.
-    const d = `M${x + (first ? r : 0)},0H${x + w - (last ? r : 0)}${last ? `Q${x + w},0 ${x + w},${r}V${height - r}Q${x + w},${height} ${x + w - r},${height}` : `V${height}`}H${x + (first ? r : 0)}${first ? `Q${x},${height} ${x},${height - r}V${r}Q${x},0 ${x + r},0` : `V0`}Z`;
-    root.append(svg("path", { d, class: `usage-seg g-${g}` }));
-    x += w + 2;
-  });
-  const wrap = h("span", { class: "usage-wrap", tabindex: total ? 0 : null },
-    root,
-    h("span", { class: "usage-total" }, total ? formatCount(total) : "–"),
-  );
-  if (total) {
-    attachTip(wrap, [
-      plural(total, "gallery example"),
-      ...GALLERIES.filter((g) => counts[g]).map((g) => `${GALLERY_LABEL[g]}: ${counts[g]}`),
-    ]);
-  } else {
-    wrap.setAttribute("aria-label", "Not used by any gallery example");
+export function usageStack(counts: Record<Gallery, number>, max: number): HTMLElement {
+  const bar = h("span", { class: "stack", "aria-hidden": "true" });
+  for (const g of GALLERIES) {
+    if (!counts[g]) continue;
+    const seg = h("span", { class: `g-${g}` });
+    seg.style.width = `${(100 * counts[g]) / Math.max(max, 1)}%`;
+    bar.append(seg);
   }
-  return wrap;
+  const detail = GALLERIES.filter((g) => counts[g]).map((g) => `${GALLERY_LABEL[g]} ${counts[g]}`).join(", ");
+  return h("span", { class: "usage" }, bar, detail ? h("span", { class: "visually-hidden" }, ` (${detail})`) : null);
 }
 
 export function thumbImg(ex: Example): HTMLImageElement {
@@ -86,21 +64,26 @@ export function datasetActions(d: Dataset): HTMLElement {
   );
 }
 
-export function copyUrlButton(d: Dataset): HTMLButtonElement {
-  const url = d.url;
-  const btn = h("button", { class: "btn btn-quiet copy", type: "button" }, "Copy URL");
+/** A Copy button for `text()`; if the clipboard is blocked it selects `fallback` for Ctrl/⌘+C. */
+export function copyButton(text: () => string, fallback: () => Element | null, cls = "btn btn-quiet copy"): HTMLButtonElement {
+  const btn = h("button", { class: cls, type: "button" }, "Copy");
+  const label = btn.textContent!;
   btn.addEventListener("click", () => {
-    navigator.clipboard.writeText(url).then(
+    navigator.clipboard.writeText(text()).then(
       () => {
         btn.textContent = "Copied";
-        setTimeout(() => (btn.textContent = "Copy URL"), 1600);
+        btn.dataset.copied = "true";
+        setTimeout(() => {
+          btn.textContent = label;
+          delete btn.dataset.copied;
+        }, 1600);
       },
       () => {
         const sel = window.getSelection();
-        const code = btn.previousElementSibling;
-        if (sel && code) {
+        const target = fallback();
+        if (sel && target) {
           const range = document.createRange();
-          range.selectNodeContents(code);
+          range.selectNodeContents(target);
           sel.removeAllRanges();
           sel.addRange(range);
         }
@@ -111,8 +94,52 @@ export function copyUrlButton(d: Dataset): HTMLButtonElement {
   return btn;
 }
 
+export interface Snippet {
+  name: string;
+  code: string;
+}
+
+/**
+ * Code snippets behind tabs, each with a Copy button (ARIA tabs: arrow keys, Home
+ * and End move between tabs). `id` prefixes the element ids.
+ */
+export function snippetTabs(id: string, label: string, snippets: Snippet[]): HTMLElement {
+  const code = h("code");
+  const panel = h("pre", { class: "snippet", role: "tabpanel", id: `${id}-panel`, tabindex: 0 }, code);
+  panel.prepend(copyButton(() => code.textContent ?? "", () => code, "copy-btn"));
+  const tabs = snippets.map((s, i) => h("button", {
+    class: "tab",
+    role: "tab",
+    type: "button",
+    id: `${id}-tab-${i}`,
+    "aria-controls": `${id}-panel`,
+  }, s.name));
+  const select = (i: number, focus: boolean) => {
+    tabs.forEach((t, j) => {
+      t.setAttribute("aria-selected", String(i === j));
+      t.tabIndex = i === j ? 0 : -1;
+    });
+    code.textContent = snippets[i]!.code;
+    panel.setAttribute("aria-labelledby", `${id}-tab-${i}`);
+    if (focus) tabs[i]!.focus();
+  };
+  tabs.forEach((t, i) => {
+    t.addEventListener("click", () => select(i, false));
+    t.addEventListener("keydown", (e) => {
+      const n = tabs.length;
+      const next = { ArrowRight: (i + 1) % n, ArrowLeft: (i - 1 + n) % n, Home: 0, End: n - 1 }[e.key];
+      if (next === undefined) return;
+      e.preventDefault();
+      select(next, true);
+    });
+  });
+  select(0, false);
+  return h("div", { class: "snippets" }, h("div", { class: "tabs", role: "tablist", "aria-label": label }, tabs), panel);
+}
+
 export function urlRow(d: Dataset): HTMLElement {
-  return h("div", { class: "url-row" }, h("code", null, d.url), copyUrlButton(d));
+  const code = h("code", null, d.url);
+  return h("div", { class: "url-row" }, code, copyButton(() => d.url, () => code));
 }
 
 
