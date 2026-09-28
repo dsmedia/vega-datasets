@@ -13,7 +13,7 @@ import typescript from '@rollup/plugin-typescript';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(here, 'dist');
 
-/** Copy the page shell and stylesheet next to the bundle (after clearing old chunks). */
+/** Copy the page shell, stylesheet and images next to the bundle (after clearing old chunks). */
 function staticFiles() {
   return {
     name: 'static-files',
@@ -22,8 +22,9 @@ function staticFiles() {
     },
     writeBundle() {
       copyFileSync(path.join(here, 'static', 'index.html'), path.join(dist, 'index.html'));
-      copyFileSync(path.join(here, 'static', 'site.css'), path.join(dist, 'assets', 'site.css'));
-      copyFileSync(path.join(here, 'static', 'theme-init.js'), path.join(dist, 'assets', 'theme-init.js'));
+      for (const file of ['site.css', 'theme-init.js', 'idl-logo.png']) {
+        copyFileSync(path.join(here, 'static', file), path.join(dist, 'assets', file));
+      }
     },
   };
 }

@@ -1,4 +1,4 @@
-/** The vega-datasets Field Guide: one dataset at a time, presented as a specimen plate. */
+/** Vega Datasets: the home page and one page per dataset, routed by `#name`. */
 import {
   type Catalog,
   type Dataset,
@@ -16,48 +16,19 @@ import {
   sourcesBlock,
   thumbImg,
   urlRow,
-  usageBar,
 } from "./components";
 import { $, append, clear, h, hash, showError } from "./dom";
 import { formatBytes, formatCount, FORMAT_LABEL, plural } from "./format";
+import { renderHome, stopHome } from "./home";
 import { renderMarkdown } from "./markdown";
 import { motionSection, stopMotion } from "./motion";
 import { fieldProfile, missingNote, typeLabel } from "./profile";
 import { initThemeToggle } from "./theme";
 
+const REPO = "https://github.com/vega/vega-datasets";
+const HOME_TITLE = "Vega Datasets – The Data Behind the Examples";
 const PER_GALLERY = 6;
 let current = "";
-
-function renderIndex(c: Catalog, q = ""): void {
-  const host = $("#index-list");
-  clear(host);
-  const needle = q.trim().toLowerCase();
-  const items = c.datasets.filter((d) => !needle || d.name.includes(needle) || d.description.toLowerCase().includes(needle));
-  const max = Math.max(...c.datasets.map((d) => d.usedBy.length));
-  const byLetter = new Map<string, Dataset[]>();
-  for (const d of items) {
-    const letter = d.name[0]?.toUpperCase() ?? "#";
-    byLetter.set(letter, [...(byLetter.get(letter) ?? []), d]);
-  }
-  if (!items.length) {
-    host.append(h("p", { class: "index-empty" }, "No dataset matches."));
-    return;
-  }
-  for (const [letter, list] of byLetter) {
-    host.append(h("section", { class: "index-group" },
-      h("h2", { class: "index-letter" }, letter),
-      h("ul", null, list.map((d) =>
-        h("li", null, h("a", {
-          href: `#${d.name}`,
-          class: d.name === current ? "is-current" : "",
-          "aria-current": d.name === current ? "page" : null,
-          onclick: (e: Event) => {
-            e.preventDefault();
-            show(c, d.name, true);
-          },
-        }, h("span", { class: "index-name" }, d.name), usageBar(c.usage(d), max, 44)))))));
-  }
-}
 
 function galleryShelf(c: Catalog, d: Dataset): HTMLElement {
   const all = c.examplesFor(d);
@@ -96,15 +67,7 @@ function galleryShelf(c: Catalog, d: Dataset): HTMLElement {
   }));
 }
 
-function renderPlate(c: Catalog): void {
-  const d = c.dataset(current);
-  const plate = $("#plate");
-  stopMotion();
-  clear(plate);
-  if (!d) {
-    renderHome(c, plate);
-    return;
-  }
+function renderPlate(c: Catalog, d: Dataset, page: HTMLElement): void {
   const i = c.datasets.indexOf(d);
   const n = c.datasets.length;
   const prev = c.datasets[(i - 1 + n) % n]!;
@@ -125,6 +88,8 @@ function renderPlate(c: Catalog): void {
   ].filter(Boolean).join("  ·  ");
 
   const preview = previewTable(d);
+  const plate = h("div", { class: "wrap plate" });
+  page.append(plate);
   append(plate, [
     h("header", { class: "plate-head" },
       h("p", { class: "plate-label" }, label),
@@ -166,74 +131,39 @@ function renderPlate(c: Catalog): void {
       ),
     ),
     h("nav", { class: "plate-nav", "aria-label": "Neighbouring datasets" },
-      h("a", { href: `#${prev.name}`, onclick: (e: Event) => { e.preventDefault(); show(c, prev.name, true); } }, h("span", null, "Previous"), h("b", null, prev.name)),
-      h("a", { href: `#${next.name}`, class: "next", onclick: (e: Event) => { e.preventDefault(); show(c, next.name, true); } }, h("span", null, "Next"), h("b", null, next.name)),
+      h("a", { href: `#${encodeURIComponent(prev.name)}` }, h("span", null, "Previous"), h("b", null, prev.name)),
+      h("a", { href: `#${encodeURIComponent(next.name)}`, class: "next" }, h("span", null, "Next"), h("b", null, next.name)),
     ),
   ]);
 }
 
-/** The home page: what vega-datasets is and how to use it, from the README. */
-function renderHome(c: Catalog, plate: HTMLElement): void {
-  const [lede = "", ...rest] = c.readme.trim().split(/\n\s*\n/);
-  const ledeEl = h("div", { class: "lede md" });
-  renderMarkdown(ledeEl, lede);
-  const readme = h("div", { class: "md readme" });
-  renderMarkdown(readme, rest.join("\n\n"), { sections: true });
-  const label = [
-    `Version ${c.package.version}`,
-    plural(c.datasets.length, "dataset"),
-    plural(c.examples.length, "gallery example"),
-  ].join("  ·  ");
-  append(plate, [
-    h("header", { class: "plate-head" },
-      h("p", { class: "plate-label" }, label),
-      h("h1", { class: "plate-name" }, "Vega Datasets"),
-      ledeEl,
-      h("div", { class: "ds-actions" },
-        h("button", {
-          class: "btn btn-primary",
-          type: "button",
-          onclick: () => {
-            const q = $("#index-q");
-            q.scrollIntoView({ block: "nearest" });
-            q.focus();
-          },
-        }, "Find a dataset"),
-        h("a", { class: "btn", href: "https://www.npmjs.com/package/vega-datasets", target: "_blank", rel: "noopener" }, "npm package"),
-        h("a", { class: "btn btn-quiet", href: "https://github.com/vega/vega-datasets", target: "_blank", rel: "noopener" }, "View on GitHub"),
-      ),
-    ),
-    h("section", { class: "plate-sec", "aria-label": "About vega-datasets" }, readme),
-  ]);
+function renderFooter(d: Dataset | undefined): void {
+  const link = (href: string, text: string) => h("a", { href }, text);
+  $("#footer-note").replaceChildren(...(d
+    ? ["Spot an error? ", link(`${REPO}/blob/main/_data/datapackage_additions.toml`, "Edit this dataset's metadata"), " on GitHub."]
+    : [
+        "Documented in ", link(`${REPO}/blob/main/datapackage.json`, "datapackage.json"),
+        " · Code BSD-3-Clause · ", link(`${REPO}/blob/main/README.md`, "Edit this page"),
+      ]));
 }
 
-/** Show a dataset's plate, or the home page for "". */
+/** Show a dataset's page, or the home page for "". */
 function show(c: Catalog, name: string, userAction: boolean): void {
   current = name;
   hash.set(name);
-  document.title = name ? `${name} · vega-datasets Field Guide` : "vega-datasets Field Guide";
-  renderPlate(c);
-  renderIndex(c, ($("#index-q") as HTMLInputElement).value);
+  const d = c.dataset(name);
+  const page = $("#page");
+  stopMotion();
+  stopHome();
+  clear(page);
+  if (d) renderPlate(c, d, page);
+  else renderHome(c, page);
+  renderFooter(d);
+  document.title = d ? `${d.name} · Vega Datasets` : HOME_TITLE;
   if (userAction) {
     window.scrollTo({ top: 0 });
-    $("#plate").focus({ preventScroll: true });
+    page.focus({ preventScroll: true });
   }
-  // Scroll only the index list; scrollIntoView would also move the page.
-  const list = $("#index-list");
-  const item = list.querySelector<HTMLElement>(".is-current");
-  if (item) list.scrollTop = item.offsetTop - list.offsetTop - list.clientHeight / 2 + item.offsetHeight / 2;
-}
-
-/** Which release and commit this page describes, so readers can tell what they're looking at. */
-function renderBuildNote(c: Catalog): void {
-  const { version, commit } = c.package;
-  const repo = "https://github.com/vega/vega-datasets";
-  $("#build-note").replaceChildren(
-    `Built from `,
-    h("a", { href: `${repo}/tree/${commit}` }, commit.slice(0, 7)),
-    ` · latest release `,
-    h("a", { href: `${repo}/releases/tag/v${version}` }, `v${version}`),
-  );
 }
 
 async function main(): Promise<void> {
@@ -242,13 +172,9 @@ async function main(): Promise<void> {
   try {
     c = await loadCatalog();
   } catch (err) {
-    showError($("#plate"), err);
+    showError($("#page"), err);
     return;
   }
-  $("#guide-count").textContent = `${c.datasets.length} datasets · ${c.examples.length} gallery examples`;
-  renderBuildNote(c);
-  const q = $("#index-q") as HTMLInputElement;
-  q.addEventListener("input", () => renderIndex(c, q.value));
   for (const link of document.querySelectorAll<HTMLAnchorElement>("a[data-home]")) {
     link.addEventListener("click", (e) => {
       e.preventDefault();
@@ -262,9 +188,11 @@ async function main(): Promise<void> {
     if (name !== current && (name === "" || c.dataset(name))) show(c, name, true);
   });
   document.addEventListener("keydown", (e) => {
-    if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey || e.altKey) return;
-    // From the home page (index -1), right goes to the first dataset and left to the last.
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    // Between dataset pages only: on the home page the arrow keys scroll.
     const i = c.datasets.findIndex((d) => d.name === current);
+    if (i < 0) return;
     const n = c.datasets.length;
     if (e.key === "ArrowRight" || e.key === "j") show(c, c.datasets[(i + 1) % n]!.name, true);
     if (e.key === "ArrowLeft" || e.key === "k") show(c, c.datasets[(i - 1 + n) % n]!.name, true);
