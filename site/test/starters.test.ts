@@ -67,7 +67,7 @@ describe.each(withStarter.map((d) => [d.name, d] as const))('%s', (_name, d) => 
     } finally {
       view.finalize();
     }
-  });
+  }, 60_000); // flights_200k_json draws 200,000 points; the default 5 s is too tight on a busy CPU.
 
   test('the Editor link decodes to the same spec', () => {
     const url = starterEditorUrl(d);

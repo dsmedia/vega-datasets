@@ -276,8 +276,8 @@ export function motionSection(d: Dataset): HTMLElement | null {
   const editor = h("a", { class: "btn btn-quiet", target: "_blank", rel: "noopener", href: "#" }, "Open this chart in the Vega Editor");
   const status = h("p", { class: "motion-status muted" }, "Loading…");
 
-  const section = h("section", { class: "plate-sec motion", "aria-labelledby": "motion-h" },
-    h("h2", { id: "motion-h" }, "In motion"),
+  const section = h("section", { class: "ds-sec motion", "aria-labelledby": "motion-h" },
+    h("div", { class: "sec-head" }, h("h2", { id: "motion-h" }, "In motion")),
     h("p", { class: "sec-intro" },
       "Life expectancy against babies per woman for 62 countries, 1955 to 2005. Gapminder publishes a snapshot every five years; the bubbles glide between them using the easing functions new in Vega 6.4. ",
       "Vega-Lite's own support for eased, interpolated animation is in review."),
@@ -285,7 +285,7 @@ export function motionSection(d: Dataset): HTMLElement | null {
     regions,
     chartHost,
     followNote,
-    h("div", { class: "motion-foot" }, editor, status),
+    h("div", { class: "motion-foot" }, editor, h("span", { class: "features mono" }, "Vega 6.4 · timer events · easeCubicInOut · interpolateLinear"), status),
   );
 
   const gen = generation;

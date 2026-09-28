@@ -138,10 +138,6 @@ export const GALLERY_LABEL: Record<Gallery, string> = {
   altair: "Altair",
 };
 
-export function githubSource(d: Dataset): string {
-  return `https://github.com/vega/vega-datasets/blob/main/data/${d.file}`;
-}
-
 /** Collapse the Data Package license identifiers into a few readable families. */
 export function licenseFamily(d: Dataset): string {
   const names = d.licenses.map((l) => l.name);
