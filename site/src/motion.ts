@@ -78,12 +78,12 @@ export interface Colors {
 function colors(): Colors {
   return {
     neutral: token("--motion-neutral"),
-    accent: token("--accent"),
-    focus: token("--ink"),
+    accent: token("--chart-1"),
+    focus: token("--ink-strong"),
     surface: token("--surface"),
     watermark: token("--motion-watermark"),
-    trail: token("--ink-2"),
-    label: token("--ink-2"),
+    trail: token("--ink"),
+    label: token("--ink"),
   };
 }
 
