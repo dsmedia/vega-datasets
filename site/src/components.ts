@@ -1,18 +1,6 @@
-/** UI pieces of a dataset plate. */
-import { type Dataset, type Example, type Gallery, GALLERIES, GALLERY_LABEL, githubSource } from "./catalog";
+/** UI pieces shared by the pages. */
+import { type Dataset, type Example, type Gallery, GALLERIES, GALLERY_LABEL } from "./catalog";
 import { h } from "./dom";
-import { formatCount, FORMAT_LABEL } from "./format";
-import { starterEditorUrl } from "./starter";
-
-/** Gallery identity: a colored dot always paired with its name (color is never the only cue). */
-export function galleryTag(g: Gallery, count?: number): HTMLElement {
-  return h("span", { class: `gtag g-${g}` },
-    h("span", { class: "gdot", "aria-hidden": "true" }),
-    GALLERY_LABEL[g],
-    count === undefined ? null : h("span", { class: "gcount" }, formatCount(count)),
-  );
-}
-
 
 /**
  * A flat stacked bar of example counts per gallery (Vega-Lite, Vega, Altair),
@@ -44,29 +32,9 @@ export function thumbImg(ex: Example): HTMLImageElement {
   return img;
 }
 
-export function exampleLinks(ex: Example): HTMLElement {
-  return h("div", { class: "ex-links" },
-    h("a", { href: ex.url, target: "_blank", rel: "noopener" }, "Gallery page"),
-    ex.editor ? h("a", { href: ex.editor, target: "_blank", rel: "noopener" }, "Open in Editor") : null,
-    h("a", { href: ex.source, target: "_blank", rel: "noopener" }, ex.gallery === "altair" ? "Python source" : "Spec"),
-  );
-}
-
-/** Actions every dataset view offers. */
-export function datasetActions(d: Dataset): HTMLElement {
-  const starter = starterEditorUrl(d);
-  return h("div", { class: "ds-actions" },
-    starter
-      ? h("a", { class: "btn btn-primary", href: starter, target: "_blank", rel: "noopener" }, "Try it in the Vega Editor")
-      : null,
-    h("a", { class: "btn", href: d.url, target: "_blank", rel: "noopener" }, `Open ${FORMAT_LABEL[d.format] ?? d.format} file`),
-    h("a", { class: "btn btn-quiet", href: githubSource(d), target: "_blank", rel: "noopener" }, "View on GitHub"),
-  );
-}
-
 /** A Copy button for `text()`; if the clipboard is blocked it selects `fallback` for Ctrl/⌘+C. */
-export function copyButton(text: () => string, fallback: () => Element | null, cls = "btn btn-quiet copy"): HTMLButtonElement {
-  const btn = h("button", { class: cls, type: "button" }, "Copy");
+export function copyButton(text: () => string, fallback: () => Element | null): HTMLButtonElement {
+  const btn = h("button", { class: "copy-btn", type: "button" }, "Copy");
   const label = btn.textContent!;
   btn.addEventListener("click", () => {
     navigator.clipboard.writeText(text()).then(
@@ -106,7 +74,7 @@ export interface Snippet {
 export function snippetTabs(id: string, label: string, snippets: Snippet[]): HTMLElement {
   const code = h("code");
   const panel = h("pre", { class: "snippet", role: "tabpanel", id: `${id}-panel`, tabindex: 0 }, code);
-  panel.prepend(copyButton(() => code.textContent ?? "", () => code, "copy-btn"));
+  panel.prepend(copyButton(() => code.textContent ?? "", () => code));
   const tabs = snippets.map((s, i) => h("button", {
     class: "tab",
     role: "tab",
@@ -137,12 +105,6 @@ export function snippetTabs(id: string, label: string, snippets: Snippet[]): HTM
   return h("div", { class: "snippets" }, h("div", { class: "tabs", role: "tablist", "aria-label": label }, tabs), panel);
 }
 
-export function urlRow(d: Dataset): HTMLElement {
-  const code = h("code", null, d.url);
-  return h("div", { class: "url-row" }, code, copyButton(() => d.url, () => code));
-}
-
-
 export function licenseBlock(d: Dataset): HTMLElement {
   if (!d.licenses.length || d.licenses.every((l) => l.name === "notspecified")) {
     return h("p", { class: "license-missing" }, "No license recorded. Check the original source before reusing this data.");
@@ -157,15 +119,4 @@ export function sourcesBlock(d: Dataset): HTMLElement {
   return h("ul", { class: "plain-list" }, d.sources.map((s) =>
     h("li", null, s.path ? h("a", { href: s.path, target: "_blank", rel: "noopener" }, s.title) : s.title)));
 }
-
-export function previewTable(d: Dataset): HTMLElement | null {
-  if (!d.preview || !d.preview.rows.length) return null;
-  return h("div", { class: "table-scroll", tabindex: 0, role: "region", "aria-label": `First rows of ${d.name}` },
-    h("table", { class: "preview" },
-      h("thead", null, h("tr", null, d.preview.columns.map((c) => h("th", { scope: "col" }, c)))),
-      h("tbody", null, d.preview.rows.map((r) => h("tr", null, r.map((c) => h("td", null, c))))),
-    ),
-  );
-}
-
 

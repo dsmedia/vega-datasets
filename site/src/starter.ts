@@ -17,7 +17,7 @@ const EDITOR = "https://vega.github.io/editor/#/url/vega-lite/";
 const SCHEMA = "https://vega.github.io/schema/vega-lite/v6.json";
 
 /** Vega-Lite treats `.` and `[ ]` in field names as nested access; escape them. */
-function fieldRef(name: string): string {
+export function fieldRef(name: string): string {
   return name.replace(/([.[\]])/g, "\\$1");
 }
 
@@ -37,7 +37,7 @@ function isId(f: Field): boolean {
   return f.profile.kind === "quantitative" && (/categor/i.test(f.name) || ID_DESC.test(f.description ?? ""));
 }
 
-function isYear(f: Field): boolean {
+export function isYear(f: Field): boolean {
   const p = f.profile;
   return p.kind === "quantitative" && Number.isInteger(p.min) && p.min >= 1000 && p.max <= 2200 && (YEAR_NAME.test(f.name) || f.type === "integer");
 }
@@ -48,7 +48,8 @@ function isOrdinalInt(f: Field): boolean {
   return p.kind === "quantitative" && f.type === "integer" && p.max - p.min <= 12;
 }
 
-function isMeasure(f: Field): boolean {
+/** Quantities worth plotting on an axis (not identifiers, years, codes or coordinates). */
+export function isMeasure(f: Field): boolean {
   return (
     f.profile.kind === "quantitative" &&
     !isId(f) &&
@@ -61,7 +62,8 @@ function isMeasure(f: Field): boolean {
   );
 }
 
-function nominal(f: Field, max: number): boolean {
+/** A category with between 2 and `max` values (identifiers excluded). */
+export function nominal(f: Field, max: number): boolean {
   return f.profile.kind === "nominal" && f.profile.distinct >= 2 && f.profile.distinct <= max && !ID_NAME.test(f.name);
 }
 
@@ -255,8 +257,12 @@ export function starterSpec(d: Dataset): Spec | null {
   return null;
 }
 
+/** A Vega Editor link that opens `spec` (Vega-Lite). */
+export function editorUrl(spec: Spec): string {
+  return EDITOR + LZString.compressToEncodedURIComponent(JSON.stringify(spec, null, 2));
+}
+
 export function starterEditorUrl(d: Dataset): string | null {
   const spec = starterSpec(d);
-  if (!spec) return null;
-  return EDITOR + LZString.compressToEncodedURIComponent(JSON.stringify(spec, null, 2));
+  return spec ? editorUrl(spec) : null;
 }

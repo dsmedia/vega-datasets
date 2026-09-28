@@ -1,19 +1,12 @@
 /**
- * Field profiles: a compact picture of each column, drawn as plain SVG from the
- * precomputed summaries in catalog.json (a histogram for numbers and dates, the
- * most common values for everything else).
+ * Field profiles for the fields table, from the precomputed summaries in
+ * catalog.json: a sparkline histogram for numbers and dates, a one-line summary,
+ * and the missing count.
  */
-import type { Field, NominalProfile, QuantProfile, TemporalProfile } from "./catalog";
-import { h, svg } from "./dom";
+import type { Field } from "./catalog";
+import { svg } from "./dom";
 import { formatCount, formatDate, formatNumber, TYPE_LABEL } from "./format";
 import { attachTip } from "./tooltip";
-
-export interface ProfileOptions {
-  width?: number;
-  height?: number;
-  /** Rows in the dataset, for "missing" percentages. */
-  rows: number | null;
-}
 
 function binEdges(lo: number, hi: number, n: number): number[] {
   return Array.from({ length: n + 1 }, (_, i) => lo + ((hi - lo) * i) / n);
@@ -55,77 +48,56 @@ function histogram(
   return root;
 }
 
-function quantitative(p: QuantProfile, o: Required<Omit<ProfileOptions, "rows">>): HTMLElement {
-  const edges = binEdges(p.min, p.max, p.bins.length);
-  const chart = histogram(
-    p.bins,
-    (i) => `${formatNumber(edges[i] ?? p.min)} – ${formatNumber(edges[i + 1] ?? p.max)}`,
-    o.width,
-    o.height,
-  );
-  return h("div", { class: "profile profile-q" },
-    chart,
-    h("div", { class: "axis-ends" }, h("span", null, formatNumber(p.min)), h("span", null, formatNumber(p.max))),
-  );
+/** A small histogram for the fields table, or null for categories and empty fields. */
+export function sparkline(f: Field): SVGSVGElement | null {
+  const p = f.profile;
+  if (p.kind === "quantitative") {
+    const edges = binEdges(p.min, p.max, p.bins.length);
+    return spark(histogram(p.bins, (i) => `${formatNumber(edges[i] ?? p.min)} – ${formatNumber(edges[i + 1] ?? p.max)}`, 120, 26), f);
+  }
+  if (p.kind === "temporal" && p.bins?.length) {
+    const lo = new Date(p.min).getTime();
+    const hi = new Date(p.max).getTime();
+    const edges = binEdges(lo, hi, p.bins.length);
+    const label = (i: number) => `${formatDate(new Date(edges[i] ?? lo).toISOString())} – ${formatDate(new Date(edges[i + 1] ?? hi).toISOString())}`;
+    return spark(histogram(p.bins, label, 120, 26), f);
+  }
+  return null;
 }
 
-function temporal(p: TemporalProfile, o: Required<Omit<ProfileOptions, "rows">>): HTMLElement {
-  const lo = new Date(p.min).getTime();
-  const hi = new Date(p.max).getTime();
-  const bins = p.bins ?? [];
-  const edges = binEdges(lo, hi, bins.length || 1);
-  const chart = bins.length
-    ? histogram(bins, (i) => `${formatDate(new Date(edges[i] ?? lo).toISOString())} – ${formatDate(new Date(edges[i + 1] ?? hi).toISOString())}`, o.width, o.height)
-    : null;
-  return h("div", { class: "profile profile-t" },
-    chart,
-    h("div", { class: "axis-ends" }, h("span", null, formatDate(p.min)), h("span", null, formatDate(p.max))),
-  );
+function spark(chart: SVGSVGElement, f: Field): SVGSVGElement {
+  chart.classList.add("spark");
+  chart.setAttribute("aria-label", `${f.name} distribution`);
+  return chart;
 }
 
-function nominal(p: NominalProfile, rows: number | null, width: number): HTMLElement {
-  const total = rows ?? p.top.reduce((s, [, c]) => s + c, 0);
-  const shown = p.top.slice(0, 4);
-  const max = Math.max(...shown.map(([, c]) => c), 1);
-  const list = h("ul", { class: "topvals" },
-    shown.map(([value, count]) => {
-      const pct = total ? (100 * count) / total : 0;
-      const bar = h("span", { class: "tv-bar" });
-      bar.style.width = `${Math.max(2, (100 * count) / max)}%`;
-      const li = h("li", { tabindex: 0 },
-        h("span", { class: "tv-label" }, value),
-        h("span", { class: "tv-track" }, bar),
-        h("span", { class: "tv-count" }, formatCount(count)),
-      );
-      attachTip(li, [value, `${formatCount(count)} rows · ${pct < 1 ? pct.toFixed(1) : Math.round(pct)}%`]);
-      return li;
-    }),
-  );
-  list.style.maxWidth = `${width + 80}px`;
-  const more = p.distinct > shown.length ? h("div", { class: "tv-more" }, `${formatCount(p.distinct)} distinct values`) : null;
-  return h("div", { class: "profile profile-n" }, list, more);
+/** Dates on January 1 at midnight are years (a "Year" column stored as a date). */
+function yearsOnly(iso: string): boolean {
+  return /^\d{4}-01-01(T00:00:00(\.0+)?Z?)?$/.test(iso);
 }
 
-export function fieldProfile(f: Field, opts: ProfileOptions): HTMLElement {
-  const o = { width: opts.width ?? 168, height: opts.height ?? 40 };
+/** One line about a field's values: range and mean, date span, or the most common values. */
+export function profileSummary(f: Field): string {
   const p = f.profile;
   switch (p.kind) {
     case "quantitative":
-      return quantitative(p, o);
+      return `${formatNumber(p.min)} – ${formatNumber(p.max)} · mean ${formatNumber(p.mean)}`;
     case "temporal":
-      return temporal(p, o);
+      return yearsOnly(p.min) && yearsOnly(p.max)
+        ? `${p.min.slice(0, 4)} – ${p.max.slice(0, 4)}`
+        : `${formatDate(p.min)} – ${formatDate(p.max)}`;
     case "nominal":
-      return nominal(p, opts.rows, o.width);
+      return p.top.slice(0, 3).map(([v, n]) => `${v} ${formatCount(n)}`).join(" · ");
     default:
-      return h("div", { class: "profile profile-empty" }, "No values");
+      return "No values";
   }
 }
 
-export function missingNote(f: Field, rows: number | null): string | null {
-  const m = f.profile.missing;
-  if (!m || !rows) return null;
-  const pct = (100 * m) / rows;
-  return `${formatCount(m)} missing (${pct < 1 ? pct.toFixed(1) : Math.round(pct)}%)`;
+/** Missing values as "8 · 2.0%", or "0". */
+export function missingCount(f: Field, rows: number | null): { text: string; any: boolean } {
+  const m = f.profile.missing ?? 0;
+  if (!m || !rows) return { text: "0", any: false };
+  return { text: `${formatCount(m)} · ${((100 * m) / rows).toFixed(1)}%`, any: true };
 }
 
 export function typeLabel(f: Field): string {
