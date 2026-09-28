@@ -3,37 +3,36 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'none'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
 <title>vega-datasets Field Guide</title>
 <meta name="description" content="Every dataset in vega-datasets: what each field holds, where the data comes from, its license, and the Vega, Vega-Lite and Altair gallery examples that use it.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%232e5c49'/%3E%3Cpath d='M4 11h2V7H4zm3 0h2V4H7zm3 0h2V8h-2z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23234a3b'/%3E%3Cpath d='M4 11h2V7H4zm3 0h2V4H7zm3 0h2V8h-2z' fill='%23fff'/%3E%3C/svg%3E">
 <script src="assets/theme-init.js"></script>
-<link rel="stylesheet" href="assets/fonts.css">
 <link rel="stylesheet" href="assets/site.css">
 </head>
 <body>
-<header class="vbar">
-  <nav class="vbar-inner" aria-label="Vega project">
-    <div class="vbar-menu">
-      <a class="vbar-title" href="./" data-home>vega-datasets</a>
-      <div class="vbar-drop">
+<header class="vg-header">
+  <nav class="vg-nav" aria-label="Site">
+    <div class="vg-switcher">
+      <a class="vg-title" href="./" data-home>vega-datasets</a>
+      <div class="vg-switcher-menu">
         <a href="https://vega.github.io/vega/">Vega</a>
         <a href="https://vega.github.io/vega-lite/">Vega-Lite</a>
         <a href="https://altair-viz.github.io/">Altair</a>
         <a href="https://vega.github.io/vega-lite-api/">Vega-Lite API</a>
       </div>
     </div>
-    <div class="vbar-links">
-      <a href="./" data-home aria-current="page">Field Guide</a>
+    <div class="vg-primary">
+      <a href="./" data-home aria-current="page">Datasets</a>
       <a href="https://github.com/vega/vega-datasets/blob/main/datapackage.md">Data Package</a>
       <a href="https://github.com/vega/vega-datasets/blob/main/CONTRIBUTING.md">Contributing</a>
     </div>
-    <div class="vbar-links vbar-secondary">
+    <div class="vg-secondary">
       <a href="https://github.com/vega/vega-datasets">GitHub</a>
-      <a href="https://vega.github.io/editor/">Try Online</a>
-      <button class="vbar-theme" id="theme-toggle" type="button" aria-pressed="false" aria-label="Dark mode" title="Dark mode">
+      <a href="https://vega.github.io/editor/" data-wide>Try Online</a>
+      <button class="vg-theme" id="theme-toggle" type="button" aria-pressed="false" aria-label="Dark mode" title="Dark mode">
         <svg class="icon-moon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M13.5 10.2A6 6 0 0 1 5.8 2.5a6 6 0 1 0 7.7 7.7z" fill="currentColor"/></svg>
-        <svg class="icon-sun" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="3.2" fill="currentColor"/><path d="M8 .8v2M8 13.2v2M.8 8h2M13.2 8h2M2.9 2.9l1.4 1.4M11.7 11.7l1.4 1.4M2.9 13.1l1.4-1.4M11.7 4.3l1.4-1.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        <svg class="icon-sun" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="3.2" fill="currentColor"/><path d="M8 1v1.6M8 13.4V15M1 8h1.6M13.4 8H15M3.05 3.05l1.13 1.13M11.82 11.82l1.13 1.13M3.05 12.95l1.13-1.13M11.82 4.18l1.13-1.13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
       </button>
     </div>
   </nav>
@@ -50,7 +49,7 @@
   </nav>
   <main id="plate" tabindex="-1" aria-live="polite"></main>
 </div>
-<footer class="vfoot">
+<footer class="vg-footer">
   <p>vega-datasets is part of the <a href="https://vega.github.io/">Vega project</a>. Found a problem with a dataset? <a href="https://github.com/vega/vega-datasets/issues">Open an issue</a>.</p>
 </footer>
 <noscript><p style="padding: 24px">The Field Guide needs JavaScript. The datasets and their documentation are in <a href="https://github.com/vega/vega-datasets/blob/main/datapackage.md">datapackage.md</a>.</p></noscript>

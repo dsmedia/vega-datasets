@@ -35,15 +35,10 @@ const STORAGE_KEY = "vega-datasets-theme";
 /**
  * Wire the light/dark button. The page starts light (like the other Vega sites);
  * site/static/theme-init.js restores a saved dark choice before first paint.
+ * It is a toggle button: the label stays "Dark mode" and aria-pressed carries the state.
  */
 export function initThemeToggle(button: HTMLButtonElement): void {
-  const sync = () => {
-    const dark = isDark();
-    button.setAttribute("aria-pressed", String(dark));
-    const label = dark ? "Light mode" : "Dark mode";
-    button.setAttribute("aria-label", label);
-    button.title = label;
-  };
+  const sync = () => button.setAttribute("aria-pressed", String(isDark()));
   sync();
   button.addEventListener("click", () => {
     const next = isDark() ? "light" : "dark";
