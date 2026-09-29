@@ -10,6 +10,7 @@ import { compile, type TopLevelSpec } from 'vega-lite';
 import { describe, expect, test } from 'vitest';
 import { interleave, isReleased, linkText, useSnippets } from '../src/dataset-model';
 import {
+  bothValuesNote,
   chartFeatures,
   defaultAxes,
   exploreModes,
@@ -112,6 +113,14 @@ describe('Explore', () => {
     const spec = starterChart(ds('cars'))!;
     expect((spec.data as { url: string }).url).toBe(ds('cars').url);
     expect((withDataUrl(spec, siteDataUrl(ds('cars'))).data as { url: string }).url).toBe('data/cars.json');
+  });
+
+  test('the caption counts rows only once they are read to draw (it never loads a file itself)', () => {
+    const cars = ds('cars');
+    const rows = parseTable(readFileSync(path.join(REPO, 'data', cars.file), 'utf8'), cars.format);
+    expect(bothValuesNote(cars, null, 'Horsepower', 'Miles_per_Gallon')).toBeNull();
+    expect(bothValuesNote(cars, rows, 'Horsepower', 'Miles_per_Gallon')).toBe('392 of 406 rows have both values.');
+    expect(bothValuesNote(cars, rows, 'Displacement', 'Miles_per_Gallon')).toBe('398 of 406 rows have both values.');
   });
 
   const scatters = catalog.datasets.filter((d) => exploreModes(d)[0] === 'scatter');

@@ -5,6 +5,7 @@
  */
 import { dsvFormat } from "d3-dsv";
 import type { Dataset, Field } from "./catalog";
+import { formatCount } from "./format";
 import { fieldRef, isMeasure, isYear, nominal, starterSpec } from "./starter";
 
 type Spec = Record<string, unknown>;
@@ -167,6 +168,22 @@ export function parseTable(text: string, format: string): Record<string, unknown
   if (format === "json") return JSON.parse(text) as Record<string, unknown>[];
   const [columns = [], ...rows] = dsvFormat(format === "tsv" ? "\t" : ",").parseRows(text);
   return rows.map((r) => Object.fromEntries(columns.map((c, i) => [c, r[i] ?? ""])));
+}
+
+/** Rows where both fields hold numbers. */
+function countBoth(rows: Record<string, unknown>[], x: string, y: string): number {
+  const ok = (v: unknown) => v !== null && v !== "" && Number.isFinite(Number(v));
+  return rows.filter((r) => ok(r[x]) && ok(r[y])).length;
+}
+
+/**
+ * "398 of 406 rows have both values." for the scatter caption, from the rows already read
+ * to draw the chart; null until then, so the caption never downloads a file on its own
+ * (a large file waits for its Draw Chart button).
+ */
+export function bothValuesNote(d: Dataset, rows: Record<string, unknown>[] | null, x: string, y: string): string | null {
+  if (!rows || d.rows === null) return null;
+  return `${formatCount(countBoth(rows, x, y))} of ${formatCount(d.rows)} rows have both values.`;
 }
 
 /** The Vega-Lite features a spec uses, for the line under the chart. */

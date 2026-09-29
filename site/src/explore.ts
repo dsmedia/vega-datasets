@@ -5,8 +5,9 @@
  */
 import type { Dataset } from "./catalog";
 import { h } from "./dom";
-import { formatBytes, formatCount } from "./format";
+import { formatBytes } from "./format";
 import {
+  bothValuesNote,
   chartFeatures,
   defaultAxes,
   exploreModes,
@@ -41,12 +42,6 @@ export function stopExplore(): void {
 /** "an origin", "a species". */
 function withArticle(word: string): string {
   return `${/^[aeiou]/i.test(word) ? "an" : "a"} ${word}`;
-}
-
-/** Rows where both fields hold numbers. */
-function countBoth(rows: Record<string, unknown>[], x: string, y: string): number {
-  const ok = (v: unknown) => v !== null && v !== "" && Number.isFinite(Number(v));
-  return rows.filter((r) => ok(r[x]) && ok(r[y])).length;
 }
 
 export function exploreSection(d: Dataset): HTMLElement | null {
@@ -91,24 +86,23 @@ export function exploreSection(d: Dataset): HTMLElement | null {
     return starterChart(d) ?? starterSpec(d)!;
   };
 
-  // Tables are read once, here, and handed to Vega (see parseTable); the count below uses them too.
+  // Tables are read once, when the chart is first drawn, and handed to Vega (see parseTable);
+  // the caption's count reuses them but never reads the file itself.
   let rowsPromise: Promise<Record<string, unknown>[]> | null = null;
+  let loadedRows: Record<string, unknown>[] | null = null;
   const rows = () => (rowsPromise ??= fetch(siteDataUrl(d)).then((res) => {
     if (!res.ok) throw new Error(`Could not load ${d.file} (HTTP ${res.status})`);
     return res.text();
-  }).then((text) => parseTable(text, d.format)));
-  const describe = async (spec: Spec) => {
+  }).then((text) => (loadedRows = parseTable(text, d.format))));
+  const describe = (spec: Spec) => {
     edit.href = editorUrl(spec);
     features.textContent = chartFeatures(spec).join(" · ");
     note.hidden = state.mode !== "scatter" || !fields;
     if (state.mode !== "scatter" || !fields) return;
     const color = fields.color ? ` ${phone.matches ? "Tap" : "Click"} the legend to isolate ${withArticle(fields.color.name.toLowerCase())}.` : "";
     const lead = phone.matches ? `Pick two fields.${color}` : `Pick two fields. Scroll to zoom, drag to pan.${color}`;
-    note.textContent = lead;
-    if (d.rows === null) return;
-    const { x, y } = state;
-    const n = countBoth(await rows(), x, y);
-    if (state.x === x && state.y === y) note.textContent = `${lead} ${formatCount(n)} of ${formatCount(d.rows)} rows have both values.`;
+    const count = bothValuesNote(d, loadedRows, state.x, state.y);
+    note.textContent = count ? `${lead} ${count}` : lead;
   };
 
   let result: { view: import("vega").View; finalize(): void } | undefined;
@@ -137,14 +131,14 @@ export function exploreSection(d: Dataset): HTMLElement | null {
       actions: { export: true, source: true, compiled: true, editor: false },
     });
     if (destroyed) { result.finalize(); return; }
-    void describe(spec);
+    describe(spec);
     if (state.mode === "scatter") {
       const view = result.view;
       const follow = (axis: "x" | "y") => (_name: string, value: unknown) => {
         state[axis] = String(value);
         // A zoom on the old fields would hide the new ones: clear it (the scale domains read this store).
         if (!phone.matches) void view.change("zoom_store", view.changeset().remove(() => true)).runAsync();
-        void describe(currentSpec());
+        describe(currentSpec());
       };
       view.addSignalListener("xField", follow("x"));
       view.addSignalListener("yField", follow("y"));
@@ -165,7 +159,7 @@ export function exploreSection(d: Dataset): HTMLElement | null {
     phone.removeEventListener("change", onScreen);
     result?.finalize();
   };
-  void describe(currentSpec());
+  describe(currentSpec());
   if ((d.bytes ?? 0) > AUTO_LOAD_BYTES) {
     host.append(h("button", {
       class: "btn draw", type: "button",
