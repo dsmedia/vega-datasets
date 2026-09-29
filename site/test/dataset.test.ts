@@ -147,7 +147,8 @@ describe('Explore', () => {
     expect((withDataUrl(spec, siteDataUrl(ds('cars'))).data as { url: string }).url).toBe('data/cars.json');
   });
 
-  test('every file has a same-origin path (charts and the Download button, which needs one)', () => {
+  // dataset-page.test.ts checks that the Download button links to this path.
+  test('every file has a same-origin path, and the file is there', () => {
     const page = 'https://vega.github.io/vega-datasets/';
     for (const d of catalog.datasets) {
       expect(new URL(siteDataUrl(d), page).origin, d.name).toBe(new URL(page).origin);
