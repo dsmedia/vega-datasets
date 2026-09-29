@@ -10,7 +10,7 @@
 import LZString from "lz-string";
 import type { Result } from "vega-embed";
 import { afterPaint, h } from "./dom";
-import { onThemeChange, reducedMotion, token } from "./theme";
+import { chartInk, onThemeChange, reducedMotion, token } from "./theme";
 
 type Spec = Record<string, unknown>;
 
@@ -70,19 +70,24 @@ export interface Colors {
   focus: string;
   surface: string;
   watermark: string;
+  /** Forced colors only: the watermark is a system color at full strength, so it's dimmed. */
+  watermarkOpacity?: number;
   trail: string;
   label: string;
 }
 
+/** The points keep their data colors; the rest follows the theme, or the forced colors. */
 function colors(): Colors {
+  const ink = chartInk();
   return {
     neutral: token("--motion-neutral"),
     accent: token("--chart-1"),
-    focus: token("--ink-strong"),
-    surface: token("--surface"),
-    watermark: token("--motion-watermark"),
-    trail: token("--ink"),
-    label: token("--ink"),
+    focus: ink.strong,
+    surface: ink.surface,
+    watermark: ink.forced ? ink.grid : token("--motion-watermark"),
+    ...(ink.forced ? { watermarkOpacity: 0.4 } : {}),
+    trail: ink.ink,
+    label: ink.ink,
   };
 }
 
@@ -168,6 +173,7 @@ export function gapminderSpec(values: Country[], width: number, height: number, 
             fontSize: { signal: "clamp(width / 5, 56, 150)" },
             fontWeight: { value: 600 },
             fill: { value: col.watermark },
+            ...(col.watermarkOpacity !== undefined ? { fillOpacity: { value: col.watermarkOpacity } } : {}),
           },
         },
       },
