@@ -10,6 +10,12 @@ import { onThemeChange } from '../src/client/theme';
 import { type ChartInk, chartConfig, forcedInk, type SystemColors } from '../src/lib/vega-theme';
 import { loadCatalog, readDataUrl } from './catalog';
 
+// jsdom has no 2D canvas: it returns null from getContext, but also logs "Not implemented" when
+// vega-scenegraph probes it for text metrics. Return null quietly, before vega loads.
+vi.hoisted(() => {
+  HTMLCanvasElement.prototype.getContext = (() => null) as typeof HTMLCanvasElement.prototype.getContext;
+});
+
 // A dark forced palette, as Chrome's emulation and Windows' "Night sky" give it.
 const SYSTEM: SystemColors = {
   canvasText: 'rgb(255, 255, 255)',
