@@ -17,6 +17,8 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23234a3b'/%3E%3Cpath d='M4 11h2V7H4zm3 0h2V4H7zm3 0h2V8h-2z' fill='%23fff'/%3E%3C/svg%3E">
 <script src="assets/theme-init.js"></script>
 <link rel="stylesheet" href="assets/site.css">
+<!-- Every page starts from the catalog: fetch it alongside main.js, not after it (catalog.ts's fetch() uses this). -->
+<link rel="preload" href="catalog.json" as="fetch" crossorigin>
 </head>
 <body>
 <header class="vg-header">

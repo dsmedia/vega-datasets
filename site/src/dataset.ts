@@ -18,7 +18,6 @@ import { exploreSection, stopExplore } from "./explore";
 import { siteDataUrl } from "./explore-model";
 import { formatBytes, formatCount, FORMAT_LABEL, plural } from "./format";
 import { renderMarkdown } from "./markdown";
-import { motionSection, stopMotion } from "./motion";
 import { missingCount, profileSummary, sparkline, typeLabel } from "./profile";
 
 const REPO = "https://github.com/vega/vega-datasets";
@@ -27,13 +26,39 @@ const EXAMPLES_SHOWN = 8;
 const PREVIEW_ROWS = 5;
 
 let teardown: (() => void) | null = null;
+/** motion.ts's stop, once the gapminder page has loaded it. */
+let stopMotion: (() => void) | null = null;
+/** Bumped when the page changes, so motion.ts arriving late fills nothing. */
+let motionPage = 0;
 
 /** Stop the page's charts and observers (before showing another page). */
 export function stopDataset(): void {
-  stopMotion();
+  motionPage++;
+  stopMotion?.();
   stopExplore();
   teardown?.();
   teardown = null;
+}
+
+/**
+ * Gapminder's "In Motion" section: its heading now, its controls and animated chart once
+ * motion.ts loads. Only this page uses that module, so the others don't download it.
+ */
+function motionSection(d: Dataset): HTMLElement | null {
+  if (d.name !== "gapminder") return null;
+  const section = h("section", { class: "ds-sec motion", id: "sec-motion", "aria-labelledby": "motion-h" },
+    h("div", { class: "sec-head" }, h("h2", { id: "motion-h" }, "In Motion")));
+  const page = motionPage;
+  import("./motion").then(
+    (motion) => {
+      stopMotion = motion.stopMotion;
+      if (page === motionPage) motion.fillMotion(section);
+    },
+    (err: unknown) => {
+      section.append(h("p", { class: "muted" }, `The chart didn't load: ${err instanceof Error ? err.message : String(err)}`));
+    },
+  );
+  return section;
 }
 
 function gdot(g: Gallery): HTMLElement {
@@ -302,7 +327,6 @@ export function renderDataset(c: Catalog, d: Dataset, page: HTMLElement): void {
   if (fields) fields.dataset.count = String(d.fields.length);
   const explore = exploreSection(d);
   const motion = motionSection(d);
-  if (motion) motion.id = "sec-motion";
   const preview = previewSection(d);
   const examples = examplesSection(c, d);
   if (d.usedBy.length) examples.dataset.count = String(d.usedBy.length);
