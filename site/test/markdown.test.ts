@@ -66,6 +66,13 @@ describe('links', () => {
     expect(link('[q](#cars "Tom &amp; Jerry &lt;3")').title).toBe('Tom & Jerry <3');
   });
 
+  // An autolink's destination is its literal text: CommonMark decodes no references there.
+  test('autolinks and bare URLs keep their text as written', () => {
+    expect(link('<https://e.com/?a=1&amp;b=2>').href).toBe('https://e.com/?a=1&amp;b=2');
+    expect(link('https://e.com/?a=1&amp;b=2').href).toBe('https://e.com/?a=1&amp;b=2');
+    expect(link('<https://e.com/?a=1&b=2>').href).toBe('https://e.com/?a=1&b=2');
+  });
+
   test('a scheme hidden behind references is still blocked', () => {
     for (const source of [
       '[x](javascript&#58;alert(1))',

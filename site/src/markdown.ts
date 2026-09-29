@@ -16,6 +16,11 @@ function attr(value: string): string {
   return value.replace(/&(?![a-z][a-z\d]*;|#\d{1,7};|#x[\da-f]{1,6};)|[<>"]/gi, (c) => `&#${c.charCodeAt(0)};`);
 }
 
+/** An autolink's destination (a URL in angle brackets, or a bare URL) is literal text: every `&` is escaped. */
+function literalAttr(value: string): string {
+  return value.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
+}
+
 /**
  * Whether a destination may keep its target: http(s) and mailto only. The check reads the
  * destination before references are decoded, so it passes only a scheme spelled out in plain
@@ -35,12 +40,13 @@ function renderer(headingShift: number): Marked {
       html({ text }) {
         return text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
       },
-      link({ href, title, tokens }) {
+      link({ href, title, tokens, autolink }) {
         const text = this.parser.parseInline(tokens);
+        const dest = autolink ? literalAttr : attr;
         const t = title ? ` title="${attr(title)}"` : "";
-        if (href.startsWith("#")) return `<a href="${attr(href)}"${t}>${text}</a>`;
+        if (href.startsWith("#")) return `<a href="${dest(href)}"${t}>${text}</a>`;
         const safe = allowed(href) ? href : "#";
-        return `<a href="${attr(safe)}"${t} target="_blank" rel="noopener">${text}</a>`;
+        return `<a href="${dest(safe)}"${t} target="_blank" rel="noopener">${text}</a>`;
       },
       heading({ tokens, depth }) {
         const level = Math.min(6, depth + headingShift);
