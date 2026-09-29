@@ -18,6 +18,8 @@ export interface ChartOptions {
   labels: number;
   /** Put the legend above the plot (narrow screens) instead of at the right. */
   legendTop: boolean;
+  /** Legend entries per row when it sits on top: 2 on the narrowest phones, so it clears the menu button. */
+  legendColumns?: number;
   /** Font for the name labels (the page's mono stack). */
   monoFont: string;
 }
@@ -35,7 +37,17 @@ export function catalogSpec(rows: ChartRow[], counts: Record<FormatGroup, number
     label: labeled.has(r.name),
     description: `${r.name}: ${r.format}, ${r.size}, ${r.examples} gallery ${r.examples === 1 ? "example" : "examples"}`,
   }));
-  const dim = o.brush ? { opacity: { condition: { param: "brush", empty: true, value: 1 }, value: 0.18 } } : {};
+  // Points outside the search and chip filters fade (the `matched` param, set by the page);
+  // on wide screens, so do points outside the brush.
+  const dim = {
+    opacity: {
+      condition: [
+        { test: "matched && indexof(matched, datum.name) < 0", value: 0.1 },
+        ...(o.brush ? [{ param: "brush", empty: true, value: 1 }] : []),
+      ],
+      value: o.brush ? 0.18 : 1,
+    },
+  };
   const legendLabel = FORMAT_GROUPS.reduceRight(
     (rest, g) => `datum.label === '${g}' ? '${g} ${counts[g]}' : ${rest}`,
     "datum.label",
@@ -60,6 +72,8 @@ export function catalogSpec(rows: ChartRow[], counts: Record<FormatGroup, number
     height: o.height,
     autosize: { type: "fit-x", contains: "padding" },
     data: { values },
+    // Names of the datasets the page's filters match; null when nothing is filtered.
+    params: [{ name: "matched", value: null }],
     layer: [
       {
         ...(o.brush ? { params: [{ name: "brush", select: { type: "interval", encodings: ["x", "y"] } }] } : {}),
@@ -73,7 +87,7 @@ export function catalogSpec(rows: ChartRow[], counts: Record<FormatGroup, number
             title: "Format",
             scale: { domain: [...FORMAT_GROUPS], range: FORMAT_GROUPS.map((g) => FORMAT_COLORS[g]) },
             legend: o.legendTop
-              ? { orient: "top", direction: "horizontal", title: null, labelExpr: legendLabel, columnPadding: 10, symbolSize: 50, offset: 6 }
+              ? { orient: "top", direction: "horizontal", columns: o.legendColumns ?? 4, title: null, labelExpr: legendLabel, columnPadding: 10, symbolSize: 50, offset: 6 }
               : { labelExpr: legendLabel },
           },
           ...dim,
@@ -103,6 +117,11 @@ export function toBrush(value: unknown): Brush | null {
 export interface MountedChart {
   /** Draw again (clears the brush). */
   redraw(): Promise<void>;
+  /**
+   * Fade the points not in `names` (null: none). Sets a signal on the live view, so the
+   * brush and the axes stay as they are; kept across redraws.
+   */
+  setMatches(names: string[] | null): void;
   destroy(): void;
 }
 
@@ -123,6 +142,7 @@ export async function mountCatalogChart(
   let result: Awaited<ReturnType<typeof vegaEmbed>> | undefined;
   let queue: Promise<void> = Promise.resolve();
   let destroyed = false;
+  let matched: string[] | null = null;
   const draw = async () => {
     if (destroyed) return;
     result?.finalize();
@@ -136,6 +156,7 @@ export async function mountCatalogChart(
       actions: { export: true, source: false, compiled: false, editor: true },
     });
     if (destroyed) { result.finalize(); return; }
+    if (matched) await result.view.signal("matched", matched).runAsync();
     onBrush(null);
     if (o.brush) result.view.addSignalListener("brush", (_name, value) => onBrush(toBrush(value)));
   };
@@ -144,6 +165,10 @@ export async function mountCatalogChart(
   await redraw();
   return {
     redraw,
+    setMatches: (names) => {
+      matched = names;
+      void result?.view.signal("matched", names).runAsync();
+    },
     destroy: () => {
       destroyed = true;
       unsubscribe();

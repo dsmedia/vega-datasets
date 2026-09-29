@@ -13,7 +13,7 @@
   color-scheme: light;
   --surface: #ffffff; --surface-alt: #f8f8f8; --surface-code: #f6f6f6; --surface-pre: #f9f9f9; --surface-menu: #e2e2e2;
   --surface-card: #ffffff;
-  --ink: #373a3c; --ink-strong: #000000; --ink-heading-4: #333333; --ink-muted: #777777; --ink-nav: #666666; --ink-faint: #aaaaaa;
+  --ink: #373a3c; --ink-strong: #000000; --ink-heading-4: #333333; --ink-muted: #666666; --ink-nav: #666666; --ink-faint: #aaaaaa;
   --link: #4682b4; --rule: #cccccc; --rule-soft: #dddddd; --rule-faint: #eeeeee;
   --button: #3771ad; --button-border: #153c63; --button-hover: #285e8e; --on-button: #ffffff;
   --button-secondary: #ffffff; --button-secondary-border: #cccccc; --button-secondary-hover: #ebebeb;
@@ -35,6 +35,8 @@
   --page-max: 1320px; --page-gutter: 20px; --header-height: 54px;
   --radius-tag: 2px; --radius-button: 4px;
 }
+/* --ink-muted is #666, not the family sites' #777: that is 4.48:1 on white, under AA for
+   the small labels this site sets in it (#666 is 5.7:1). */
 /* The page starts light (index.html sets data-theme="light"); theme-init.js and the toggle set dark. */
 :root[data-theme="dark"] {
   color-scheme: dark;
@@ -232,7 +234,7 @@ table.preview tr:last-child td { border-bottom: 0; }
 .ds-sec { display: flex; flex-direction: column; gap: 12px; min-width: 0; scroll-margin-top: calc(var(--header-height) + 56px); }
 .ds-sec h2 { font-size: 22px; font-weight: 500; color: var(--ink-strong); }
 .ds-sec h2:focus { outline: none; }
-.sec-meta { font-size: 12px; color: var(--ink-muted); }
+.sec-meta { font-size: 13px; color: var(--ink-muted); }
 .sec-note { font-size: 13px; color: var(--ink-muted); }
 .sec-foot { display: flex; justify-content: space-between; align-items: center; gap: 24px; }
 .sec-foot .btn { flex: none; }
@@ -347,6 +349,8 @@ td.f-miss.any { color: var(--missing); }
 }
 .snippet code { font: inherit; }
 .snippets .snippet { border-top: 0; padding-right: 72px; min-height: 48px; }
+/* Long URLs wrap rather than scroll (how far they reach depends on the monospace font). */
+.quickstart .snippet { white-space: pre-wrap; overflow-wrap: anywhere; }
 .copy-btn {
   position: absolute; top: 8px; right: 8px; appearance: none; border: 1px solid var(--button-secondary-border);
   border-radius: var(--radius-button); background: var(--surface); font: 12px var(--font-sans); color: var(--ink-heading-4);
@@ -360,7 +364,7 @@ button.link:hover { text-decoration: underline; }
   display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--rule); border-radius: var(--radius-button);
   background: var(--surface); font: 13px var(--font-sans); color: var(--ink); padding: 5px 10px; cursor: pointer; white-space: nowrap;
 }
-.chip .n { font: 11px var(--font-mono); color: var(--ink-muted); }
+.chip .n { font: 12px var(--font-mono); color: var(--ink-muted); }
 .chip[aria-pressed="true"] { border-color: var(--selected-border); background: var(--selected-bg); color: var(--selected); }
 .chip .gtag { font-size: inherit; color: inherit; }
 
@@ -379,7 +383,7 @@ button.link:hover { text-decoration: underline; }
 .intro { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 520px); gap: 60px; padding-top: 36px; align-items: start; }
 .intro-text { display: flex; flex-direction: column; gap: 18px; }
 .intro .lead { font-size: 1.3em; font-weight: 300; line-height: 1.5; }
-.release { font-size: 12px; color: var(--ink-muted); white-space: pre-wrap; }
+.release { font-size: 13px; color: var(--ink-muted); white-space: pre-wrap; }
 .lead-buttons { display: flex; flex-wrap: wrap; gap: 12px; }
 .quickstart .note { margin-top: 8px; font-size: 13px; color: var(--ink-muted); }
 .quickstart .note code { margin: 0 1px; padding: 0 4px; background: var(--surface-code); border: 1px solid var(--rule-soft); color: var(--ink); }
@@ -389,7 +393,7 @@ button.link:hover { text-decoration: underline; }
 .browse h2, .use h2, .about h2 { font-size: 28px; font-weight: 500; color: var(--ink-strong); }
 .use h2, .about h2 { border-bottom: 1px solid var(--rule); padding-bottom: 1px; }
 .sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--rule); padding-bottom: 1px; }
-.status { font-size: 12px; color: var(--ink-muted); white-space: pre-wrap; text-align: right; }
+.status { font-size: 13px; color: var(--ink-muted); white-space: pre-wrap; text-align: right; }
 .catalog-chart { position: relative; min-height: 240px; }
 .chart-note { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; font-size: 13px; color: var(--ink-muted); }
 .chart-note .mono { font-size: 12px; white-space: nowrap; }
@@ -415,13 +419,13 @@ button.link:hover { text-decoration: underline; }
 }
 .card:hover { outline: 2px solid var(--link); outline-offset: -1px; text-decoration: none; }
 .card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
-.card-head .mono { font-size: 12px; color: var(--ink-muted); }
+.card-head .mono { font-size: 13px; color: var(--ink-muted); }
 .card-name { font: bold 15px var(--font-mono); color: var(--ink-strong); overflow-wrap: anywhere; }
 .card-desc {
   font-size: 14px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 .card-foot { display: flex; flex-direction: column; gap: 10px; margin-top: auto; }
-.card-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--ink-muted); }
+.card-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; color: var(--ink-muted); }
 .card-usage { display: flex; align-items: center; gap: 10px; }
 .card-usage .mono { font-size: 12px; color: var(--ink); }
 .card .stack { width: 120px; }

@@ -9,6 +9,7 @@ import { describe, expect, test } from 'vitest';
 import { catalogSpec, toBrush } from '../src/catalog-chart';
 import { formatBytes } from '../src/format';
 import {
+  baseMatches,
   chartRows,
   FORMAT_GROUPS,
   homeCounts,
@@ -87,6 +88,13 @@ describe('the card list', () => {
   });
 });
 
+test('the chart matches follow search and chips, never the brush', () => {
+  const brush = { bytes: [1, 2] as [number, number], examples: [0, 0] as [number, number] };
+  const topo = { ...NO_FILTERS, formats: new Set(['TopoJSON'] as const), brush };
+  expect(listDatasets(catalog, topo)).toEqual([]);
+  expect(baseMatches(catalog, topo)).toHaveLength(counts.formats.TopoJSON);
+});
+
 test('card summaries are the first paragraph as plain text', () => {
   expect(plainSummary('A [TopoJSON](https://x) map with `code` and **bold**.\n\nMore.')).toBe('A TopoJSON map with code and bold.');
   expect(plainSummary('Wrapped\nline.')).toBe('Wrapped line.');
@@ -137,6 +145,7 @@ describe('the catalog chart', () => {
   test.each([
     ['wide, with brush', options],
     ['phone, tap only', { ...options, brush: false, height: 214, labels: 5, legendTop: true }],
+    ['narrowest phone', { ...options, brush: false, height: 214, labels: 5, legendTop: true, legendColumns: 2 }],
   ])('%s: compiles without warnings and draws every point', async (_name, o) => {
     const warnings: string[] = [];
     const logger = {
@@ -160,6 +169,25 @@ describe('the catalog chart', () => {
       const labels = [...svg.matchAll(/<text[^>]*font-family="monospace"[^>]*>([^<]+)<\/text>/g)].map((m) => m[1]);
       expect(labels).toHaveLength(o.labels);
       expect(labels).toContain('cars');
+    } finally {
+      view.finalize();
+    }
+  });
+
+  test('filters fade the points they exclude, and the axes stay put', async () => {
+    const view = new vega.View(vega.parse(compile({ ...catalogSpec(rows, counts.formats, options), width: 800 } as TopLevelSpec).spec), { renderer: 'none' });
+    try {
+      await view.runAsync();
+      const ticks = (svg: string) => [...svg.matchAll(/<text[^>]*>([\d.,]+(?: [KM]?B)?)<\/text>/g)].map((m) => m[1]).join('|');
+      const faded = (svg: string) => (svg.match(/<path[^>]*opacity="0\.1"/g) ?? []).length;
+      const before = await view.toSVG();
+      expect(faded(before)).toBe(0);
+      await view.signal('matched', ['cars', 'movies']).runAsync();
+      const after = await view.toSVG();
+      expect(faded(after)).toBe(rows.length - 2);
+      expect(ticks(after)).toBe(ticks(before));
+      await view.signal('matched', null).runAsync();
+      expect(faded(await view.toSVG())).toBe(0);
     } finally {
       view.finalize();
     }

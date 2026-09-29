@@ -8,6 +8,7 @@ import { snippetTabs, thumbImg, usageStack } from "./components";
 import { append, clear, h } from "./dom";
 import { formatBytes, formatCount, FORMAT_LABEL, plural } from "./format";
 import {
+  baseMatches,
   type Brush,
   chartRows,
   type Filters,
@@ -32,6 +33,16 @@ const PHONE = "(max-width: 640px)";
 const CARDS = { wide: 9, phone: 4 };
 
 let teardown: (() => void) | null = null;
+
+/**
+ * What the reader set on the home page, kept while they visit a dataset so Back (or the
+ * Datasets link) returns to the same list. Only for this page view; the brush is not
+ * kept, since the chart is drawn afresh.
+ */
+const saved = {
+  filters: { ...NO_FILTERS, formats: new Set<FormatGroup>(), galleries: new Set<Gallery>() },
+  expanded: false,
+};
 
 /** Stop the home page's chart and listeners (before showing another page). */
 export function stopHome(): void {
@@ -93,7 +104,11 @@ function readmeBody(c: Catalog, heading: string): HTMLElement | null {
   return el;
 }
 
-export function renderHome(c: Catalog, root: HTMLElement): void {
+/**
+ * Render the home page. `returningFrom` names the dataset the reader just left: its card
+ * is scrolled into view and focused. Returns whether a card took focus.
+ */
+export function renderHome(c: Catalog, root: HTMLElement, returningFrom?: string): boolean {
   stopHome();
   const counts = homeCounts(c);
   const phone = matchMedia(PHONE);
@@ -101,9 +116,9 @@ export function renderHome(c: Catalog, root: HTMLElement): void {
 
   // --- Title, showcase and introduction ---------------------------------------------------
   const strip = h("div", { class: "showcase", "aria-hidden": "true" },
-    showcase(c, 16).map((e, i) => {
+    showcase(c, 8).map((e) => {
       const img = thumbImg(e);
-      if (i < 8) img.loading = "eager";
+      img.loading = "eager";
       return h("a", { href: e.url, target: "_blank", rel: "noopener", tabindex: -1 }, img);
     }));
 
@@ -120,8 +135,9 @@ export function renderHome(c: Catalog, root: HTMLElement): void {
   const intro = h("section", { class: "wrap intro", "aria-label": "Introduction" },
     h("div", { class: "intro-text" },
       h("p", { class: "lead" },
-        `${formatCount(counts.datasets)} datasets behind ${formatCount(counts.examplesWithData)} examples in the Vega, Vega-Lite and Altair galleries. `,
-        "Each one documents its fields, source and license, and links to every chart that uses it."),
+        "The example data behind the Vega, Vega-Lite and Altair galleries. ",
+        "Each dataset documents its fields, source and license, and links to every gallery example that uses it: ",
+        `${formatCount(counts.datasets)} datasets and ${formatCount(counts.examplesWithData)} examples in all.`),
       h("p", { class: "release mono" },
         `Release ${c.package.version}  ·  Data Package v2`, h("span", { class: "wide-only" }, "  ·  BSD-3-Clause code")),
       h("div", { class: "lead-buttons" },
@@ -137,7 +153,10 @@ export function renderHome(c: Catalog, root: HTMLElement): void {
     h("div", { class: "quickstart" },
       snippetTabs("qs", "Quick start", [
         { name: "URL", code: cdnUrl(c, "cars.json") },
-        { name: "npm", code: "npm install vega-datasets" },
+        {
+          name: "JavaScript",
+          code: "npm install vega-datasets\n\nimport data from 'vega-datasets';\nconst cars = await data['cars.json']();",
+        },
         {
           name: "Vega-Lite",
           code: [
@@ -153,16 +172,16 @@ export function renderHome(c: Catalog, root: HTMLElement): void {
         },
         { name: "Python", code: "from altair.datasets import data\n\ncars = data.cars()" },
       ]),
+      // A major-version URL floats; say so, and give the exact release for a fixed version.
       h("p", { class: "note" },
-        "Pin ", h("code", null, `@${c.package.version.split(".")[0]}`), " to get fixes without breaking changes. ",
+        "The ", h("code", null, `@${c.package.version.split(".")[0]}`), ` URL tracks ${c.package.version.split(".")[0]}.x releases, so it gets fixes without breaking changes. To lock a version, use `,
+        h("code", null, `@${c.package.version}`), ". ",
         h("button", { class: "link", type: "button", onclick: openVersioning }, "Versioning"))),
   );
 
   // --- Datasets: chart, filters, cards ----------------------------------------------------------
-  const filters: Filters & { formats: Set<FormatGroup>; galleries: Set<Gallery> } = {
-    ...NO_FILTERS, formats: new Set(), galleries: new Set(),
-  };
-  let expanded = false;
+  const filters: Filters & { formats: Set<FormatGroup>; galleries: Set<Gallery> } = saved.filters;
+  filters.brush = null;
   const status = h("span", { class: "status mono", "aria-live": "polite" });
   const chartHost = h("div", { class: "catalog-chart" });
   const chartNote = h("span", { class: "hint" });
@@ -176,18 +195,23 @@ export function renderHome(c: Catalog, root: HTMLElement): void {
   const more = h("button", { class: "btn more", type: "button" });
   let chart: MountedChart | null = null;
 
+  search.value = filters.query;
+  sort.value = filters.sort;
   const formatChips = FORMAT_GROUPS.map((g) => chip(g, counts.formats[g], (on) => {
     if (on) filters.formats.add(g); else filters.formats.delete(g);
-    update();
+    refilter();
   }));
   const galleryChips = GALLERIES.map((g) => chip(
     h("span", { class: `gtag g-${g}` }, h("span", { class: "gdot", "aria-hidden": "true" }), GALLERY_LABEL[g]),
     counts.galleries[g],
     (on) => {
       if (on) filters.galleries.add(g); else filters.galleries.delete(g);
-      update();
+      refilter();
     },
   ));
+
+  formatChips.forEach((b, i) => b.setAttribute("aria-pressed", String(filters.formats.has(FORMAT_GROUPS[i]!))));
+  galleryChips.forEach((b, i) => b.setAttribute("aria-pressed", String(filters.galleries.has(GALLERIES[i]!))));
 
   const clearAll = () => {
     filters.query = "";
@@ -197,13 +221,21 @@ export function renderHome(c: Catalog, root: HTMLElement): void {
     for (const b of [...formatChips, ...galleryChips]) b.setAttribute("aria-pressed", "false");
     if (filters.brush) void chart?.redraw();
     filters.brush = null;
-    update();
+    refilter();
   };
+
+  /** A filter changed: show the first cards of the new list, then redraw. */
+  function refilter(): void {
+    saved.expanded = false;
+    update();
+  }
 
   function update(): void {
     const list = listDatasets(c, filters);
+    const base = isFiltered({ ...filters, brush: null }) ? baseMatches(c, filters).map((d) => d.name) : null;
+    chart?.setMatches(base);
     const limit = phone.matches ? CARDS.phone : CARDS.wide;
-    const shown = expanded ? list : list.slice(0, limit);
+    const shown = saved.expanded ? list : list.slice(0, limit);
     clear(status);
     if (isFiltered(filters)) {
       status.append(
@@ -215,7 +247,10 @@ export function renderHome(c: Catalog, root: HTMLElement): void {
     } else {
       status.append(SORT_NOTE[filters.sort]);
     }
+    // Re-rendering replaces the cards: keep focus on the same dataset's card if it still shows.
+    const focused = cards.contains(document.activeElement) ? document.activeElement?.getAttribute("href") : null;
     cards.replaceChildren(...shown.map((d) => card(c, d, max)));
+    if (focused) cards.querySelector<HTMLElement>(`a.card[href="${CSS.escape(focused)}"]`)?.focus({ preventScroll: true });
     if (!list.length) cards.append(h("p", { class: "cards-empty" }, "No dataset matches."));
     more.hidden = shown.length === list.length;
     more.textContent = `Show All ${formatCount(list.length)} Datasets`;
@@ -223,14 +258,14 @@ export function renderHome(c: Catalog, root: HTMLElement): void {
 
   search.addEventListener("input", () => {
     filters.query = search.value;
-    update();
+    refilter();
   });
   sort.addEventListener("change", () => {
     filters.sort = sort.value as Sort;
     update();
   });
   more.addEventListener("click", () => {
-    expanded = true;
+    saved.expanded = true;
     update();
   });
 
@@ -246,8 +281,6 @@ export function renderHome(c: Catalog, root: HTMLElement): void {
 
   append(browse, [
     h("div", { class: "sec-head" }, h("h2", { id: "browse-h" }, "Datasets"), status),
-    chartHost,
-    h("div", { class: "chart-note" }, chartNote, chartFeatures),
     h("div", { class: "filters" },
       h("label", { class: "visually-hidden", for: "home-q" }, "Search datasets"),
       search,
@@ -255,6 +288,8 @@ export function renderHome(c: Catalog, root: HTMLElement): void {
         h("div", { class: "chip-group", role: "group", "aria-label": "Format" }, h("span", { class: "chip-label" }, "Format"), formatChips),
         h("div", { class: "chip-group", role: "group", "aria-label": "Used in" }, h("span", { class: "chip-label" }, "Used in"), galleryChips)),
       h("label", { class: "sort", for: "home-sort" }, "Sort", sort)),
+    chartHost,
+    h("div", { class: "chart-note" }, chartNote, chartFeatures),
     cards,
     h("div", { class: "browse-foot" }, galleryKey(), more),
   ]);
@@ -305,25 +340,34 @@ export function renderHome(c: Catalog, root: HTMLElement): void {
     strip, intro, browse, use, about,
   );
   update();
+  const back = returningFrom ? cards.querySelector<HTMLElement>(`a.card[href="#${CSS.escape(encodeURIComponent(returningFrom))}"]`) : null;
+  if (back) {
+    back.scrollIntoView({ block: "center" });
+    back.focus({ preventScroll: true });
+  }
 
   // --- The chart, and following the screen size -------------------------------------------------------
   let live = true;
   const rows = chartRows(c, formatBytes);
   const onBrush = (b: Brush | null) => {
+    // Every redraw (a theme toggle, say) reports "no brush"; only a real change refilters.
+    if (JSON.stringify(b) === JSON.stringify(filters.brush)) return;
     filters.brush = b;
-    update();
+    refilter();
   };
   const options = () => ({
     brush: !phone.matches,
     height: phone.matches ? 214 : 240,
     labels: phone.matches ? 5 : 9,
     legendTop: phone.matches,
+    legendColumns: chartHost.clientWidth < 340 ? 2 : 4,
     monoFont: token("--font-mono"),
   });
   mountCatalogChart(chartHost, rows, counts.formats, options, onBrush).then(
     (m) => {
-      if (live) chart = m;
-      else m.destroy();
+      if (!live) { m.destroy(); return; }
+      chart = m;
+      update(); // Filters set while the chart loaded.
     },
     (err: unknown) => {
       chartHost.replaceChildren(h("p", { class: "muted" }, `The chart didn't load: ${err instanceof Error ? err.message : String(err)}`));
@@ -340,4 +384,5 @@ export function renderHome(c: Catalog, root: HTMLElement): void {
     phone.removeEventListener("change", onScreen);
     chart?.destroy();
   };
+  return back !== null;
 }

@@ -15,12 +15,13 @@ function renderFooter(d: Dataset | undefined): void {
     ? ["Spot an error? ", link(`${REPO}/blob/main/_data/datapackage_additions.toml`, "Edit this dataset's metadata"), " on GitHub."]
     : [
         "Documented in ", link(`${REPO}/blob/main/datapackage.json`, "datapackage.json"),
-        " · Code BSD-3-Clause · ", link(`${REPO}/blob/main/README.md`, "Edit this page"),
+        " · Code BSD-3-Clause",
       ]));
 }
 
 /** Show a dataset's page, or the home page for "". */
 function show(c: Catalog, name: string, userAction: boolean): void {
+  const from = current;
   current = name;
   hash.set(name);
   const d = c.dataset(name);
@@ -28,11 +29,13 @@ function show(c: Catalog, name: string, userAction: boolean): void {
   stopDataset();
   stopHome();
   clear(page);
+  // Back to the list from a dataset: that dataset's card takes focus, in view.
+  let cardFocused = false;
   if (d) renderDataset(c, d, page);
-  else renderHome(c, page);
+  else cardFocused = renderHome(c, page, from || undefined);
   renderFooter(d);
   document.title = d ? `${d.name} · Vega Datasets` : HOME_TITLE;
-  if (userAction) {
+  if (userAction && !cardFocused) {
     window.scrollTo({ top: 0 });
     page.focus({ preventScroll: true });
   }

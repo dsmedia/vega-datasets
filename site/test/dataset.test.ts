@@ -31,20 +31,20 @@ const ds = (name: string) => catalog.dataset(name)!;
 const snippetNames = (name: string) => useSnippets(ds(name)).map((s) => s.name);
 
 describe('Use This Dataset snippets', () => {
-  test('a released table gets URL, JS, Vega-Lite and Altair', () => {
+  test('a released table gets URL, JavaScript, Vega-Lite and Python (Altair)', () => {
     const s = Object.fromEntries(useSnippets(ds('cars')).map((x) => [x.name, x.code]));
-    expect(Object.keys(s)).toEqual(['URL', 'JS', 'Vega-Lite', 'Altair']);
+    expect(Object.keys(s)).toEqual(['URL', 'JavaScript', 'Vega-Lite', 'Python']);
     expect(s.URL).toBe(ds('cars').url);
-    expect(s.JS).toContain("const cars = await data['cars.json']();");
+    expect(s.JavaScript).toContain("const cars = await data['cars.json']();");
     expect(JSON.parse(`{${s['Vega-Lite']}}`)).toEqual({ data: { url: ds('cars').url } });
-    expect(s.Altair).toBe('from altair.datasets import data\n\ncars = data.cars()');
+    expect(s.Python).toBe('from altair.datasets import data\n\ncars = data.cars()');
   });
 
-  test('files that are not tables give their URL to JS and Altair', () => {
+  test('files that are not tables give their URL to JavaScript and Python', () => {
     const s = Object.fromEntries(useSnippets(ds('gimp')).map((x) => [x.name, x.code]));
-    expect(Object.keys(s)).toEqual(['URL', 'JS', 'Altair']);
-    expect(s.JS).toContain("data['gimp.png'].url");
-    expect(s.Altair).toContain('url = data.gimp.url');
+    expect(Object.keys(s)).toEqual(['URL', 'JavaScript', 'Python']);
+    expect(s.JavaScript).toContain("data['gimp.png'].url");
+    expect(s.Python).toContain('url = data.gimp.url');
   });
 
   test('TopoJSON names its object for Vega-Lite', () => {
@@ -52,11 +52,11 @@ describe('Use This Dataset snippets', () => {
     expect(JSON.parse(`{${vl.code}}`).data.format).toEqual({ type: 'topojson', feature: ds('us_10m').objects![0] });
   });
 
-  test('files not yet on npm skip the npm and Altair loaders', () => {
+  test('files not yet on npm skip the npm and Altair (Python) loaders', () => {
     const unreleased = catalog.datasets.filter((d) => !isReleased(d));
     expect(unreleased.length).toBeGreaterThan(0);
-    for (const d of unreleased) expect(snippetNames(d.name)).not.toContain('JS');
-    for (const d of unreleased) expect(snippetNames(d.name)).not.toContain('Altair');
+    for (const d of unreleased) expect(snippetNames(d.name)).not.toContain('JavaScript');
+    for (const d of unreleased) expect(snippetNames(d.name)).not.toContain('Python');
   });
 });
 
