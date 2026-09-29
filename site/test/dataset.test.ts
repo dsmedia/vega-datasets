@@ -1,7 +1,7 @@
 // The dataset page: how it tells you to load a file, what it says about each field,
 // and which live chart Explore draws — every scatter plot must compile and draw
 // points from the real file, with pickers and axis titles that follow each other.
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { csvParse } from 'd3-dsv';
 import LZString from 'lz-string';
@@ -10,6 +10,7 @@ import { compile, type TopLevelSpec } from 'vega-lite';
 import { describe, expect, test } from 'vitest';
 import { interleave, isReleased, linkText, useSnippets } from '../src/dataset-model';
 import {
+  bothValuesNote,
   chartFeatures,
   defaultAxes,
   exploreModes,
@@ -29,6 +30,38 @@ import { loadCatalog, readDataUrl, REPO } from './catalog';
 const catalog = loadCatalog();
 const ds = (name: string) => catalog.dataset(name)!;
 const snippetNames = (name: string) => useSnippets(ds(name)).map((s) => s.name);
+
+/**
+ * Vega-Lite 6.4.3 warns this for a fit autosize with a step-sized height even when the fit
+ * is only "fit-x" (which `width: "container"` implies) and nothing is dropped: an upstream
+ * bug (getTopLevelProperties). The starter bar charts with a category on y hit it. Any other
+ * warning fails; the canary test below says when the allowance can go.
+ */
+const KNOWN_VL_WARNING = 'Dropping "fit-y" because spec has discrete height.';
+
+/** A Vega-Lite logger that collects warnings (rather than printing them) and throws on errors. */
+function collectingLogger() {
+  const warnings: string[] = [];
+  const logger = {
+    level: () => logger,
+    error: (...m: unknown[]) => { throw new Error(m.join(' ')); },
+    warn: (...m: unknown[]) => { warnings.push(m.join(' ')); return logger; },
+    info: () => logger,
+    debug: () => logger,
+  };
+  return { logger: logger as never, warnings };
+}
+
+test('canary: Vega-Lite still warns "fit-y" for a container-width bar chart (when this fails, drop KNOWN_VL_WARNING)', () => {
+  const { logger, warnings } = collectingLogger();
+  compile({
+    data: { values: [{ a: 'x', b: 1 }] },
+    width: 'container',
+    mark: 'bar',
+    encoding: { y: { field: 'a', type: 'nominal' }, x: { field: 'b', type: 'quantitative' } },
+  } as TopLevelSpec, { logger });
+  expect(warnings).toEqual([KNOWN_VL_WARNING]);
+});
 
 describe('Use This Dataset snippets', () => {
   test('a released table gets URL, JavaScript, Vega-Lite and Python (Altair)', () => {
@@ -114,6 +147,23 @@ describe('Explore', () => {
     expect((withDataUrl(spec, siteDataUrl(ds('cars'))).data as { url: string }).url).toBe('data/cars.json');
   });
 
+  // dataset-page.test.ts checks that the Download button links to this path.
+  test('every file has a same-origin path, and the file is there', () => {
+    const page = 'https://vega.github.io/vega-datasets/';
+    for (const d of catalog.datasets) {
+      expect(new URL(siteDataUrl(d), page).origin, d.name).toBe(new URL(page).origin);
+      expect(existsSync(path.join(REPO, 'data', d.file)), d.name).toBe(true);
+    }
+  });
+
+  test('the caption counts rows only once they are read to draw (it never loads a file itself)', () => {
+    const cars = ds('cars');
+    const rows = parseTable(readFileSync(path.join(REPO, 'data', cars.file), 'utf8'), cars.format);
+    expect(bothValuesNote(cars, null, 'Horsepower', 'Miles_per_Gallon')).toBeNull();
+    expect(bothValuesNote(cars, rows, 'Horsepower', 'Miles_per_Gallon')).toBe('Both fields have values in 392 of 406 rows.');
+    expect(bothValuesNote(cars, rows, 'Displacement', 'Miles_per_Gallon')).toBe('Both fields have values in 398 of 406 rows.');
+  });
+
   const scatters = catalog.datasets.filter((d) => exploreModes(d)[0] === 'scatter');
   test('scatter plots cover many datasets', () => expect(scatters.length).toBeGreaterThan(20));
 
@@ -121,16 +171,9 @@ describe('Explore', () => {
     test('compiles without warnings, draws points, and its titles follow the pickers', async () => {
       const f = scatterFields(d)!;
       const axes = defaultAxes(f);
-      const warnings: string[] = [];
-      const logger = {
-        level: () => logger,
-        error: (...m: unknown[]) => { throw new Error(m.join(' ')); },
-        warn: (...m: unknown[]) => { warnings.push(m.join(' ')); return logger; },
-        info: () => logger,
-        debug: () => logger,
-      };
+      const { logger, warnings } = collectingLogger();
       const spec = { ...scatterSpec(d, f, { ...axes, zoom: true, height: 380 }), width: 600 };
-      const { spec: vg } = compile(spec as TopLevelSpec, { logger: logger as never });
+      const { spec: vg } = compile(spec as TopLevelSpec, { logger });
       expect(warnings).toEqual([]);
       // Zoom clips the view's marks; the axis titles (text marks outside the plot) must opt out.
       const clipped = JSON.stringify(vg).match(/"type":"text"[^{}]*"clip":true/g);
@@ -198,7 +241,10 @@ describe('every Explore chart draws from the rows the page reads', () => {
       : spec;
     const loader = vega.loader();
     loader.load = async (uri: string) => readDataUrl(uri);
-    const view = new vega.View(vega.parse(compile({ ...site, width: 600 } as TopLevelSpec).spec), { renderer: 'none', loader });
+    const { logger, warnings } = collectingLogger();
+    const { spec: vg } = compile({ ...site, width: 600 } as TopLevelSpec, { logger });
+    expect(warnings.filter((w) => w !== KNOWN_VL_WARNING)).toEqual([]);
+    const view = new vega.View(vega.parse(vg), { renderer: 'none', loader });
     try {
       await view.runAsync();
       const svg = await view.toSVG();
@@ -209,6 +255,52 @@ describe('every Explore chart draws from the rows the page reads', () => {
       view.finalize();
     }
   }, 60_000);
+});
+
+/** The data of every item of the view's `type` marks (not legend or axis symbols). */
+function markData(view: vega.View, type: string): Record<string, unknown>[] {
+  type Node = { marktype?: string; role?: string; items?: (Node & { datum?: Record<string, unknown> })[] };
+  const out: Record<string, unknown>[] = [];
+  const visit = (mark: Node) => {
+    if (mark.marktype === type && mark.role === 'mark') for (const i of mark.items ?? []) out.push(i.datum!);
+    for (const item of mark.items ?? []) for (const child of item.items ?? []) visit(child);
+  };
+  visit((view.scenegraph() as unknown as { root: Node }).root);
+  return out;
+}
+
+describe('every scatter plots each row at its own values', () => {
+  const scatters = catalog.datasets.filter((d) => exploreModes(d)[0] === 'scatter');
+  const num = (v: unknown) => (v === null || v === undefined || v === '' ? NaN : Number(v));
+  const byXY = (a: number[], b: number[]) => a[0]! - b[0]! || a[1]! - b[1]!;
+
+  test.each(scatters.map((d) => [d.name, d] as const))('%s', async (_name, d) => {
+    const f = scatterFields(d)!;
+    const text = readFileSync(path.join(REPO, 'data', d.file), 'utf8');
+    const pristine = parseTable(text, d.format);
+    // The default axes, and the same two fields swapped: a derived field must not overwrite a source field.
+    const axes = defaultAxes(f);
+    for (const { x, y } of [axes, { x: axes.y, y: axes.x }]) {
+      const spec = scatterSpec(d, f, { x, y, zoom: false, height: 300 });
+      const layer = (spec.layer as { encoding: { x: { field: string }; y: { field: string } } }[])[0]!;
+      const view = new vega.View(vega.parse(compile({ ...withValues(spec, parseTable(text, d.format)), width: 600 } as TopLevelSpec).spec), { renderer: 'none' });
+      try {
+        await view.runAsync();
+        const plotted = markData(view, 'symbol').map((r) => [r[layer.encoding.x.field] as number, r[layer.encoding.y.field] as number]).sort(byXY);
+        const expected = pristine.map((r) => [num(r[x]), num(r[y])]).filter(([a, b]) => Number.isFinite(a) && Number.isFinite(b)).sort(byXY);
+        expect(plotted.length, `${x} × ${y}`).toBe(expected.length);
+        expect(plotted, `${x} × ${y}`).toEqual(expected);
+      } finally {
+        view.finalize();
+      }
+    }
+  }, 120_000);
+});
+
+test('fields named x and y start on the x and y axes', () => {
+  expect(defaultAxes(scatterFields(ds('platformer_terrain'))!)).toEqual({ x: 'x', y: 'y' });
+  expect(defaultAxes(scatterFields(ds('anscombe'))!)).toEqual({ x: 'X', y: 'Y' });
+  expect(defaultAxes(scatterFields(ds('cars'))!)).toEqual({ x: 'Displacement', y: 'Miles_per_Gallon' });
 });
 
 test('examples take the galleries in turn', () => {

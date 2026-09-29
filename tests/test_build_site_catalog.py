@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from io import BytesIO
 from typing import TYPE_CHECKING
 
@@ -165,6 +166,16 @@ def test_profile_native_datetimes() -> None:
     p = profile_field(s, "datetime")
     assert p["kind"] == "temporal"
     assert p["min"].startswith("2020-01-01")
+
+
+def test_profile_temporal_names_its_zone() -> None:
+    # Browsers read a date-time without a zone as local time: a day early east of UTC.
+    p = profile_field(pl.Series("d", ["2012-01-01", "2015-12-31"]), "date")
+    assert (p["min"], p["max"]) == ("2012-01-01T00:00:00Z", "2015-12-31T00:00:00Z")
+    aware = pl.Series("d", ["2000-01-01T08:00:00"]).str.to_datetime(time_zone="UTC")
+    value = profile_field(aware, "datetime")["min"]
+    assert value.endswith(("Z", "+00:00"))
+    assert datetime.fromisoformat(value) == datetime(2000, 1, 1, 8, tzinfo=UTC)
 
 
 def test_readme_markdown() -> None:

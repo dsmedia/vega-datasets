@@ -1,6 +1,7 @@
 // Bundles the Field Guide into site/dist. Run `npm run site:build`, which first
 // writes catalog.json and the thumbnails (scripts/build_site_catalog.py).
-import { copyFileSync, rmSync } from 'node:fs';
+// SITE_NOINDEX=1 keeps the build out of search results (site.yml sets it outside vega/vega-datasets).
+import { copyFileSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -9,6 +10,8 @@ import json from '@rollup/plugin-json';
 import nodeResolve from '@rollup/plugin-node-resolve';
 import terser from '@rollup/plugin-terser';
 import typescript from '@rollup/plugin-typescript';
+
+import { pageShell } from './scripts/page-shell.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(here, 'dist');
@@ -21,7 +24,8 @@ function staticFiles() {
       rmSync(path.join(dist, 'assets'), { recursive: true, force: true });
     },
     writeBundle() {
-      copyFileSync(path.join(here, 'static', 'index.html'), path.join(dist, 'index.html'));
+      const shell = readFileSync(path.join(here, 'static', 'index.html'), 'utf8');
+      writeFileSync(path.join(dist, 'index.html'), pageShell(shell, { noindex: process.env.SITE_NOINDEX === '1' }));
       for (const file of ['site.css', 'theme-init.js', 'idl-logo.png']) {
         copyFileSync(path.join(here, 'static', file), path.join(dist, 'assets', file));
       }

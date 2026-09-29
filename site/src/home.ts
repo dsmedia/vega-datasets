@@ -300,13 +300,13 @@ export function renderHome(c: Catalog, root: HTMLElement, returningFrom?: string
     h("div", { class: "use-grid" },
       h("div", null, h("h3", null, "Load by URL"),
         h("p", null, "Every file has a CDN URL. Publish with the versioned jsDelivr link."),
-        h("a", { class: "use-link", href: `${REPO}#http-direct-access` }, "URL patterns")),
+        h("a", { class: "use-link", href: `${REPO}#http-direct-access` }, "URL Patterns")),
       h("div", null, h("h3", null, "Import in JavaScript"),
         h("pre", { class: "snippet" }, h("code", null, "npm install vega-datasets")),
-        h("a", { class: "use-link", href: `${REPO}#using-esm-import` }, "ESM example")),
+        h("a", { class: "use-link", href: `${REPO}#using-esm-import` }, "ESM Example")),
       h("div", null, h("h3", null, "Reference in a Spec"),
         h("pre", { class: "snippet" }, h("code", null, `"data": {"url": ".../cars.json"}`)),
-        h("a", { class: "use-link", href: `${REPO}#in-vegavega-lite-specifications` }, "Vega-Lite example")),
+        h("a", { class: "use-link", href: `${REPO}#in-vegavega-lite-specifications` }, "Vega-Lite Example")),
       h("div", null, h("h3", null, "Load in Python"),
         h("pre", { class: "snippet" }, h("code", null, "from altair.datasets import data")),
         h("a", { class: "use-link", href: `${REPO}#language-interfaces` }, "Julia and Observable"))),
@@ -316,8 +316,8 @@ export function renderHome(c: Catalog, root: HTMLElement, returningFrom?: string
   const readmeItems: [string, string, string, string][] = [
     ["about-metadata", "Metadata", "Data Package v2: schema, sources, licenses", "Dataset Information"],
     ["about-versioning", "Versioning", "Semantic versioning, applied to data", "Versioning"],
-    ["about-use", "Intended use", "Teaching and demos. Some flaws are deliberate.", "Data Usage Note"],
-    ["about-gallery", "Gallery index", `${formatCount(counts.examples)} examples mapped to their data. It's a dataset too.`, "Example Galleries"],
+    ["about-use", "Intended Use", "Teaching and demos. Some flaws are deliberate.", "Data Usage Note"],
+    ["about-gallery", "Gallery Index", `All ${formatCount(counts.examples)} examples, mapped to their data. It's a dataset too.`, "Example Galleries"],
   ];
   append(about, [
     h("div", { class: "about-list" },
@@ -332,7 +332,7 @@ export function renderHome(c: Catalog, root: HTMLElement, returningFrom?: string
     h("aside", { class: "contribute", "aria-labelledby": "contribute-h" },
       h("h3", { id: "contribute-h" }, "Contribute"),
       h("p", null, "Add a dataset, document one, or fix an error. Existing files rarely change: Vega, Vega-Lite and the Vega Editor test against them."),
-      h("a", { href: `${REPO}/blob/main/CONTRIBUTING.md` }, "Contribution guidelines")),
+      h("a", { href: `${REPO}/blob/main/CONTRIBUTING.md` }, "Contribution Guidelines")),
   ]);
 
   root.append(

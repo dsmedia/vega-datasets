@@ -6,9 +6,19 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'none'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
 <title>Vega Datasets – The Data Behind the Examples</title>
 <meta name="description" content="Every dataset in vega-datasets: what each field holds, where the data comes from, its license, and the Vega, Vega-Lite and Altair gallery examples that use it.">
+<link rel="canonical" href="https://vega.github.io/vega-datasets/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Vega Datasets">
+<meta property="og:title" content="Vega Datasets – The Data Behind the Examples">
+<meta property="og:description" content="Every dataset in vega-datasets: what each field holds, where the data comes from, its license, and the Vega, Vega-Lite and Altair gallery examples that use it.">
+<meta property="og:url" content="https://vega.github.io/vega-datasets/">
+<meta name="twitter:card" content="summary">
+<meta name="theme-color" content="#234a3b">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23234a3b'/%3E%3Cpath d='M4 11h2V7H4zm3 0h2V4H7zm3 0h2V8h-2z' fill='%23fff'/%3E%3C/svg%3E">
 <script src="assets/theme-init.js"></script>
 <link rel="stylesheet" href="assets/site.css">
+<!-- Every page starts from the catalog: fetch it alongside main.js, not after it (catalog.ts's fetch() uses this). -->
+<link rel="preload" href="catalog.json" as="fetch" crossorigin>
 </head>
 <body>
 <header class="vg-header">
@@ -38,13 +48,13 @@
   </nav>
 </header>
 <main id="page" tabindex="-1"></main>
+<noscript><p style="padding: 24px">This page needs JavaScript. The datasets and their documentation are in <a href="https://github.com/vega/vega-datasets/blob/main/datapackage.md">datapackage.md</a>.</p></noscript>
 <footer class="vg-footer">
   <div class="wrap footer-row">
     <p id="footer-note"></p>
     <a class="idl-logo" href="https://idl.cs.washington.edu/" title="UW Interactive Data Lab"><img src="assets/idl-logo.png" width="75" height="54" alt="UW Interactive Data Lab"></a>
   </div>
 </footer>
-<noscript><p style="padding: 24px">This page needs JavaScript. The datasets and their documentation are in <a href="https://github.com/vega/vega-datasets/blob/main/datapackage.md">datapackage.md</a>.</p></noscript>
 <script type="module" src="assets/main.js"></script>
 </body>
 </html>

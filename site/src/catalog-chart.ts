@@ -4,6 +4,7 @@
  * it is made. On wide screens an interval brush filters the cards below; on
  * phones a tap opens the dataset (href channel), with no brush to fight scrolling.
  */
+import { afterPaint } from "./dom";
 import type { Brush, ChartRow, FormatGroup } from "./home-model";
 import { FORMAT_COLORS, FORMAT_GROUPS } from "./home-model";
 import { onThemeChange } from "./theme";
@@ -136,7 +137,8 @@ export async function mountCatalogChart(
   options: () => ChartOptions,
   onBrush: (b: Brush | null) => void,
 ): Promise<MountedChart> {
-  const [{ default: vegaEmbed }, { expressionInterpreter }, { themeConfig }] = await Promise.all([
+  await afterPaint();
+  const [{ default: vegaEmbed }, { expressionInterpreter }, { labelActions, themeConfig }] = await Promise.all([
     import("vega-embed"), import("vega-interpreter"), import("./vl"),
   ]);
   let result: Awaited<ReturnType<typeof vegaEmbed>> | undefined;
@@ -156,6 +158,7 @@ export async function mountCatalogChart(
       actions: { export: true, source: false, compiled: false, editor: true },
     });
     if (destroyed) { result.finalize(); return; }
+    labelActions(host);
     if (matched) await result.view.signal("matched", matched).runAsync();
     onBrush(null);
     if (o.brush) result.view.addSignalListener("brush", (_name, value) => onBrush(toBrush(value)));

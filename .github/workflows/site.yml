@@ -55,6 +55,10 @@ jobs:
 
       - name: Build the Field Guide
         run: npm run site:build
+        env:
+          # A fork's deploy is a preview: keep it out of search results (the page names
+          # vega.github.io/vega-datasets/ as canonical).
+          SITE_NOINDEX: ${{ github.repository != 'vega/vega-datasets' && '1' || '0' }}
 
       - name: Test the Field Guide
         run: npm run site:test

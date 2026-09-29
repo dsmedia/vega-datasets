@@ -3,6 +3,7 @@ import { type Catalog, type Dataset, loadCatalog } from "./catalog";
 import { $, clear, h, hash, showError } from "./dom";
 import { renderDataset, stopDataset } from "./dataset";
 import { renderHome, stopHome } from "./home";
+import { datasetStep } from "./keys";
 import { initThemeToggle } from "./theme";
 
 const REPO = "https://github.com/vega/vega-datasets";
@@ -19,11 +20,15 @@ function renderFooter(d: Dataset | undefined): void {
       ]));
 }
 
-/** Show a dataset's page, or the home page for "". */
-function show(c: Catalog, name: string, userAction: boolean): void {
+/**
+ * Show a dataset's page, or the home page for "". `push` adds a history entry, for moves the
+ * browser doesn't record itself (the header link, the arrow keys); links and Back/Forward
+ * already changed the address, and the first page only tidies it.
+ */
+function show(c: Catalog, name: string, userAction: boolean, push = false): void {
   const from = current;
   current = name;
-  hash.set(name);
+  hash.set(name, push && name !== from);
   const d = c.dataset(name);
   const page = $("#page");
   stopDataset();
@@ -52,8 +57,10 @@ async function main(): Promise<void> {
   }
   for (const link of document.querySelectorAll<HTMLAnchorElement>("a[data-home]")) {
     link.addEventListener("click", (e) => {
+      // A modified or middle click opens the link as usual (in a new tab, say).
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
       e.preventDefault();
-      show(c, "", true);
+      show(c, "", true, true);
     });
   }
   const initial = hash.get();
@@ -62,16 +69,16 @@ async function main(): Promise<void> {
     const name = hash.get();
     if (name !== current && (name === "" || c.dataset(name))) show(c, name, true);
   });
+  const page = $("#page");
   document.addEventListener("keydown", (e) => {
-    // Tabs and other widgets that use the arrow keys mark them handled.
-    if (e.defaultPrevented || e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
-    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    // Focus on the page itself (after a step, #page holds it), not on a widget that uses the arrows.
+    const onPage = e.target === document.body || e.target === page || e.target === document.documentElement;
+    const step = datasetStep(e, onPage);
     // Between dataset pages only: on the home page the arrow keys scroll.
     const i = c.datasets.findIndex((d) => d.name === current);
-    if (i < 0) return;
+    if (!step || i < 0) return;
     const n = c.datasets.length;
-    if (e.key === "ArrowRight" || e.key === "j") show(c, c.datasets[(i + 1) % n]!.name, true);
-    if (e.key === "ArrowLeft" || e.key === "k") show(c, c.datasets[(i - 1 + n) % n]!.name, true);
+    show(c, c.datasets[(i + step + n) % n]!.name, true, true);
   });
 }
 

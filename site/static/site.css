@@ -14,7 +14,7 @@
   --surface: #ffffff; --surface-alt: #f8f8f8; --surface-code: #f6f6f6; --surface-pre: #f9f9f9; --surface-menu: #e2e2e2;
   --surface-card: #ffffff;
   --ink: #373a3c; --ink-strong: #000000; --ink-heading-4: #333333; --ink-muted: #666666; --ink-nav: #666666; --ink-faint: #aaaaaa;
-  --link: #4682b4; --rule: #cccccc; --rule-soft: #dddddd; --rule-faint: #eeeeee;
+  --link: #3771ad; --rule: #cccccc; --rule-soft: #dddddd; --rule-faint: #eeeeee;
   --button: #3771ad; --button-border: #153c63; --button-hover: #285e8e; --on-button: #ffffff;
   --button-secondary: #ffffff; --button-secondary-border: #cccccc; --button-secondary-hover: #ebebeb;
   --selected: #274c71; --selected-bg: #eef3f8; --selected-border: #274c71; --tab-accent: #274c71;
@@ -37,6 +37,9 @@
 }
 /* --ink-muted is #666, not the family sites' #777: that is 4.48:1 on white, under AA for
    the small labels this site sets in it (#666 is 5.7:1). */
+/* --link is the family's own button blue (#3771ad, 5.1:1 on white, 4.6:1 or more on every light
+   ground here), not the family sites' steelblue #4682b4, which is 4.1:1 on white and under AA
+   for the small link text this site uses. Dark keeps Altair's #5d9bb6 (5.8:1). */
 /* The page starts light (index.html sets data-theme="light"); theme-init.js and the toggle set dark. */
 :root[data-theme="dark"] {
   color-scheme: dark;
@@ -69,6 +72,14 @@ body {
 
 a { color: var(--link); text-decoration: none; }
 a:hover { text-decoration: underline; }
+/* In running text a link is underlined too: its color alone doesn't set it apart from the
+   words around it (WCAG 1.4.1). Navigation, cards, buttons, tabs and chips stay plain. */
+.md a, .sec-note a, .f-desc a, .prov dd a, #footer-note a, .quickstart .note a, .quickstart .note button.link {
+  text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.18em;
+}
+.md a:hover, .sec-note a:hover, .f-desc a:hover, .prov dd a:hover, #footer-note a:hover, .quickstart .note a:hover, .quickstart .note button.link:hover {
+  text-decoration-thickness: 2px;
+}
 
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
@@ -133,8 +144,8 @@ code, .mono { font-family: var(--font-mono); font-size: 0.85em; }
 .hist { display: block; max-width: 100%; height: auto; overflow: visible; }
 .hist .bar { fill: var(--chart-1); }
 .hist .hit { fill: transparent; }
-.hist-bin:hover .bar, .hist-bin:focus-visible .bar { fill: var(--ink-strong); }
-.hist-bin:focus-visible { outline: none; }
+/* The histogram is one tab stop; the arrow keys mark the bin they're on as .active. */
+.hist-bin:hover .bar, .hist-bin.active .bar { fill: var(--ink-strong); }
 .hist-base { stroke: var(--rule); stroke-width: 1; }
 
 /* --- Tooltips: the hand-drawn profiles' and vega-tooltip's, one look --------------- */
@@ -200,9 +211,27 @@ table.preview tr:last-child td { border-bottom: 0; }
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }
 
+/* Windows High Contrast and other forced-color modes replace the page's colors with the
+   user's. The usage bars and gallery keys carry data, so they keep theirs; pressed controls,
+   which a fill marked, get an outline. Vega's charts take the mode's colors from their config
+   (vl.ts themeConfig), since CSS can't reach a canvas and the mode leaves SVG attributes alone. */
+@media (forced-colors: active) {
+  .stack > span, .gdot { forced-color-adjust: none; }
+  .stack { outline: 1px solid CanvasText; }
+  .chip[aria-pressed="true"], .seg button[aria-pressed="true"], .motion-play[aria-pressed="true"] {
+    outline: 2px solid Highlight; outline-offset: -2px;
+  }
+  .hist-bin.active .bar { fill: Highlight; }
+}
+
 /* --- Layout ------------------------------------------------------------------------ */
 .wrap { max-width: var(--page-max); margin: 0 auto; padding-inline: var(--page-gutter); }
 #page { outline: none; }
+/* Until the script fills the page, hold the footer below the fold, so it doesn't paint at the
+   top and jump down (a layout shift). Without scripting the footer follows the noscript note. */
+@media (scripting: enabled) {
+  #page:empty { min-height: 100vh; }
+}
 
 /* --- Dataset page -------------------------------------------------------------------- */
 .phone-only { display: none; }
@@ -313,7 +342,8 @@ td.f-miss.any { color: var(--missing); }
 .rail-box h3 { font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-muted); font-weight: bold; }
 .rail-use .tabs { margin: 0 -4px; }
 .rail-use .tab { padding: 8px; font-size: 14px; }
-.rail-use .snippet { white-space: pre-wrap; word-break: break-all; font-size: 12px; }
+/* Long URLs and code lines wrap at hyphens and spaces first; mid-word only when a piece can't fit. */
+.rail-use .snippet { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
 [data-theme="dark"] .rail-use .snippet { background: var(--surface); }
 .rail-stack .usage, .rail-stack .stack { display: flex; width: 100%; height: 10px; }
 .rail-usage { display: grid; grid-template-columns: auto 1fr auto; gap: 6px 8px; align-items: center; font-size: 14px; }
@@ -494,7 +524,7 @@ button.link:hover { text-decoration: underline; }
   .lead-buttons { flex-direction: column; gap: 8px; }
   .lead-buttons .btn, .browse-foot .more { min-height: 44px; width: 100%; }
   .tab { padding: 12px 10px; font-size: 14px; }
-  .snippets .snippet { white-space: pre-wrap; word-break: break-all; font-size: 12px; }
+  .snippets .snippet { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
   .copy-btn { min-height: 32px; }
 
   .browse, .use, .about { padding-top: 36px; }

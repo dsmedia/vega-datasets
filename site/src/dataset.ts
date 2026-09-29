@@ -15,9 +15,9 @@ import {
 } from "./dataset-model";
 import { h } from "./dom";
 import { exploreSection, stopExplore } from "./explore";
+import { siteDataUrl } from "./explore-model";
 import { formatBytes, formatCount, FORMAT_LABEL, plural } from "./format";
 import { renderMarkdown } from "./markdown";
-import { motionSection, stopMotion } from "./motion";
 import { missingCount, profileSummary, sparkline, typeLabel } from "./profile";
 
 const REPO = "https://github.com/vega/vega-datasets";
@@ -26,13 +26,39 @@ const EXAMPLES_SHOWN = 8;
 const PREVIEW_ROWS = 5;
 
 let teardown: (() => void) | null = null;
+/** motion.ts's stop, once the gapminder page has loaded it. */
+let stopMotion: (() => void) | null = null;
+/** Bumped when the page changes, so motion.ts arriving late fills nothing. */
+let motionPage = 0;
 
 /** Stop the page's charts and observers (before showing another page). */
 export function stopDataset(): void {
-  stopMotion();
+  motionPage++;
+  stopMotion?.();
   stopExplore();
   teardown?.();
   teardown = null;
+}
+
+/**
+ * Gapminder's "In Motion" section: its heading now, its controls and animated chart once
+ * motion.ts loads. Only this page uses that module, so the others don't download it.
+ */
+function motionSection(d: Dataset): HTMLElement | null {
+  if (d.name !== "gapminder") return null;
+  const section = h("section", { class: "ds-sec motion", id: "sec-motion", "aria-labelledby": "motion-h" },
+    h("div", { class: "sec-head" }, h("h2", { id: "motion-h" }, "In Motion")));
+  const page = motionPage;
+  import("./motion").then(
+    (motion) => {
+      stopMotion = motion.stopMotion;
+      if (page === motionPage) motion.fillMotion(section);
+    },
+    (err: unknown) => {
+      section.append(h("p", { class: "muted" }, `The chart didn't load: ${err instanceof Error ? err.message : String(err)}`));
+    },
+  );
+  return section;
 }
 
 function gdot(g: Gallery): HTMLElement {
@@ -55,8 +81,8 @@ function topBar(c: Catalog, d: Dataset): HTMLElement {
       h("a", { href: "#", class: "wide-only" }, "Datasets"),
       h("span", { class: "wide-only", "aria-hidden": "true" }, "/"),
       h("span", { class: "wide-only", "aria-current": "page" }, d.name),
-      h("a", { href: "#", class: "phone-only" }, "‹ All datasets")),
-    h("nav", { class: "stepper", "aria-label": "Neighbouring datasets" },
+      h("a", { href: "#", class: "phone-only" }, "‹ All Datasets")),
+    h("nav", { class: "stepper", "aria-label": "Neighboring datasets" },
       step(prev, "Previous"),
       h("span", { class: "mono" }, h("span", { class: "wide-only" }, `${i + 1} of ${n}`), h("span", { class: "phone-only" }, `${i + 1} / ${n}`)),
       step(next, "Next")),
@@ -139,7 +165,7 @@ function previewSection(d: Dataset): HTMLElement | null {
 
 function exampleCard(e: Example): HTMLElement {
   const second = e.gallery === "altair"
-    ? h("a", { href: e.source, target: "_blank", rel: "noopener" }, "Python source")
+    ? h("a", { href: e.source, target: "_blank", rel: "noopener" }, "Python Source")
     : e.editor
       ? h("a", { href: e.editor, target: "_blank", rel: "noopener" }, "Open in Vega Editor")
       : h("a", { href: e.source, target: "_blank", rel: "noopener" }, "Spec");
@@ -221,7 +247,7 @@ function provenanceSection(d: Dataset): HTMLElement {
       h("dt", null, "File"), h("dd", null,
         h("code", null, `data/${d.file}`),
         d.bytes !== null ? ` · ${formatCount(d.bytes)} bytes · ` : " · ",
-        h("a", { href: `${REPO}/blob/main/data/${d.file}` }, "view on GitHub"))),
+        h("a", { href: `${REPO}/blob/main/data/${d.file}` }, "View on GitHub"))),
   );
 }
 
@@ -233,7 +259,8 @@ function rail(c: Catalog, d: Dataset): HTMLElement {
     h("div", { class: "rail-box rail-use" },
       h("h3", null, "Use This Dataset"),
       snippetTabs("use", "Snippet language", useSnippets(d)),
-      h("a", { class: "btn", href: d.url, download: fileName(d) }, `Download ${fileName(d)}`)),
+      // The site's own copy: browsers ignore `download` on other origins (jsDelivr) and open the file instead.
+      h("a", { class: "btn", href: siteDataUrl(d), download: fileName(d) }, `Download ${fileName(d)}`)),
     h("div", { class: "rail-box wide-only" },
       h("h3", null, "At a Glance"),
       h("dl", { class: "kv" },
@@ -300,7 +327,6 @@ export function renderDataset(c: Catalog, d: Dataset, page: HTMLElement): void {
   if (fields) fields.dataset.count = String(d.fields.length);
   const explore = exploreSection(d);
   const motion = motionSection(d);
-  if (motion) motion.id = "sec-motion";
   const preview = previewSection(d);
   const examples = examplesSection(c, d);
   if (d.usedBy.length) examples.dataset.count = String(d.usedBy.length);

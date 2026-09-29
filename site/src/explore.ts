@@ -4,9 +4,10 @@
  * and a button that opens exactly this chart in the Vega Editor.
  */
 import type { Dataset } from "./catalog";
-import { h } from "./dom";
-import { formatBytes, formatCount } from "./format";
+import { afterPaint, h } from "./dom";
+import { formatBytes } from "./format";
 import {
+  bothValuesNote,
   chartFeatures,
   defaultAxes,
   exploreModes,
@@ -43,12 +44,6 @@ function withArticle(word: string): string {
   return `${/^[aeiou]/i.test(word) ? "an" : "a"} ${word}`;
 }
 
-/** Rows where both fields hold numbers. */
-function countBoth(rows: Record<string, unknown>[], x: string, y: string): number {
-  const ok = (v: unknown) => v !== null && v !== "" && Number.isFinite(Number(v));
-  return rows.filter((r) => ok(r[x]) && ok(r[y])).length;
-}
-
 export function exploreSection(d: Dataset): HTMLElement | null {
   stopExplore();
   const modes = exploreModes(d);
@@ -61,7 +56,7 @@ export function exploreSection(d: Dataset): HTMLElement | null {
   const host = h("div", { class: "explore-chart" });
   const note = h("span", { class: "hint" });
   const features = h("span", { class: "features mono" });
-  const edit = h("a", { class: "btn btn-primary", target: "_blank", rel: "noopener", href: "#" }, "Edit This Chart in the Vega Editor");
+  const edit = h("a", { class: "btn btn-primary", target: "_blank", rel: "noopener", href: "#" }, "Open This Chart in the Vega Editor");
   const seg = modes.length > 1
     ? h("div", { class: "seg", role: "group", "aria-label": "Chart" }, modes.map((m) =>
         h("button", {
@@ -91,32 +86,35 @@ export function exploreSection(d: Dataset): HTMLElement | null {
     return starterChart(d) ?? starterSpec(d)!;
   };
 
-  // Tables are read once, here, and handed to Vega (see parseTable); the count below uses them too.
+  // Tables are read once, when the chart is first drawn, and handed to Vega (see parseTable);
+  // the caption's count reuses them but never reads the file itself. Leaving the page stops a
+  // download still under way.
+  const aborter = new AbortController();
   let rowsPromise: Promise<Record<string, unknown>[]> | null = null;
-  const rows = () => (rowsPromise ??= fetch(siteDataUrl(d)).then((res) => {
+  let loadedRows: Record<string, unknown>[] | null = null;
+  const rows = () => (rowsPromise ??= fetch(siteDataUrl(d), { signal: aborter.signal }).then((res) => {
     if (!res.ok) throw new Error(`Could not load ${d.file} (HTTP ${res.status})`);
     return res.text();
-  }).then((text) => parseTable(text, d.format)));
-  const describe = async (spec: Spec) => {
+  }).then((text) => (loadedRows = parseTable(text, d.format))));
+  const describe = (spec: Spec) => {
     edit.href = editorUrl(spec);
     features.textContent = chartFeatures(spec).join(" · ");
     note.hidden = state.mode !== "scatter" || !fields;
     if (state.mode !== "scatter" || !fields) return;
     const color = fields.color ? ` ${phone.matches ? "Tap" : "Click"} the legend to isolate ${withArticle(fields.color.name.toLowerCase())}.` : "";
     const lead = phone.matches ? `Pick two fields.${color}` : `Pick two fields. Scroll to zoom, drag to pan.${color}`;
-    note.textContent = lead;
-    if (d.rows === null) return;
-    const { x, y } = state;
-    const n = countBoth(await rows(), x, y);
-    if (state.x === x && state.y === y) note.textContent = `${lead} ${formatCount(n)} of ${formatCount(d.rows)} rows have both values.`;
+    const count = bothValuesNote(d, loadedRows, state.x, state.y);
+    note.textContent = count ? `${lead} ${count}` : lead;
   };
 
   let result: { view: import("vega").View; finalize(): void } | undefined;
   let queue: Promise<void> = Promise.resolve();
   let destroyed = false;
   const draw = async () => {
+    // After the page has painted: Vega is ~290 KB, and the page shows without it.
+    if (!result) await afterPaint();
     if (destroyed) return;
-    const [{ default: vegaEmbed }, { expressionInterpreter }, { themeConfig }] = await Promise.all([
+    const [{ default: vegaEmbed }, { expressionInterpreter }, { labelActions, themeConfig }] = await Promise.all([
       import("vega-embed"), import("vega-interpreter"), import("./vl"),
     ]);
     if (destroyed) return;
@@ -137,43 +135,51 @@ export function exploreSection(d: Dataset): HTMLElement | null {
       actions: { export: true, source: true, compiled: true, editor: false },
     });
     if (destroyed) { result.finalize(); return; }
-    void describe(spec);
+    labelActions(host);
+    describe(spec);
     if (state.mode === "scatter") {
       const view = result.view;
       const follow = (axis: "x" | "y") => (_name: string, value: unknown) => {
         state[axis] = String(value);
         // A zoom on the old fields would hide the new ones: clear it (the scale domains read this store).
         if (!phone.matches) void view.change("zoom_store", view.changeset().remove(() => true)).runAsync();
-        void describe(currentSpec());
+        describe(currentSpec());
       };
       view.addSignalListener("xField", follow("x"));
       view.addSignalListener("yField", follow("y"));
     }
   };
-  const render = () => (queue = queue.then(draw).catch((err: unknown) => {
-    host.replaceChildren(h("p", { class: "muted" }, `The chart didn't load: ${err instanceof Error ? err.message : String(err)}`));
-  }));
+  let requested = false;
+  const render = () => {
+    requested = true;
+    return (queue = queue.then(draw).catch((err: unknown) => {
+      if (destroyed) return; // The page was left (and its download aborted) meanwhile.
+      host.replaceChildren(h("p", { class: "muted" }, `The chart didn't load: ${err instanceof Error ? err.message : String(err)}`));
+    }));
+  };
 
-  // Redraw for a new theme or screen size only once drawn (a large file waits to be asked for).
-  const redraw = () => { if (result) void render(); };
+  // Redraw for a new theme or screen size once a chart is asked for (a large file waits for its
+  // button); a change during the first draw queues a second one, with the new size.
+  const redraw = () => { if (requested) void render(); };
   const unsubscribeTheme = onThemeChange(redraw);
   const onScreen = redraw;
   phone.addEventListener("change", onScreen);
   teardown = () => {
     destroyed = true;
+    aborter.abort();
     unsubscribeTheme();
     phone.removeEventListener("change", onScreen);
     result?.finalize();
   };
-  void describe(currentSpec());
+  describe(currentSpec());
   if ((d.bytes ?? 0) > AUTO_LOAD_BYTES) {
     host.append(h("button", {
       class: "btn draw", type: "button",
       onclick: () => void render(),
     }, `Draw Chart (${formatBytes(d.bytes)})`));
   } else {
-    // draw() awaits its imports before it measures the host, and by then the section is in the page.
-    // (Not requestAnimationFrame: background tabs never run it.)
+    // draw() waits for the page to paint and for its imports before it measures the host, and by
+    // then the section is in the page (afterPaint() also resolves in a background tab).
     void render();
   }
   return section;

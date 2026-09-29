@@ -1,5 +1,5 @@
 /**
- * "In motion": smooth, eased animation between a dataset's keyframes, built on the
+ * "In Motion": smooth, eased animation between a dataset's keyframes, built on the
  * easing functions and `interpolateLinear` that Vega 6.4 added to the expression
  * language. Vega-Lite's animation support for these is still in review
  * (vega/vega-lite#9916, #9914), so this is a hand-written Vega spec.
@@ -9,9 +9,8 @@
  */
 import LZString from "lz-string";
 import type { Result } from "vega-embed";
-import type { Dataset } from "./catalog";
-import { h } from "./dom";
-import { onThemeChange, reducedMotion, token } from "./theme";
+import { afterPaint, h } from "./dom";
+import { chartInk, onThemeChange, reducedMotion, token } from "./theme";
 
 type Spec = Record<string, unknown>;
 
@@ -71,19 +70,24 @@ export interface Colors {
   focus: string;
   surface: string;
   watermark: string;
+  /** Forced colors only: the watermark is a system color at full strength, so it's dimmed. */
+  watermarkOpacity?: number;
   trail: string;
   label: string;
 }
 
+/** The points keep their data colors; the rest follows the theme, or the forced colors. */
 function colors(): Colors {
+  const ink = chartInk();
   return {
     neutral: token("--motion-neutral"),
     accent: token("--chart-1"),
-    focus: token("--ink-strong"),
-    surface: token("--surface"),
-    watermark: token("--motion-watermark"),
-    trail: token("--ink"),
-    label: token("--ink"),
+    focus: ink.strong,
+    surface: ink.surface,
+    watermark: ink.forced ? ink.grid : token("--motion-watermark"),
+    ...(ink.forced ? { watermarkOpacity: 0.4 } : {}),
+    trail: ink.ink,
+    label: ink.ink,
   };
 }
 
@@ -169,6 +173,7 @@ export function gapminderSpec(values: Country[], width: number, height: number, 
             fontSize: { signal: "clamp(width / 5, 56, 150)" },
             fontWeight: { value: 600 },
             fill: { value: col.watermark },
+            ...(col.watermarkOpacity !== undefined ? { fillOpacity: { value: col.watermarkOpacity } } : {}),
           },
         },
       },
@@ -261,23 +266,21 @@ export function stopMotion(): void {
   active = null;
 }
 
-export function hasMotion(d: Dataset): boolean {
-  return d.name === "gapminder";
-}
-
-export function motionSection(d: Dataset): HTMLElement | null {
-  if (!hasMotion(d)) return null;
+/**
+ * Fill the "In Motion" section with its controls, chart and notes. dataset.ts makes the
+ * section (with its heading) and loads this module only on the gapminder page.
+ */
+export function fillMotion(section: HTMLElement): void {
   const chartHost = h("div", { class: "motion-chart", role: "figure", "aria-label": "Animated bubble chart of life expectancy against fertility for 62 countries, 1955 to 2005. Bubble size is population." });
   const play = h("button", { class: "btn motion-play", type: "button", "aria-pressed": "false" }, "Play");
   const slider = h("input", { id: "motion-year", type: "range", min: 0, max: 10, step: 0.01, value: 0, "aria-label": "Year" }) as HTMLInputElement;
   const yearOut = h("output", { for: "motion-year", class: "motion-year" }, String(FIRST_YEAR));
   const regions = h("div", { class: "motion-regions", role: "group", "aria-label": "Highlight a region" });
   const followNote = h("p", { class: "motion-note" });
-  const editor = h("a", { class: "btn btn-quiet", target: "_blank", rel: "noopener", href: "#" }, "Open this chart in the Vega Editor");
+  const editor = h("a", { class: "btn btn-quiet", target: "_blank", rel: "noopener", href: "#" }, "Open This Chart in the Vega Editor");
   const status = h("p", { class: "motion-status muted" }, "Loading…");
 
-  const section = h("section", { class: "ds-sec motion", "aria-labelledby": "motion-h" },
-    h("div", { class: "sec-head" }, h("h2", { id: "motion-h" }, "In motion")),
+  section.append(
     h("p", { class: "sec-intro" },
       "Life expectancy against babies per woman for 62 countries, 1955 to 2005. Gapminder publishes a snapshot every five years; the bubbles glide between them using the easing functions new in Vega 6.4. ",
       "Vega-Lite's own support for eased, interpolated animation is in review."),
@@ -295,6 +298,7 @@ export function motionSection(d: Dataset): HTMLElement | null {
     let interp: typeof import("vega-interpreter").expressionInterpreter;
     let themeConfig: typeof import("./vl").themeConfig;
     try {
+      await afterPaint();
       [values, { default: vegaEmbed }, { expressionInterpreter: interp }, { themeConfig }] = await Promise.all([
         loadCountries(), import("vega-embed"), import("vega-interpreter"), import("./vl"),
       ]);
@@ -373,7 +377,7 @@ export function motionSection(d: Dataset): HTMLElement | null {
       });
       return b;
     };
-    regions.append(chip("No region", null), ...Object.values(REGION).map((r) => chip(r, r)));
+    regions.append(chip("None", null), ...Object.values(REGION).map((r) => chip(r, r)));
 
     play.addEventListener("click", () => {
       state.userPaused = state.playing;
@@ -423,6 +427,4 @@ export function motionSection(d: Dataset): HTMLElement | null {
     ro.observe(chartHost);
     unsubscribeTheme = onThemeChange(() => void render());
   })();
-
-  return section;
 }
