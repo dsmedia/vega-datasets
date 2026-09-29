@@ -3,6 +3,7 @@ import { type Catalog, type Dataset, loadCatalog } from "./catalog";
 import { $, clear, h, hash, showError } from "./dom";
 import { renderDataset, stopDataset } from "./dataset";
 import { renderHome, stopHome } from "./home";
+import { datasetStep } from "./keys";
 import { initThemeToggle } from "./theme";
 
 const REPO = "https://github.com/vega/vega-datasets";
@@ -62,16 +63,16 @@ async function main(): Promise<void> {
     const name = hash.get();
     if (name !== current && (name === "" || c.dataset(name))) show(c, name, true);
   });
+  const page = $("#page");
   document.addEventListener("keydown", (e) => {
-    // Tabs and other widgets that use the arrow keys mark them handled.
-    if (e.defaultPrevented || e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
-    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    // Focus on the page itself (after a step, #page holds it), not on a widget that uses the arrows.
+    const onPage = e.target === document.body || e.target === page || e.target === document.documentElement;
+    const step = datasetStep(e, onPage);
     // Between dataset pages only: on the home page the arrow keys scroll.
     const i = c.datasets.findIndex((d) => d.name === current);
-    if (i < 0) return;
+    if (!step || i < 0) return;
     const n = c.datasets.length;
-    if (e.key === "ArrowRight" || e.key === "j") show(c, c.datasets[(i + 1) % n]!.name, true);
-    if (e.key === "ArrowLeft" || e.key === "k") show(c, c.datasets[(i - 1 + n) % n]!.name, true);
+    show(c, c.datasets[(i + step + n) % n]!.name, true);
   });
 }
 
