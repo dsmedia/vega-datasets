@@ -137,6 +137,85 @@ export function scatterSpec(d: Dataset, f: ScatterFields, o: ScatterOptions): Sp
   };
 }
 
+/** Tables longer than this open on a density overview, binned when the site is built. */
+export const DENSITY_ROWS = 20_000;
+/** The overview's resolution: at most this many bins across and up. */
+export const DENSITY_BINS = { x: 60, y: 40 };
+
+/** Does this dataset open on the density overview (a long table with a scatter plot)? */
+export function hasDensity(d: Dataset): boolean {
+  return (d.rows ?? 0) > DENSITY_ROWS && scatterFields(d) !== null;
+}
+
+/** One bin of the overview: its ranges on x and y and how many rows fall in it. */
+export interface DensityBin {
+  x0: number;
+  x1: number;
+  y0: number;
+  y1: number;
+  count: number;
+}
+
+const DENSITY_COLOR = { type: "symlog", scheme: "blues" };
+
+/**
+ * How the rows spread over two measures: a 2D histogram (rect marks, rows per bin).
+ * This is the spec the Editor opens: it loads the whole file and bins it there.
+ */
+export function densitySpec(d: Dataset, axes: { x: string; y: string }, height: number): Spec {
+  const x = { field: fieldRef(axes.x), type: "quantitative", bin: { maxbins: DENSITY_BINS.x } };
+  const y = { field: fieldRef(axes.y), type: "quantitative", bin: { maxbins: DENSITY_BINS.y } };
+  return {
+    $schema: SCHEMA,
+    description: `How the rows of ${d.name} spread over ${axes.x} and ${axes.y}: rows per bin.`,
+    width: "container",
+    height,
+    autosize: { type: "fit-x", contains: "padding" },
+    data: { url: d.url },
+    mark: "rect",
+    encoding: {
+      x,
+      y,
+      color: { aggregate: "count", type: "quantitative", title: "Rows", scale: DENSITY_COLOR },
+      tooltip: [x, y, { aggregate: "count", type: "quantitative", title: "Rows", format: "," }],
+    },
+  };
+}
+
+/** The same overview drawn from bins computed when the site was built (no file to load). */
+export function densityFromBins(d: Dataset, axes: { x: string; y: string }, height: number, bins: DensityBin[]): Spec {
+  const range = (lo: string, hi: string) => `format(datum.${lo}, ",") + " – " + format(datum.${hi}, ",")`;
+  return {
+    ...densitySpec(d, axes, height),
+    description: `How the ${bins.reduce((s, b) => s + b.count, 0).toLocaleString("en-US")} rows of ${d.name} spread over ${axes.x} and ${axes.y}: rows per bin, binned when the site was built.`,
+    data: { values: bins },
+    transform: [
+      { calculate: range("x0", "x1"), as: "x range" },
+      { calculate: range("y0", "y1"), as: "y range" },
+    ],
+    encoding: {
+      x: { field: "x0", type: "quantitative", bin: { binned: true }, title: axes.x },
+      x2: { field: "x1" },
+      y: { field: "y0", type: "quantitative", bin: { binned: true }, title: axes.y },
+      y2: { field: "y1" },
+      color: { field: "count", type: "quantitative", title: "Rows", scale: DENSITY_COLOR },
+      tooltip: [
+        { field: "x range", title: axes.x },
+        { field: "y range", title: axes.y },
+        { field: "count", type: "quantitative", title: "Rows", format: "," },
+      ],
+    },
+  };
+}
+
+/** Maps with this many bytes or more open on a picture drawn when the site was built. */
+export const MAP_PREVIEW_BYTES = 500_000;
+
+/** Is the starter chart a map heavy enough to open on its preview (us_10m's 3,641 counties, say)? */
+export function hasMapPreview(d: Dataset): boolean {
+  return (d.bytes ?? 0) >= MAP_PREVIEW_BYTES && Boolean(starterSpec(d)?.projection);
+}
+
 /** The starter chart, sized to its column. */
 export function starterChart(d: Dataset): Spec | null {
   const spec = starterSpec(d);

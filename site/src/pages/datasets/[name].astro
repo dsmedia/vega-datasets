@@ -14,7 +14,9 @@ import MotionSection from "../../components/MotionSection.astro";
 import Base from "../../layouts/Base.astro";
 import { type Dataset, type Gallery, GALLERIES, GALLERY_LABEL, licenseFamily } from "../../lib/catalog";
 import { fileName, formatDescription, interleave, isReleased, linkText, sizeDescription, useSnippets } from "../../lib/dataset-model";
-import { chartFeatures, defaultAxes, exploreModes, MODE_LABEL, scatterFields, scatterSpec, starterChart } from "../../lib/explore-model";
+import { chartFeatures, defaultAxes, densitySpec, exploreModes, hasDensity, hasMapPreview, MODE_LABEL, scatterFields, scatterSpec, starterChart } from "../../lib/explore-model";
+import { densityBins } from "../../prerender/density";
+import { mapPreview } from "../../prerender/map-preview";
 import { FORMAT_LABEL, formatBytes, formatCount, plural } from "../../lib/format";
 import { markdownToHtml } from "../../lib/markdown";
 import { hasMotion } from "../../lib/motion";
@@ -59,6 +61,9 @@ const wideSpec = first ? specFor(first, false) : null;
 const phoneSpec = first ? specFor(first, true) : null;
 const bigFile = (d.bytes ?? 0) > AUTO_LOAD_BYTES;
 const chartHeight = wideSpec ? Number((wideSpec as { height?: number }).height ?? 300) + 60 : 0;
+// Long tables open on a density overview binned now; heavy maps on a picture drawn now.
+const density = hasDensity(d) && axes ? { axes, bins: await densityBins(d, axes), spec: densitySpec(d, axes, 380) } : null;
+const mapPic = hasMapPreview(d) ? await mapPreview(d) : null;
 const color = sf?.color ? ` the legend to isolate ${/^[aeiou]/i.test(sf.color.name) ? "an" : "a"} ${sf.color.name.toLowerCase()}.` : "";
 
 const motion = hasMotion(d);
@@ -157,7 +162,7 @@ const title = datasetTitle(d);
       )}
 
       {wideSpec && phoneSpec && first && (
-        <section class="ds-sec explore" id="explore" aria-labelledby="explore-h" data-explore data-auto={bigFile ? undefined : ""}>
+        <section class="ds-sec explore" id="explore" aria-labelledby="explore-h" data-explore data-auto={bigFile || mapPic ? undefined : ""} data-density={density ? "" : undefined}>
           <div class="sec-head">
             <h2 id="explore-h">Explore</h2>
             {modes.length > 1 && (
@@ -167,17 +172,24 @@ const title = datasetTitle(d);
             )}
           </div>
           <div class="binds"></div>
-          <div class="explore-chart" style={`min-height: ${chartHeight}px`}>
-            {bigFile && <button class="btn draw" type="button">Draw Chart ({formatBytes(d.bytes)})</button>}
+          <div class="explore-chart" style={`min-height: ${density ? 440 : mapPic ? mapPic.height : chartHeight}px`}>
+            {mapPic && <img class="chart-preview" src={`${base}previews/${d.name}.webp`} width={mapPic.width} height={mapPic.height} alt={`The ${d.name} map, as the starter chart draws it`}>}
+            {mapPic && <button class="btn draw" type="button">Draw the Live Map ({formatBytes(d.bytes)})</button>}
+            {bigFile && !density && !mapPic && <button class="btn draw" type="button">Draw Chart ({formatBytes(d.bytes)})</button>}
           </div>
           <div class="chart-foot">
             <div class="chart-caption">
-              {first === "scatter" && sf
+              {density
+                ? <span class="hint">Rows per bin: all {formatCount(d.rows)} rows, binned when the site was built. Draw all points to pick the fields.</span>
+                : first === "scatter" && sf
                 ? <span class="hint"><span class="wide-only">Pick two fields. Scroll to zoom, drag to pan.{color && ` Click${color}`}</span><span class="phone-only">Pick two fields.{color && ` Tap${color}`}</span></span>
                 : <span class="hint" hidden></span>}
-              <span class="features mono"><span class="wide-only">{chartFeatures(wideSpec).join(" · ")}</span><span class="phone-only">{chartFeatures(phoneSpec).join(" · ")}</span></span>
+              {density
+                ? <span class="features mono">{chartFeatures(density.spec).join(" · ")}</span>
+                : <span class="features mono"><span class="wide-only">{chartFeatures(wideSpec).join(" · ")}</span><span class="phone-only">{chartFeatures(phoneSpec).join(" · ")}</span></span>}
             </div>
-            <a class="btn btn-primary" target="_blank" rel="noopener" href={editorUrl(wideSpec)} data-editor>Edit This Chart in the Vega Editor</a>
+            {density && <button class="btn" type="button" data-draw-all>Draw All Points ({formatBytes(d.bytes)})</button>}
+            <a class="btn btn-primary" target="_blank" rel="noopener" href={editorUrl(density ? density.spec : wideSpec)} data-editor>Edit This Chart in the Vega Editor</a>
           </div>
         </section>
       )}
@@ -293,6 +305,7 @@ const title = datasetTitle(d);
   </div>
 
   <script type="application/json" id="dataset-data" set:html={jsonForScript(clientData)} />
+  {density && <script type="application/json" id="density-data" set:html={jsonForScript(density.bins)} />}
 
   <Fragment slot="footer">Spot an error? <a href={METADATA}>Edit this dataset's metadata</a> on GitHub.</Fragment>
 </Base>

@@ -89,3 +89,18 @@ test('the home page has every dataset card, and the chart drawn', () => {
   expect(text.match(/class="chart-static /g)).toHaveLength(2);
   expect(text).toContain('<a tabindex="-1" xlink:href="datasets/cars/"');
 });
+
+test('long tables carry their density bins, covering every row', () => {
+  const d = catalog.dataset('flights_200k_json')!;
+  const text = html(path.join(dist, 'datasets', d.name, 'index.html'));
+  const bins = JSON.parse(text.match(/<script type="application\/json" id="density-data">([\s\S]*?)<\/script>/)![1]!) as { count: number }[];
+  expect(bins.reduce((s, b) => s + b.count, 0)).toBe(d.rows);
+});
+
+test('heavy maps carry a picture of the map', () => {
+  for (const name of ['earthquakes', 'us_10m', 'zipcodes']) {
+    const text = html(path.join(dist, 'datasets', name, 'index.html'));
+    expect(text, name).toContain(`src="/vega-datasets/previews/${name}.webp"`);
+    expect(statSync(path.join(dist, 'previews', `${name}.webp`)).size, name).toBeGreaterThan(1000);
+  }
+});

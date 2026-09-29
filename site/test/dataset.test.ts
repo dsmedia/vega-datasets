@@ -13,7 +13,11 @@ import {
   bothValuesNote,
   chartFeatures,
   defaultAxes,
+  densityFromBins,
+  densitySpec,
   exploreModes,
+  hasDensity,
+  hasMapPreview,
   parseTable,
   readsRows,
   scatterFields,
@@ -313,4 +317,24 @@ test('examples take the galleries in turn', () => {
 test('link text is the file name, or the host', () => {
   expect(linkText('http://lib.stat.cmu.edu/datasets/cars.desc')).toBe('cars.desc');
   expect(linkText('http://lib.stat.cmu.edu/datasets/')).toBe('lib.stat.cmu.edu');
+});
+
+describe('overviews drawn when the site is built', () => {
+  test('long tables open on a density overview; heavy maps on a picture', () => {
+    expect(catalog.datasets.filter(hasDensity).map((d) => d.name)).toEqual(['flights_200k_json']);
+    expect(catalog.datasets.filter(hasMapPreview).map((d) => d.name).sort()).toEqual(['earthquakes', 'us_10m', 'zipcodes']);
+  });
+
+  test('the density overview compiles without warnings, from the Editor spec or from bins', () => {
+    const d = ds('flights_200k_json');
+    const axes = defaultAxes(scatterFields(d)!);
+    const bins = [{ x0: 0, x1: 100, y0: -20, y1: 0, count: 5 }, { x0: 100, x1: 200, y0: 0, y1: 20, count: 12 }];
+    for (const spec of [densitySpec(d, axes, 380), densityFromBins(d, axes, 380, bins)]) {
+      const warnings: string[] = [];
+      const logger = { level: () => logger, error: (...m: unknown[]) => { throw new Error(m.join(' ')); }, warn: (...m: unknown[]) => { warnings.push(m.join(' ')); return logger; }, info: () => logger, debug: () => logger };
+      compile({ ...spec, width: 600 } as TopLevelSpec, { logger: logger as never });
+      expect(warnings).toEqual([]);
+    }
+    expect((densitySpec(d, axes, 380).data as { url: string }).url).toBe(d.url);
+  });
 });

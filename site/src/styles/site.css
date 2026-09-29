@@ -314,6 +314,9 @@ td.f-miss.any { color: var(--missing); }
   color: var(--ink); font: 13px var(--font-mono); padding: 0 6px;
 }
 .explore-chart { position: relative; min-height: 300px; }
+/* A heavy map's picture from the build, until the reader draws the live map. */
+.explore-chart .chart-preview { display: block; max-width: 100%; height: auto; }
+.explore-chart .chart-preview + .btn { margin-top: 12px; }
 .chart-foot { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
 .chart-foot .btn { flex: none; }
 .chart-caption { display: flex; flex-direction: column; gap: 3px; font-size: 13px; color: var(--ink-muted); }

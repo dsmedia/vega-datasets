@@ -3,11 +3,17 @@
  * series, or the starter map), drawn into the section the page already has, with the
  * line naming its Vega-Lite features and the Editor button following the pickers.
  * dataset.ts loads this module when the section comes near the screen.
+ *
+ * Long tables open on their density overview (bins from the page, no download) until
+ * the reader asks to draw all points; heavy maps open on a picture until asked.
  */
 import type { Dataset } from "../lib/catalog";
 import {
   chartFeatures,
   defaultAxes,
+  type DensityBin,
+  densityFromBins,
+  densitySpec,
   exploreModes,
   type Mode,
   parseTable,
@@ -21,7 +27,7 @@ import {
 } from "../lib/explore-model";
 import { formatCount } from "../lib/format";
 import { editorUrl, starterSpec } from "../lib/starter";
-import { $, h } from "./dom";
+import { $, h, readJson } from "./dom";
 import { embedOptions, labelActions, loadVega } from "./embed";
 import { onThemeChange } from "./theme";
 
@@ -56,6 +62,9 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
   const features = $(".chart-caption .features", section);
   const edit = $<HTMLAnchorElement>("[data-editor]", section);
   const drawButton = host.querySelector<HTMLButtonElement>("button.draw");
+  const drawAll = section.querySelector<HTMLButtonElement>("[data-draw-all]");
+  // The density overview, while it shows: bins written into the page when it was built.
+  let density = section.hasAttribute("data-density") ? readJson<DensityBin[]>("density-data") : null;
 
   section.querySelectorAll<HTMLButtonElement>(".seg [data-mode]").forEach((b) => {
     b.addEventListener("click", () => {
@@ -85,6 +94,13 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
   }).then((text) => parseTable(text, d.format)));
 
   const describe = async (spec: Spec) => {
+    if (density) {
+      edit.href = editorUrl(densitySpec(d, state, 380));
+      features.textContent = chartFeatures(densitySpec(d, state, 380)).join(" · ");
+      note.hidden = false;
+      note.textContent = `Rows per bin: all ${formatCount(d.rows)} rows, binned when the site was built. Draw all points to pick the fields.`;
+      return;
+    }
     edit.href = editorUrl(spec);
     features.textContent = chartFeatures(spec).join(" · ");
     note.hidden = state.mode !== "scatter" || !fields;
@@ -105,16 +121,20 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
     result?.finalize();
     binds.replaceChildren();
     const spec = currentSpec();
-    const site = readsRows(d) ? withValues(spec, await rows()) : withDataUrl(spec, dataUrl);
-    binds.hidden = state.mode !== "scatter";
+    const site = density
+      ? densityFromBins(d, state, phone.matches ? 300 : 380, density)
+      : readsRows(d) ? withValues(spec, await rows()) : withDataUrl(spec, dataUrl);
+    binds.hidden = state.mode !== "scatter" || density !== null;
+    // The live chart takes the place of the build's picture and its button.
+    host.querySelectorAll(".chart-preview, button.draw").forEach((el) => el.remove());
     // The menu's Editor action would open the page's same-origin data path; the button opens the public one.
     result = await v.vegaEmbed(host, site as never, {
-      ...embedOptions(v, canvas ? "canvas" : "svg", { export: true, source: true, compiled: true, editor: false }),
+      ...embedOptions(v, canvas && !density ? "canvas" : "svg", { export: true, source: true, compiled: true, editor: false }),
       bind: binds,
     });
     labelActions(host);
     void describe(spec);
-    if (state.mode === "scatter") {
+    if (state.mode === "scatter" && !density) {
       const view = result.view;
       const follow = (axis: "x" | "y") => (_name: string, value: unknown) => {
         state[axis] = String(value);
@@ -138,6 +158,11 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
   if (canvas) onThemeChange(redraw);
   phone.addEventListener("change", redraw);
   void describe(currentSpec());
+  drawAll?.addEventListener("click", () => {
+    density = null;
+    drawAll.remove();
+    void render();
+  }, { once: true });
   if (drawButton) drawButton.addEventListener("click", () => void render(), { once: true });
   else void render();
 }
