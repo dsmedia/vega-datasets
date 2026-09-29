@@ -11,13 +11,14 @@ function el(): HTMLDivElement {
   return tip;
 }
 
-export function showTip(event: PointerEvent | FocusEvent, lines: string[]): void {
+/** Show `lines` above `target`: at the pointer when `at` is given, else centered over the target. */
+export function showTip(target: Element, lines: string[], at?: { x: number; y: number }): void {
   const t = el();
   t.replaceChildren(...lines.map((line, i) => h(i === 0 ? "strong" : "span", null, line)));
   t.hidden = false;
-  const rect = (event.target as Element).getBoundingClientRect();
-  const x = "clientX" in event ? event.clientX : rect.left + rect.width / 2;
-  const y = "clientY" in event ? event.clientY : rect.top;
+  const rect = target.getBoundingClientRect();
+  const x = at ? at.x : rect.left + rect.width / 2;
+  const y = at ? at.y : rect.top;
   const w = t.offsetWidth;
   const left = Math.min(Math.max(8, x - w / 2), window.innerWidth - w - 8);
   t.style.left = `${left}px`;
@@ -28,11 +29,10 @@ export function hideTip(): void {
   if (tip) tip.hidden = true;
 }
 
-/** Wire hover + keyboard focus on an element to the shared tooltip. */
+/** Show the tooltip while the pointer is over `target` (keyboard access is the caller's). */
 export function attachTip(target: Element, lines: string[]): void {
-  target.addEventListener("pointerenter", (e) => showTip(e as PointerEvent, lines));
-  target.addEventListener("pointermove", (e) => showTip(e as PointerEvent, lines));
+  const follow = (e: Event) => showTip(target, lines, { x: (e as PointerEvent).clientX, y: (e as PointerEvent).clientY });
+  target.addEventListener("pointerenter", follow);
+  target.addEventListener("pointermove", follow);
   target.addEventListener("pointerleave", hideTip);
-  target.addEventListener("focus", (e) => showTip(e as FocusEvent, lines));
-  target.addEventListener("blur", hideTip);
 }

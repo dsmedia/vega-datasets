@@ -133,8 +133,8 @@ code, .mono { font-family: var(--font-mono); font-size: 0.85em; }
 .hist { display: block; max-width: 100%; height: auto; overflow: visible; }
 .hist .bar { fill: var(--chart-1); }
 .hist .hit { fill: transparent; }
-.hist-bin:hover .bar, .hist-bin:focus-visible .bar { fill: var(--ink-strong); }
-.hist-bin:focus-visible { outline: none; }
+/* The histogram is one tab stop; the arrow keys mark the bin they're on as .active. */
+.hist-bin:hover .bar, .hist-bin.active .bar { fill: var(--ink-strong); }
 .hist-base { stroke: var(--rule); stroke-width: 1; }
 
 /* --- Tooltips: the hand-drawn profiles' and vega-tooltip's, one look --------------- */
