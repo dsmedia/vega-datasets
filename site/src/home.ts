@@ -8,6 +8,7 @@ import { snippetTabs, thumbImg, usageStack } from "./components";
 import { append, clear, h } from "./dom";
 import { formatBytes, formatCount, FORMAT_LABEL, plural } from "./format";
 import {
+  baseMatches,
   type Brush,
   chartRows,
   type Filters,
@@ -101,9 +102,9 @@ export function renderHome(c: Catalog, root: HTMLElement): void {
 
   // --- Title, showcase and introduction ---------------------------------------------------
   const strip = h("div", { class: "showcase", "aria-hidden": "true" },
-    showcase(c, 16).map((e, i) => {
+    showcase(c, 8).map((e) => {
       const img = thumbImg(e);
-      if (i < 8) img.loading = "eager";
+      img.loading = "eager";
       return h("a", { href: e.url, target: "_blank", rel: "noopener", tabindex: -1 }, img);
     }));
 
@@ -178,14 +179,14 @@ export function renderHome(c: Catalog, root: HTMLElement): void {
 
   const formatChips = FORMAT_GROUPS.map((g) => chip(g, counts.formats[g], (on) => {
     if (on) filters.formats.add(g); else filters.formats.delete(g);
-    update();
+    refilter();
   }));
   const galleryChips = GALLERIES.map((g) => chip(
     h("span", { class: `gtag g-${g}` }, h("span", { class: "gdot", "aria-hidden": "true" }), GALLERY_LABEL[g]),
     counts.galleries[g],
     (on) => {
       if (on) filters.galleries.add(g); else filters.galleries.delete(g);
-      update();
+      refilter();
     },
   ));
 
@@ -197,11 +198,19 @@ export function renderHome(c: Catalog, root: HTMLElement): void {
     for (const b of [...formatChips, ...galleryChips]) b.setAttribute("aria-pressed", "false");
     if (filters.brush) void chart?.redraw();
     filters.brush = null;
-    update();
+    refilter();
   };
+
+  /** A filter changed: show the first cards of the new list, then redraw. */
+  function refilter(): void {
+    expanded = false;
+    update();
+  }
 
   function update(): void {
     const list = listDatasets(c, filters);
+    const base = isFiltered({ ...filters, brush: null }) ? baseMatches(c, filters).map((d) => d.name) : null;
+    chart?.setMatches(base);
     const limit = phone.matches ? CARDS.phone : CARDS.wide;
     const shown = expanded ? list : list.slice(0, limit);
     clear(status);
@@ -223,7 +232,7 @@ export function renderHome(c: Catalog, root: HTMLElement): void {
 
   search.addEventListener("input", () => {
     filters.query = search.value;
-    update();
+    refilter();
   });
   sort.addEventListener("change", () => {
     filters.sort = sort.value as Sort;
@@ -246,8 +255,6 @@ export function renderHome(c: Catalog, root: HTMLElement): void {
 
   append(browse, [
     h("div", { class: "sec-head" }, h("h2", { id: "browse-h" }, "Datasets"), status),
-    chartHost,
-    h("div", { class: "chart-note" }, chartNote, chartFeatures),
     h("div", { class: "filters" },
       h("label", { class: "visually-hidden", for: "home-q" }, "Search datasets"),
       search,
@@ -255,6 +262,8 @@ export function renderHome(c: Catalog, root: HTMLElement): void {
         h("div", { class: "chip-group", role: "group", "aria-label": "Format" }, h("span", { class: "chip-label" }, "Format"), formatChips),
         h("div", { class: "chip-group", role: "group", "aria-label": "Used in" }, h("span", { class: "chip-label" }, "Used in"), galleryChips)),
       h("label", { class: "sort", for: "home-sort" }, "Sort", sort)),
+    chartHost,
+    h("div", { class: "chart-note" }, chartNote, chartFeatures),
     cards,
     h("div", { class: "browse-foot" }, galleryKey(), more),
   ]);
@@ -310,8 +319,10 @@ export function renderHome(c: Catalog, root: HTMLElement): void {
   let live = true;
   const rows = chartRows(c, formatBytes);
   const onBrush = (b: Brush | null) => {
+    // Every redraw (a theme toggle, say) reports "no brush"; only a real change refilters.
+    if (JSON.stringify(b) === JSON.stringify(filters.brush)) return;
     filters.brush = b;
-    update();
+    refilter();
   };
   const options = () => ({
     brush: !phone.matches,
@@ -322,8 +333,9 @@ export function renderHome(c: Catalog, root: HTMLElement): void {
   });
   mountCatalogChart(chartHost, rows, counts.formats, options, onBrush).then(
     (m) => {
-      if (live) chart = m;
-      else m.destroy();
+      if (!live) { m.destroy(); return; }
+      chart = m;
+      update(); // Filters set while the chart loaded.
     },
     (err: unknown) => {
       chartHost.replaceChildren(h("p", { class: "muted" }, `The chart didn't load: ${err instanceof Error ? err.message : String(err)}`));

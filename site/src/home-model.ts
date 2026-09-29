@@ -77,6 +77,15 @@ export function listDatasets(c: Catalog, f: Filters): Dataset[] {
   return list;
 }
 
+/**
+ * The datasets the search and chips match, ignoring the brush: the chart shows these at
+ * full strength, and the brush then narrows the cards within them. The chart never drops
+ * points, so its axes don't move under a brush.
+ */
+export function baseMatches(c: Catalog, f: Filters): Dataset[] {
+  return listDatasets(c, { ...f, brush: null });
+}
+
 export interface HomeCounts {
   datasets: number;
   examples: number;
