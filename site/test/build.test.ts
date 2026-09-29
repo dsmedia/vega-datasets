@@ -112,3 +112,32 @@ test('copy: both Editor buttons read "Open This Chart in the Vega Editor", headi
     expect(html(file), file).not.toMatch(/Edit This Chart|No region<|Neighbouring|All datasets<|Python source<|view on GitHub<|Contribution guidelines</);
   }
 });
+
+test('Download saves the site\'s own copy of the file (browsers ignore `download` across origins)', () => {
+  for (const d of catalog.datasets) {
+    const text = html(path.join(dist, 'datasets', d.name, 'index.html'));
+    const links = [...text.matchAll(/<a class="btn" href="([^"]+)" download="([^"]+)">(Download [^<]+)<\/a>/g)];
+    expect(links, d.name).toHaveLength(1);
+    const [, href, download, label] = links[0]!;
+    // As the browser resolves it from the page: same origin, the repository's data/ path.
+    const page = `https://vega.github.io${BASE}datasets/${d.name}/`;
+    const url = new URL(href!, page);
+    expect(url.origin, d.name).toBe(new URL(page).origin);
+    expect(url.pathname, d.name).toBe(`${BASE}data/${d.file}`);
+    expect(resolves(url.pathname), d.name).toBe(true);
+    const file = d.file.split('/').pop();
+    expect(download, d.name).toBe(file);
+    expect(label, d.name).toBe(`Download ${file}`);
+  }
+});
+
+test('each field histogram is one tab stop, its bins none', () => {
+  const text = html(path.join(dist, 'datasets', 'seattle_weather', 'index.html'));
+  const wraps = [...text.matchAll(/<span class="spark-wrap"([^>]*)>([\s\S]*?)<\/span>/g)];
+  expect(wraps.length).toBeGreaterThan(3);
+  for (const [, attrs, body] of wraps) {
+    expect(attrs).toMatch(/tabindex="0"/);
+    expect(body).not.toMatch(/tabindex/);
+    expect(body).not.toMatch(/\b1 rows\b/);
+  }
+});

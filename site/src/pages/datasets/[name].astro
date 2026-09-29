@@ -14,7 +14,7 @@ import MotionSection from "../../components/MotionSection.astro";
 import Base from "../../layouts/Base.astro";
 import { type Dataset, type Gallery, GALLERIES, GALLERY_LABEL, licenseFamily } from "../../lib/catalog";
 import { fileName, formatDescription, interleave, isReleased, linkText, sizeDescription, useSnippets } from "../../lib/dataset-model";
-import { chartFeatures, defaultAxes, densitySpec, exploreModes, hasDensity, hasMapPreview, MODE_LABEL, scatterFields, scatterSpec, starterChart } from "../../lib/explore-model";
+import { chartFeatures, defaultAxes, densitySpec, exploreModes, hasDensity, hasMapPreview, MODE_LABEL, scatterFields, scatterSpec, siteDataUrl, starterChart } from "../../lib/explore-model";
 import { densityBins } from "../../prerender/density";
 import { mapPreview } from "../../prerender/map-preview";
 import { FORMAT_LABEL, formatBytes, formatCount, plural } from "../../lib/format";
@@ -280,7 +280,8 @@ const title = datasetTitle(d);
       <div class="rail-box rail-use">
         <h3>Use This Dataset</h3>
         <SnippetTabs id="use" label="Snippet language" snippets={useSnippets(d)} />
-        <a class="btn" href={`${base}data/${d.file}`} download={fileName(d)}>Download {fileName(d)}</a>
+        {/* The site's own copy: browsers ignore `download` on other origins (jsDelivr) and open the file instead. */}
+        <a class="btn" href={`${base}${siteDataUrl(d)}`} download={fileName(d)}>Download {fileName(d)}</a>
       </div>
       <div class="rail-box wide-only">
         <h3>At a Glance</h3>
