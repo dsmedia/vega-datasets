@@ -1,16 +1,18 @@
 const nf = new Intl.NumberFormat("en-US");
 
+/** A file size in decimal units (1 KB = 1,000 bytes), as the catalog chart's axis labels it. */
 export function formatBytes(bytes: number | null): string {
   if (bytes === null) return "–";
-  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1000) return `${bytes} B`;
   const units = ["KB", "MB", "GB"];
-  let v = bytes / 1024;
+  let v = bytes / 1000;
   let i = 0;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
+  // 999,600 bytes is "1.0 MB", not "1000 KB".
+  while (v >= 999.5 && i < units.length - 1) {
+    v /= 1000;
     i++;
   }
-  return `${v < 10 ? v.toFixed(1) : Math.round(v)} ${units[i]}`;
+  return `${v < 9.95 ? v.toFixed(1) : Math.round(v)} ${units[i]}`;
 }
 
 export function formatCount(n: number | null): string {
