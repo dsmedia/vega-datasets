@@ -57,6 +57,21 @@ export function clear(el: Element): void {
 }
 
 
+type Here = Pick<Location, "pathname" | "search" | "hash" | "href">;
+
+/**
+ * How to show `token` in the address bar: nothing when it's there already, else a new
+ * history entry (`push`: the reader went to another page) or a replaced one (tidying the
+ * address the page was opened with, or one the browser already added).
+ */
+export function hashUpdate(here: Here, token: string, push: boolean): { method: "pushState" | "replaceState"; url: string } | null {
+  const url = token ? `#${token}` : here.pathname + here.search;
+  // No token: no fragment at all, not even an empty "#".
+  const there = token ? here.hash === url : here.hash === "" && !here.href.endsWith("#");
+  if (there) return null;
+  return { method: push ? "pushState" : "replaceState", url };
+}
+
 /** Read and write a bare `#token` deep link (the only hash form the viewer passes through). */
 export const hash = {
   get(): string {
@@ -67,9 +82,10 @@ export const hash = {
       return raw; // A malformed escape (e.g. "#%E0") is just an unknown name.
     }
   },
-  set(token: string): void {
-    const next = token ? `#${token}` : " ";
-    if (location.hash !== next) history.replaceState(null, "", next === " " ? location.pathname : next);
+  /** Show `token` (`push`: as a new history entry, so Back returns here). */
+  set(token: string, push = false): void {
+    const update = hashUpdate(location, token, push);
+    if (update) history[update.method](null, "", update.url);
   },
 };
 

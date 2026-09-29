@@ -20,11 +20,15 @@ function renderFooter(d: Dataset | undefined): void {
       ]));
 }
 
-/** Show a dataset's page, or the home page for "". */
-function show(c: Catalog, name: string, userAction: boolean): void {
+/**
+ * Show a dataset's page, or the home page for "". `push` adds a history entry, for moves the
+ * browser doesn't record itself (the header link, the arrow keys); links and Back/Forward
+ * already changed the address, and the first page only tidies it.
+ */
+function show(c: Catalog, name: string, userAction: boolean, push = false): void {
   const from = current;
   current = name;
-  hash.set(name);
+  hash.set(name, push && name !== from);
   const d = c.dataset(name);
   const page = $("#page");
   stopDataset();
@@ -56,9 +60,7 @@ async function main(): Promise<void> {
       // A modified or middle click opens the link as usual (in a new tab, say).
       if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
       e.preventDefault();
-      // A new history entry, so Back returns to the dataset (show() only replaces the hash).
-      if (current !== "") history.pushState(null, "", location.pathname + location.search);
-      show(c, "", true);
+      show(c, "", true, true);
     });
   }
   const initial = hash.get();
@@ -76,7 +78,7 @@ async function main(): Promise<void> {
     const i = c.datasets.findIndex((d) => d.name === current);
     if (!step || i < 0) return;
     const n = c.datasets.length;
-    show(c, c.datasets[(i + step + n) % n]!.name, true);
+    show(c, c.datasets[(i + step + n) % n]!.name, true, true);
   });
 }
 
