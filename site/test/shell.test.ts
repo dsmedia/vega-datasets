@@ -33,6 +33,14 @@ test('the header marks Datasets as the current section and has the theme switch'
   expect(html).toMatch(/<button [^>]*id="theme-toggle"[^>]*aria-pressed="false"/);
 });
 
+test('the footer cannot shift: the empty page holds the fold until the script fills it', () => {
+  // A footer painted under an empty <main> jumps down when the page renders (CLS 0.135).
+  expect(css).toMatch(/@media \(scripting: enabled\) \{\s*#page:empty \{ min-height: 100vh; \}/);
+  // Without scripting the note sits above the footer, not under it.
+  expect(html.indexOf('<noscript>')).toBeGreaterThan(html.indexOf('<main id="page"'));
+  expect(html.indexOf('<noscript>')).toBeLessThan(html.indexOf('<footer'));
+});
+
 test('the stylesheet parses: every block closes, none closes twice', () => {
   // A stray brace makes browsers drop the rule after it (a whole @media block, say).
   let depth = 0;

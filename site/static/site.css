@@ -203,6 +203,11 @@ table.preview tr:last-child td { border-bottom: 0; }
 /* --- Layout ------------------------------------------------------------------------ */
 .wrap { max-width: var(--page-max); margin: 0 auto; padding-inline: var(--page-gutter); }
 #page { outline: none; }
+/* Until the script fills the page, hold the footer below the fold, so it doesn't paint at the
+   top and jump down (a layout shift). Without scripting the footer follows the noscript note. */
+@media (scripting: enabled) {
+  #page:empty { min-height: 100vh; }
+}
 
 /* --- Dataset page -------------------------------------------------------------------- */
 .phone-only { display: none; }
