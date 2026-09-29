@@ -10,23 +10,39 @@ import { dsvFormat } from "d3-dsv";
 
 type Row = Record<string, string>;
 
-/** A reader for `vega.formats(name, reader)`: rows as objects, without `new Function`. */
-export function dsvReader(delimiter: string): (text: string) => Row[] {
-  const format = dsvFormat(delimiter);
-  return (text) => {
-    const [columns = [], ...rows] = format.parseRows(text);
-    return rows.map((r) => Object.fromEntries(columns.map((c, i) => [c, r[i] ?? ""])));
-  };
+/** The format options Vega's delimited readers take (`parse` is applied by Vega after reading). */
+export interface DsvOptions {
+  delimiter?: string;
+  /** Column names for a file without a header row. */
+  header?: readonly string[];
 }
 
-/** The readers to register: CSV, TSV, and Vega's "dsv" type with its own delimiter. */
-export function readers(): Record<string, (text: string, format?: { delimiter?: string }) => Row[]> {
-  const csv = dsvReader(",");
-  const tsv = dsvReader("\t");
+/**
+ * Rows as objects, as Vega's delimited reader returns them (d3-dsv's `parse`), but built
+ * without `new Function`: `parseRows` compiles nothing. With `header`, every line is a row.
+ */
+export function dsvRows(text: string, delimiter: string, header?: readonly string[]): Row[] {
+  const lines = dsvFormat(delimiter).parseRows(text);
+  const [columns = [], ...rows] = header ? [header.map(String), ...lines] : lines;
+  return rows.map((r) => Object.fromEntries(columns.map((c, i) => [c, r[i] ?? ""])));
+}
+
+type Reader = ((text: string, format?: DsvOptions) => Row[]) & { responseType: "text" };
+
+/** A reader for `vega.formats(name, reader)` that asks the loader for text, as Vega's do. */
+function reader(read: (text: string, format: DsvOptions) => Row[]): Reader {
+  return Object.assign((text: string, format: DsvOptions = {}) => read(String(text), format), { responseType: "text" as const });
+}
+
+/**
+ * The readers to register. As in Vega, "csv" and "tsv" fix their delimiter (a `delimiter`
+ * option is ignored), and "dsv" takes it from the format.
+ */
+export function readers(): Record<"csv" | "tsv" | "dsv", Reader> {
   return {
-    csv: (text) => csv(text),
-    tsv: (text) => tsv(text),
-    dsv: (text, format) => dsvReader(format?.delimiter ?? ",")(text),
+    csv: reader((text, f) => dsvRows(text, ",", f.header)),
+    tsv: reader((text, f) => dsvRows(text, "	", f.header)),
+    dsv: reader((text, f) => dsvRows(text, f.delimiter ?? ",", f.header)),
   };
 }
 
