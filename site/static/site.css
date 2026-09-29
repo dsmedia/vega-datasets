@@ -211,6 +211,22 @@ table.preview tr:last-child td { border-bottom: 0; }
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }
 
+/* Windows High Contrast and other forced-color modes replace the page's colors with the
+   user's. The usage bars and gallery keys carry data, so they keep theirs; pressed controls,
+   which a fill marked, get an outline; and Vega's SVG text and rules, which it colors with
+   attributes the mode leaves alone, take the mode's text color. */
+@media (forced-colors: active) {
+  .stack > span, .gdot { forced-color-adjust: none; }
+  .stack { outline: 1px solid CanvasText; }
+  .chip[aria-pressed="true"], .seg button[aria-pressed="true"], .motion-play[aria-pressed="true"] {
+    outline: 2px solid Highlight; outline-offset: -2px;
+  }
+  .hist-bin.active .bar { fill: Highlight; }
+  .vega-embed svg text { fill: CanvasText; }
+  .vega-embed svg .role-axis-domain line, .vega-embed svg .role-axis-tick line { stroke: CanvasText; }
+  .vega-embed svg .role-axis-grid line { stroke: GrayText; }
+}
+
 /* --- Layout ------------------------------------------------------------------------ */
 .wrap { max-width: var(--page-max); margin: 0 auto; padding-inline: var(--page-gutter); }
 #page { outline: none; }
