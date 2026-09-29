@@ -27,7 +27,7 @@ function rangeNote(f: Field): string | null {
 function valuesNote(f: Field): string | null {
   const values = categoryValues(f);
   if (values) {
-    const list = values.map((c) => (c.label !== undefined ? `${c.value} (${c.label})` : String(c.value))).join(", ");
+    const list = values.map((c) => (c.label !== undefined && c.label !== String(c.value) ? `${c.value} (${c.label})` : String(c.value))).join(", ");
     return f.categoriesOrdered ? `Values, in order: ${list}` : `Values: ${list}`;
   }
   const allowed = f.constraints?.enum;

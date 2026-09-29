@@ -69,13 +69,13 @@ describe('catalog helpers normalize the Table Schema forms', () => {
 });
 
 describe('starter charts', () => {
-  test('a scatter plot: titled axes, the documented range that fits, ordered and labeled colors', () => {
+  test('a scatter plot: titled axes, the documented range that fits, colors in order and labeled', () => {
     const e = enc(starterSpec(only(d, ['hp', 'mpg', 'grade', 'side'])));
     expect(e.x).toEqual({ field: 'hp', type: 'quantitative', scale: { zero: false, domainMin: 0, domainMax: 500 }, title: 'Horsepower (hp)' });
     // Documented as at most 40, but a value is 46.6: the data's own extent stays.
     expect(e.y).toEqual({ field: 'mpg', type: 'quantitative', scale: { zero: false }, title: 'Miles per Gallon' });
     expect(e.color).toEqual({
-      field: 'grade', type: 'ordinal', sort: ['low', 'mid', 'high'], title: 'Trim Grade',
+      field: 'grade', type: 'nominal', sort: ['low', 'mid', 'high'], title: 'Trim Grade',
       legend: { labelExpr: '{"low":"Low","mid":"Medium","high":"High"}[datum.label] || datum.label' },
     });
   });
@@ -142,7 +142,7 @@ describe('Explore scatter plot', () => {
     const bare = strip(d);
     const bf = scatterFields(bare)!;
     const plain = JSON.stringify(scatterSpec(bare, bf, { ...defaultAxes(bf), zoom: true, height: 380 }));
-    expect(plain).not.toMatch(/labels|domainMin|domainMax|labelExpr|Horsepower|ordinal/);
+    expect(plain).not.toMatch(/labels|domainMin|domainMax|labelExpr|Horsepower|ordinal|"sort"/);
   });
 
   test('axis titles, bounds for the picked field, and the ordered legend, drawn with the interpreter', async () => {
@@ -189,6 +189,8 @@ describe('fields table text', () => {
     expect(fieldNotes(field('mpg'))).toEqual(['Documented range 0 – 40 (some values fall outside)']);
     expect(fieldNotes(field('grade'))).toEqual(['Values, in order: low (Low), mid (Medium), high (High)']);
     expect(fieldNotes(field('side'))).toEqual(['Values: left, right']);
+    // A label that only repeats its value isn't shown twice.
+    expect(fieldNotes({ ...field('side'), categories: [{ value: 'left', label: 'left' }, { value: 'right', label: 'Right side' }] })).toEqual(['Values: left, right (Right side)']);
     expect(fieldNotes(field('origin'))).toEqual(['Allowed values: usa, japan, europe']);
     expect(fieldNotes(field('id'))).toEqual(['Required', 'Unique']);
     expect(fieldNotes({ ...field('hp'), constraints: { minimum: 0 }, missingValues: [''] })).toEqual(['Documented minimum 0', 'Counted as missing: empty']);

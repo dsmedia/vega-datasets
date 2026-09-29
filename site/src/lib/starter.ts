@@ -54,19 +54,21 @@ export function measure(f: Field, enc: Enc = {}): Enc {
 }
 
 /**
- * A category on a channel: nominal, or ordinal in the documented order when the metadata
- * says the order matters (which then replaces `enc.sort`), with labels on its axis or legend.
+ * A category on a channel, with labels on its axis or legend. When the metadata says the
+ * order matters, the documented order replaces `enc.sort` (and so sets the color domain's
+ * order), and an axis reads it as ordinal. Colors stay nominal: an ordinal ramp would fade
+ * the first category into the background.
  */
-export function category(f: Field, enc: Enc = {}, labelsOn: "axis" | "legend" = "legend"): Enc {
+export function category(f: Field, enc: Enc = {}, guide: "axis" | "legend" = "legend"): Enc {
   const order = orderedCategories(f);
   const labels = categoryLabels(f);
   return {
     field: fieldRef(f.name),
-    type: order ? "ordinal" : "nominal",
+    type: order && guide === "axis" ? "ordinal" : "nominal",
     ...enc,
     ...(order ? { sort: order } : {}),
     ...titled(f),
-    ...(labels ? { [labelsOn]: { labelExpr: labelExpr(labels) } } : {}),
+    ...(labels ? { [guide]: { labelExpr: labelExpr(labels) } } : {}),
   };
 }
 
