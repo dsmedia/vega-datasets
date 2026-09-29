@@ -17,6 +17,7 @@ import {
   densityPageSpec,
   densitySpec,
   drawPointsLabel,
+  groupDigits,
   hasMapPreview,
   labelEdges,
   mapMarks,
@@ -177,6 +178,18 @@ describe('the density builder', () => {
         expect(v).toBeLessThanOrEqual(start + n * step + 1e-9);
       }
     }
+  });
+
+  test('the page spec carries its tooltip text, so no expression runs per bin', () => {
+    expect([1050, -40, 0.2, 2600, 1234567.5, 0].map(groupDigits)).toEqual(['1,050', '-40', '0.2', '2,600', '1,234,567.5', '0']);
+    const d = ds('flights_200k_json');
+    const g = densityOf(d, defaultAxes(scatterFields(d)!));
+    const spec = densityPageSpec(d, g, 380);
+    expect(spec.transform).toBeUndefined();
+    expect(spec.mark).toEqual({ type: 'rect', aria: false });
+    const values = (spec.data as { values: Record<string, unknown>[] }).values;
+    expect(values).toHaveLength(g.cells.length);
+    expect(values.find((v) => v.x0 === 1000 && v.y0 === 0)).toMatchObject({ x1: 1050, y1: 10, 'x range': '1,000 – 1,050', 'y range': '0 – 10' });
   });
 
   test('a value on the top edge of the box lands in the last bin, as in Vega', () => {

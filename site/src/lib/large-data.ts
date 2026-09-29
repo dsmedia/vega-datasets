@@ -272,15 +272,24 @@ export function densitySpec(d: Dataset, g: DensityGrid, height: number): Spec {
 }
 
 /** The same overview drawn from the bins in the page (pre-binned data: no file to load). */
+/**
+ * A number with its thousands grouped ("1,050", "-40", "0.2"), as Vega's format(",") shows
+ * it but cheap enough to run for every bin as the page opens (Intl formatting costs about
+ * as much as the chart at 4x CPU).
+ */
+export function groupDigits(v: number): string {
+  const [int = "", frac] = String(v).split(".");
+  return int.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + (frac === undefined ? "" : `.${frac}`);
+}
+
 export function densityPageSpec(d: Dataset, g: DensityGrid, height: number): Spec {
-  const range = (lo: string, hi: string) => `format(datum.${lo}, ",") + " – " + format(datum.${hi}, ",")`;
-  const values = g.cells.map(([i, j, n]) => ({
-    x0: edge(g.xstart, g.xstep, i),
-    x1: edge(g.xstart, g.xstep, i + 1),
-    y0: edge(g.ystart, g.ystep, j),
-    y1: edge(g.ystart, g.ystep, j + 1),
-    n,
-  }));
+  // The tooltip's text is written here, once per bin, rather than by Vega expressions: under
+  // the CSP they run interpreted, per bin, on the main thread as the page opens.
+  const num = groupDigits;
+  const values = g.cells.map(([i, j, n]) => {
+    const [x0, x1, y0, y1] = [edge(g.xstart, g.xstep, i), edge(g.xstart, g.xstep, i + 1), edge(g.ystart, g.ystep, j), edge(g.ystart, g.ystep, j + 1)];
+    return { x0, x1, y0, y1, n, "x range": `${num(x0)} – ${num(x1)}`, "y range": `${num(y0)} – ${num(y1)}`, rows: num(n) };
+  });
   return {
     $schema: SCHEMA,
     description: `How the ${formatCount(g.complete - g.outside)} rows of ${d.name} inside the 0.5th–99.5th percentiles spread over ${g.x} and ${g.y}: rows per bin, binned when the site was built.`,
@@ -288,11 +297,9 @@ export function densityPageSpec(d: Dataset, g: DensityGrid, height: number): Spe
     height,
     autosize: { type: "fit-x", contains: "padding" },
     data: { values },
-    transform: [
-      { calculate: range("x0", "x1"), as: "x range" },
-      { calculate: range("y0", "y1"), as: "y range" },
-    ],
-    mark: "rect",
+    // A thousand cells: screen readers get the chart's description, not a label per cell
+    // (which Vega would also build with an interpreted expression per cell).
+    mark: { type: "rect", aria: false },
     encoding: {
       x: { field: "x0", type: "quantitative", bin: { binned: true, step: g.xstep }, title: g.x, axis: densityAxis(g.xstart, g.xstep, g.nx) },
       x2: { field: "x1" },
@@ -302,7 +309,7 @@ export function densityPageSpec(d: Dataset, g: DensityGrid, height: number): Spe
       tooltip: [
         { field: "x range", title: g.x },
         { field: "y range", title: g.y },
-        { field: "n", type: "quantitative", title: "Rows", format: "," },
+        { field: "rows", title: "Rows" },
       ],
     },
   };

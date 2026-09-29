@@ -13,7 +13,7 @@
 import type { Dataset } from "../lib/catalog";
 import { deviceSignals, isDesktopClass } from "../lib/device";
 import { bothValuesNote, chartFeatures, defaultAxes, exploreModes, type Mode, scatterFields, scatterSpec, starterChart } from "../lib/explore-model";
-import { allowed, BAND_POLICY, type DensityGrid, densityCaption, densityPageSpec, densitySpec, tableBand } from "../lib/large-data";
+import { allowed, BAND_POLICY, type DensityGrid, densityPageSpec, tableBand } from "../lib/large-data";
 import { editorUrl, starterSpec } from "../lib/starter";
 import { pointSource } from "../lib/vega-data";
 import { $, h, readJson } from "./dom";
@@ -73,21 +73,24 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
   });
 
   const height = () => (phone.matches ? 300 : 380);
+  // The overview's spec per height, built once: a thousand bins, each with its tooltip text.
+  const overviews = new Map<number, Spec>();
+  const overview = (g: DensityGrid, h: number): Spec => {
+    let spec = overviews.get(h);
+    if (!spec) overviews.set(h, (spec = densityPageSpec(d, g, h)));
+    return spec;
+  };
   /** The spec the page draws, exactly as the Editor opens it (the overview's Editor spec bins the public file). */
   const currentSpec = (): Spec => {
-    if (density) return densityPageSpec(d, density, height());
+    if (density) return overview(density, height());
     if (state.mode === "scatter" && fields) return scatterSpec(d, fields, { x: state.x, y: state.y, zoom: zoom(), height: height() });
     return starterChart(d) ?? starterSpec(d)!;
   };
 
   const describe = () => {
-    if (density) {
-      edit.href = editorUrl(densitySpec(d, density, 380));
-      features.textContent = chartFeatures(densityPageSpec(d, density, 380)).join(" · ");
-      note.hidden = false;
-      note.textContent = densityCaption(density);
-      return;
-    }
+    // The overview's caption, features and Editor link are in the page as built (they
+    // don't change while it shows); working them out again would cost a thousand-bin spec.
+    if (density) return;
     const spec = currentSpec();
     edit.href = editorUrl(spec);
     features.textContent = chartFeatures(spec).join(" · ");
@@ -115,6 +118,8 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
       ...embedOptions(v, canvas && !density ? "canvas" : "svg", { export: true, source: true, compiled: true, editor: false }, (uri) => failed.push(uri)),
       bind: binds,
     });
+    // How many times the chart has been drawn: once on open, unless asked (the browser check reads it).
+    section.dataset.draws = String(Number(section.dataset.draws ?? 0) + 1);
     // Vega draws an empty chart when its file doesn't load: say so instead, and count nothing.
     if (failed.length) throw new LoadError(failed[0]!.split("/").pop()!);
     labelActions(host);

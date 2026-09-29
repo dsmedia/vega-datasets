@@ -154,8 +154,11 @@ try {
     await ctx.close();
   }
   {
-    const { ctx, requests, errors, state } = await openPage(browser, 'flights_200k_json', DESKTOP);
+    const { ctx, page, requests, errors, state } = await openPage(browser, 'flights_200k_json', DESKTOP);
     check('desktop flights_200k_json: density overview, no data file before a click', requests.length === 0 && state.svg && errors.length === 0, { requests, errors, ...state });
+    // The overview draws once as the page opens (no second run for the theme, the size or the caption).
+    const draws = await page.$eval('#explore', (e) => e.dataset.draws ?? null);
+    check('desktop flights_200k_json: the overview draws once on load', draws === '1', { draws });
     await ctx.close();
   }
   // The overview's x-axis labels keep clear of each other, on a desktop and a phone.

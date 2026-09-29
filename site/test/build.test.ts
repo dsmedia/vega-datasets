@@ -4,6 +4,9 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, test } from 'vitest';
+import { chartFeatures } from '../src/lib/explore-model';
+import { type DensityGrid, densityCaption, densityPageSpec, densitySpec } from '../src/lib/large-data';
+import { editorUrl } from '../src/lib/starter';
 import { loadCatalog, REPO } from './catalog';
 
 const catalog = loadCatalog();
@@ -98,6 +101,11 @@ test('long tables carry their density bins: every row binned or counted outside,
   expect(g.cells.reduce((s, [, , n]) => s + n, 0) + g.outside + (g.rows - g.complete)).toBe(d.rows);
   expect(json.length).toBeLessThan(30_000);
   expect(text).toContain('data-draw-all>Draw All 200,000 Points (9.9 MB)</button>');
+  // The client leaves the overview's caption, features and Editor link as built: they must be final.
+  const grid = JSON.parse(json) as DensityGrid;
+  expect(text).toContain(`<span class="hint">${densityCaption(grid)}</span>`);
+  expect(text).toContain(`<span class="features mono">${chartFeatures(densityPageSpec(d, grid, 380)).join(' · ')}</span>`);
+  expect(text).toContain(`href="${editorUrl(densitySpec(d, grid, 380))}" data-editor`);
 });
 
 test('mid-size tables wait for a button, which stands aside on desktop-class devices only up to 20,000 rows', () => {
