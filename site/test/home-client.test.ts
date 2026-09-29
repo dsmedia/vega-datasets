@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 // @vitest-environment-options {"url": "https://vega.github.io/vega-datasets/"}
 // The home page's script (client/home.ts) run on the built page (site/dist/index.html, from
-// `npm run site:build`): a list update keeps focus on the card.
+// `npm run site:build`): a list update keeps focus on the card, and a legacy #name set after
+// load opens the dataset while About anchors open their item.
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, expect, test, vi } from 'vitest';
@@ -59,4 +60,18 @@ test('a card that has to move keeps focus when the list is re-sorted', async () 
   expect(removed).toContain(moved);
   expect(moved.hidden).toBe(false);
   expect(document.activeElement).toBe(moved);
+});
+
+test('an About anchor set after load opens its item and stays on the page', () => {
+  here.hash = '#about-versioning';
+  window.dispatchEvent(new HashChangeEvent('hashchange'));
+  expect(here.replace).not.toHaveBeenCalled();
+  expect(document.querySelector<HTMLDetailsElement>('#about-versioning')!.open).toBe(true);
+});
+
+test('a legacy #name set after load opens that dataset\'s page', () => {
+  here.hash = '#cars';
+  window.dispatchEvent(new HashChangeEvent('hashchange'));
+  expect(here.replace).toHaveBeenCalledTimes(1);
+  expect(here.replace).toHaveBeenCalledWith('https://vega.github.io/vega-datasets/datasets/cars/');
 });
