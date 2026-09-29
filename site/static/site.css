@@ -14,7 +14,7 @@
   --surface: #ffffff; --surface-alt: #f8f8f8; --surface-code: #f6f6f6; --surface-pre: #f9f9f9; --surface-menu: #e2e2e2;
   --surface-card: #ffffff;
   --ink: #373a3c; --ink-strong: #000000; --ink-heading-4: #333333; --ink-muted: #666666; --ink-nav: #666666; --ink-faint: #aaaaaa;
-  --link: #4682b4; --rule: #cccccc; --rule-soft: #dddddd; --rule-faint: #eeeeee;
+  --link: #3771ad; --rule: #cccccc; --rule-soft: #dddddd; --rule-faint: #eeeeee;
   --button: #3771ad; --button-border: #153c63; --button-hover: #285e8e; --on-button: #ffffff;
   --button-secondary: #ffffff; --button-secondary-border: #cccccc; --button-secondary-hover: #ebebeb;
   --selected: #274c71; --selected-bg: #eef3f8; --selected-border: #274c71; --tab-accent: #274c71;
@@ -37,6 +37,9 @@
 }
 /* --ink-muted is #666, not the family sites' #777: that is 4.48:1 on white, under AA for
    the small labels this site sets in it (#666 is 5.7:1). */
+/* --link is the family's own button blue (#3771ad, 5.1:1 on white, 4.6:1 or more on every light
+   ground here), not the family sites' steelblue #4682b4, which is 4.1:1 on white and under AA
+   for the small link text this site uses. Dark keeps Altair's #5d9bb6 (5.8:1). */
 /* The page starts light (index.html sets data-theme="light"); theme-init.js and the toggle set dark. */
 :root[data-theme="dark"] {
   color-scheme: dark;
@@ -69,6 +72,14 @@ body {
 
 a { color: var(--link); text-decoration: none; }
 a:hover { text-decoration: underline; }
+/* In running text a link is underlined too: its color alone doesn't set it apart from the
+   words around it (WCAG 1.4.1). Navigation, cards, buttons, tabs and chips stay plain. */
+.md a, .sec-note a, .f-desc a, .prov dd a, #footer-note a, .quickstart .note a, .quickstart .note button.link {
+  text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.18em;
+}
+.md a:hover, .sec-note a:hover, .f-desc a:hover, .prov dd a:hover, #footer-note a:hover, .quickstart .note a:hover, .quickstart .note button.link:hover {
+  text-decoration-thickness: 2px;
+}
 
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
