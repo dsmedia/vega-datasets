@@ -34,13 +34,14 @@ export function loadVega(): Promise<VegaModules> {
     const loader = (onError?: (uri: string, err: unknown) => void): Loader => {
       const l = vega.loader();
       const load = l.load.bind(l);
-      l.load = (uri: string, options?: unknown) => {
+      l.load = async (uri: string, options?: unknown) => {
         const url = siteDataUri(uri, local);
-        const text = url === uri ? load(uri, options as never) : siteText(url);
-        return text.catch((err: unknown) => {
+        try {
+          return await (url === uri ? load(uri, options as never) : siteText(url));
+        } catch (err) {
           onError?.(uri, err);
           throw err;
-        });
+        }
       };
       return l;
     };
