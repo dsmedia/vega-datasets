@@ -25,10 +25,20 @@ export function formatNumber(n: number): string {
   return n.toLocaleString("en-US", { maximumFractionDigits: digits });
 }
 
-export function formatDate(iso: string): string {
-  const d = new Date(iso);
+/**
+ * A catalog date. A date-time with no zone is the file's own wall-clock time, read as UTC
+ * (JavaScript would read it as the viewer's local time, a day early east of UTC), so every
+ * viewer sees the file's values.
+ */
+export function parseDate(iso: string): Date {
+  return new Date(/T[\d:.]+$/.test(iso) ? `${iso}Z` : iso);
+}
+
+/** A catalog date as text, with the time when it isn't midnight (or when `time` says so). */
+export function formatDate(iso: string, time?: boolean): string {
+  const d = parseDate(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  const hasTime = !/T00:00:00/.test(iso);
+  const hasTime = time ?? d.getUTCHours() + d.getUTCMinutes() + d.getUTCSeconds() > 0;
   return d.toLocaleDateString("en-US", {
     year: "numeric",
     month: "short",

@@ -302,6 +302,16 @@ def _nice(x: float) -> float:
     return float(f"{x:.4g}")
 
 
+def _utc_iso(t: datetime) -> str:
+    """
+    ISO 8601 with an explicit zone.
+
+    A value without one is the file's own wall-clock time; marking it UTC keeps
+    browsers from reading it as the viewer's local time (a day early east of UTC).
+    """
+    return t.isoformat() if t.tzinfo else f"{t.isoformat()}Z"
+
+
 def _bins(offsets: pl.Series, span: float) -> list[int]:
     idx = (offsets / (span / HIST_BINS)).floor().clip(0, HIST_BINS - 1).cast(pl.Int32)
     counts = Counter(idx.to_list())
@@ -344,8 +354,8 @@ def profile_field(s: pl.Series, field_type: str) -> dict[str, Any]:
         span = (hi - lo).total_seconds()
         profile: dict[str, Any] = {
             "kind": "temporal",
-            "min": lo.isoformat(),
-            "max": hi.isoformat(),
+            "min": _utc_iso(lo),
+            "max": _utc_iso(hi),
             "missing": missing,
         }
         if span > 0:

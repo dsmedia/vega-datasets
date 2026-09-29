@@ -5,7 +5,7 @@
  */
 import type { Field } from "./catalog";
 import { svg } from "./dom";
-import { formatCount, formatDate, formatNumber, plural, TYPE_LABEL } from "./format";
+import { formatCount, formatDate, formatNumber, parseDate, plural, TYPE_LABEL } from "./format";
 import { attachTip, hideTip, showTip } from "./tooltip";
 
 function binEdges(lo: number, hi: number, n: number): number[] {
@@ -86,21 +86,33 @@ function histogram(
   return root;
 }
 
-/** A small histogram for the fields table, or null for categories and empty fields. */
-export function sparkline(f: Field): SVGSVGElement | null {
+/**
+ * The range each histogram bin covers, as text; null for categories and empty fields.
+ * A date field's bins read as dates (their edges fall at odd hours, which aren't in the data).
+ */
+export function binLabels(f: Field): string[] | null {
   const p = f.profile;
   if (p.kind === "quantitative") {
     const edges = binEdges(p.min, p.max, p.bins.length);
-    return spark(histogram(p.bins, (i) => `${formatNumber(edges[i] ?? p.min)} – ${formatNumber(edges[i + 1] ?? p.max)}`, 120, 26, f.name));
+    return p.bins.map((_, i) => `${formatNumber(edges[i] ?? p.min)} – ${formatNumber(edges[i + 1] ?? p.max)}`);
   }
   if (p.kind === "temporal" && p.bins?.length) {
-    const lo = new Date(p.min).getTime();
-    const hi = new Date(p.max).getTime();
+    const lo = parseDate(p.min).getTime();
+    const hi = parseDate(p.max).getTime();
     const edges = binEdges(lo, hi, p.bins.length);
-    const label = (i: number) => `${formatDate(new Date(edges[i] ?? lo).toISOString())} – ${formatDate(new Date(edges[i + 1] ?? hi).toISOString())}`;
-    return spark(histogram(p.bins, label, 120, 26, f.name));
+    const time = f.type === "date" ? false : undefined;
+    const text = (t: number) => formatDate(new Date(t).toISOString(), time);
+    return p.bins.map((_, i) => `${text(edges[i] ?? lo)} – ${text(edges[i + 1] ?? hi)}`);
   }
   return null;
+}
+
+/** A small histogram for the fields table, or null for categories and empty fields. */
+export function sparkline(f: Field): SVGSVGElement | null {
+  const p = f.profile;
+  const labels = binLabels(f);
+  if (!labels || (p.kind !== "quantitative" && p.kind !== "temporal") || !p.bins) return null;
+  return spark(histogram(p.bins, (i) => labels[i]!, 120, 26, f.name));
 }
 
 function spark(chart: SVGSVGElement): SVGSVGElement {
