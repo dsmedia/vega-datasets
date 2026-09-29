@@ -115,3 +115,9 @@ test('forced colors: data colors kept; chart text and rules, built or live, take
   expect(body).toMatch(/:is\(\.catalog-chart, \.explore-chart\) svg text \{ fill: CanvasText; \}/);
   expect(body).not.toMatch(/\.vega-embed svg/);
 });
+
+test('snippets wrap long URLs at hyphens and spaces, not mid-word', () => {
+  // word-break: break-all split "vega-datasets" as "vega-data / sets" in the rail.
+  expect(css).not.toMatch(/word-break:\s*break-all/);
+  expect(css).toMatch(/\.rail-use \.snippet \{[^}]*overflow-wrap: anywhere/);
+});
