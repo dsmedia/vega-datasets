@@ -8,6 +8,7 @@
 // installed here) and CHROME_PATH (the Chrome executable). The script starts the preview
 // server (site/scripts/serve.mjs) and stops it when it is done.
 import { spawn } from 'node:child_process';
+import { readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -258,6 +259,39 @@ try {
     console.log(`      (Retry ${didReload ? 'reloaded the page' : 'imported again in place'})`);
     check('cars, Retry after the chart code failed draws the chart', Boolean(await page.$('#explore .vega-embed svg.marks')) && /398 of 406 rows/.test(caption), { caption, message: await page.$eval('#explore .explore-chart', (e) => e.textContent.trim().slice(0, 120)) });
     await ctx.close();
+  }
+
+  // The pickers' row stays within its reservation at every width, for every dataset with pickers.
+  {
+    const dist = path.join(repo, 'site', 'dist', 'datasets');
+    const names = readdirSync(dist).filter((n) => readFileSync(path.join(dist, n, 'index.html'), 'utf8').includes('<div class="binds" data-reserve>'));
+    const misfits = [];
+    // A select narrowed to fit shows its full field name as a tooltip.
+    const untitled = [];
+    for (const name of names) {
+      const { ctx, page } = await openPage(browser, name, { viewport: { width: 1024, height: 900 } }, { settle: 500 });
+      await page.waitForSelector('#explore .binds .vega-bind', { timeout: 60_000 }).catch(() => {});
+      for (const width of [1024, 900, 768, 390]) {
+        await page.setViewport({ width, height: 900 });
+        await sleep(150);
+        const m = await page.evaluate(() => {
+          const binds = document.querySelector('#explore .binds');
+          const select = binds.querySelector('select');
+          return {
+            height: Math.round(binds.getBoundingClientRect().height),
+            reserved: parseFloat(getComputedStyle(binds).minHeight),
+            overflow: binds.scrollWidth > binds.clientWidth + 1 || [...binds.querySelectorAll('select')].some((x) => x.getBoundingClientRect().right > binds.getBoundingClientRect().right + 1),
+            binds: binds.querySelectorAll('.vega-bind').length,
+            title: select?.title ?? null,
+          };
+        });
+        if (m.binds !== 2 || m.height > m.reserved || m.overflow) misfits.push({ name, width, ...m });
+        if (!m.title) untitled.push(`${name} ${width}`);
+      }
+      await ctx.close();
+    }
+    check(`pickers fit their reserved row at 1024, 900, 768 and 390 px (${names.length} datasets)`, names.length > 20 && misfits.length === 0, misfits.slice(0, 12));
+    check('every picker names its field in a tooltip', untitled.length === 0, untitled.slice(0, 4));
   }
 
   // gapminder has two charts on one file: the page fetches it once.

@@ -118,6 +118,12 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
     // Vega draws an empty chart when its file doesn't load: say so instead, and count nothing.
     if (failed.length) throw new LoadError(failed[0]!.split("/").pop()!);
     labelActions(host);
+    // A select narrowed to fit its row clips a long field name: its tooltip gives it in full.
+    binds.querySelectorAll("select").forEach((select) => {
+      const name = () => (select.title = select.value);
+      name();
+      select.addEventListener("change", name);
+    });
     const view = result.view;
     const source = state.mode === "scatter" && !density ? pointSource(result.vgSpec as never) : null;
     const recount = () => {
