@@ -31,6 +31,38 @@ const catalog = loadCatalog();
 const ds = (name: string) => catalog.dataset(name)!;
 const snippetNames = (name: string) => useSnippets(ds(name)).map((s) => s.name);
 
+/**
+ * Vega-Lite 6.4.3 warns this for a fit autosize with a step-sized height even when the fit
+ * is only "fit-x" (which `width: "container"` implies) and nothing is dropped: an upstream
+ * bug (getTopLevelProperties). The starter bar charts with a category on y hit it. Any other
+ * warning fails; the canary test below says when the allowance can go.
+ */
+const KNOWN_VL_WARNING = 'Dropping "fit-y" because spec has discrete height.';
+
+/** A Vega-Lite logger that collects warnings (rather than printing them) and throws on errors. */
+function collectingLogger() {
+  const warnings: string[] = [];
+  const logger = {
+    level: () => logger,
+    error: (...m: unknown[]) => { throw new Error(m.join(' ')); },
+    warn: (...m: unknown[]) => { warnings.push(m.join(' ')); return logger; },
+    info: () => logger,
+    debug: () => logger,
+  };
+  return { logger: logger as never, warnings };
+}
+
+test('canary: Vega-Lite still warns "fit-y" for a container-width bar chart (when this fails, drop KNOWN_VL_WARNING)', () => {
+  const { logger, warnings } = collectingLogger();
+  compile({
+    data: { values: [{ a: 'x', b: 1 }] },
+    width: 'container',
+    mark: 'bar',
+    encoding: { y: { field: 'a', type: 'nominal' }, x: { field: 'b', type: 'quantitative' } },
+  } as TopLevelSpec, { logger });
+  expect(warnings).toEqual([KNOWN_VL_WARNING]);
+});
+
 describe('Use This Dataset snippets', () => {
   test('a released table gets URL, JavaScript, Vega-Lite and Python (Altair)', () => {
     const s = Object.fromEntries(useSnippets(ds('cars')).map((x) => [x.name, x.code]));
@@ -138,16 +170,9 @@ describe('Explore', () => {
     test('compiles without warnings, draws points, and its titles follow the pickers', async () => {
       const f = scatterFields(d)!;
       const axes = defaultAxes(f);
-      const warnings: string[] = [];
-      const logger = {
-        level: () => logger,
-        error: (...m: unknown[]) => { throw new Error(m.join(' ')); },
-        warn: (...m: unknown[]) => { warnings.push(m.join(' ')); return logger; },
-        info: () => logger,
-        debug: () => logger,
-      };
+      const { logger, warnings } = collectingLogger();
       const spec = { ...scatterSpec(d, f, { ...axes, zoom: true, height: 380 }), width: 600 };
-      const { spec: vg } = compile(spec as TopLevelSpec, { logger: logger as never });
+      const { spec: vg } = compile(spec as TopLevelSpec, { logger });
       expect(warnings).toEqual([]);
       // Zoom clips the view's marks; the axis titles (text marks outside the plot) must opt out.
       const clipped = JSON.stringify(vg).match(/"type":"text"[^{}]*"clip":true/g);
@@ -215,7 +240,10 @@ describe('every Explore chart draws from the rows the page reads', () => {
       : spec;
     const loader = vega.loader();
     loader.load = async (uri: string) => readDataUrl(uri);
-    const view = new vega.View(vega.parse(compile({ ...site, width: 600 } as TopLevelSpec).spec), { renderer: 'none', loader });
+    const { logger, warnings } = collectingLogger();
+    const { spec: vg } = compile({ ...site, width: 600 } as TopLevelSpec, { logger });
+    expect(warnings.filter((w) => w !== KNOWN_VL_WARNING)).toEqual([]);
+    const view = new vega.View(vega.parse(vg), { renderer: 'none', loader });
     try {
       await view.runAsync();
       const svg = await view.toSVG();
