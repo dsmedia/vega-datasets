@@ -345,7 +345,8 @@ td.f-miss.any { color: var(--missing); }
 .rail-box h3 { font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-muted); font-weight: bold; }
 .rail-use .tabs { margin: 0 -4px; }
 .rail-use .tab { padding: 8px; font-size: 14px; }
-.rail-use .snippet { white-space: pre-wrap; word-break: break-all; font-size: 12px; }
+/* Long URLs and code lines wrap at hyphens and spaces first; mid-word only when a piece can't fit. */
+.rail-use .snippet { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
 [data-theme="dark"] .rail-use .snippet { background: var(--surface); }
 .rail-stack .usage, .rail-stack .stack { display: flex; width: 100%; height: 10px; }
 .rail-usage { display: grid; grid-template-columns: auto 1fr auto; gap: 6px 8px; align-items: center; font-size: 14px; }
@@ -526,7 +527,7 @@ button.link:hover { text-decoration: underline; }
   .lead-buttons { flex-direction: column; gap: 8px; }
   .lead-buttons .btn, .browse-foot .more { min-height: 44px; width: 100%; }
   .tab { padding: 12px 10px; font-size: 14px; }
-  .snippets .snippet { white-space: pre-wrap; word-break: break-all; font-size: 12px; }
+  .snippets .snippet { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
   .copy-btn { min-height: 32px; }
 
   .browse, .use, .about { padding-top: 36px; }
