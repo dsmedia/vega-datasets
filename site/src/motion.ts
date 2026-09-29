@@ -9,7 +9,7 @@
  */
 import LZString from "lz-string";
 import type { Result } from "vega-embed";
-import { h } from "./dom";
+import { afterPaint, h } from "./dom";
 import { onThemeChange, reducedMotion, token } from "./theme";
 
 type Spec = Record<string, unknown>;
@@ -292,6 +292,7 @@ export function fillMotion(section: HTMLElement): void {
     let interp: typeof import("vega-interpreter").expressionInterpreter;
     let themeConfig: typeof import("./vl").themeConfig;
     try {
+      await afterPaint();
       [values, { default: vegaEmbed }, { expressionInterpreter: interp }, { themeConfig }] = await Promise.all([
         loadCountries(), import("vega-embed"), import("vega-interpreter"), import("./vl"),
       ]);

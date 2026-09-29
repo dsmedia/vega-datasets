@@ -4,7 +4,7 @@
  * and a button that opens exactly this chart in the Vega Editor.
  */
 import type { Dataset } from "./catalog";
-import { h } from "./dom";
+import { afterPaint, h } from "./dom";
 import { formatBytes } from "./format";
 import {
   bothValuesNote,
@@ -111,6 +111,8 @@ export function exploreSection(d: Dataset): HTMLElement | null {
   let queue: Promise<void> = Promise.resolve();
   let destroyed = false;
   const draw = async () => {
+    // After the page has painted: Vega is ~290 KB, and the page shows without it.
+    if (!result) await afterPaint();
     if (destroyed) return;
     const [{ default: vegaEmbed }, { expressionInterpreter }, { labelActions, themeConfig }] = await Promise.all([
       import("vega-embed"), import("vega-interpreter"), import("./vl"),
@@ -176,8 +178,8 @@ export function exploreSection(d: Dataset): HTMLElement | null {
       onclick: () => void render(),
     }, `Draw Chart (${formatBytes(d.bytes)})`));
   } else {
-    // draw() awaits its imports before it measures the host, and by then the section is in the page.
-    // (Not requestAnimationFrame: background tabs never run it.)
+    // draw() waits for the page to paint and for its imports before it measures the host, and by
+    // then the section is in the page (afterPaint() also resolves in a background tab).
     void render();
   }
   return section;

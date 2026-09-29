@@ -56,6 +56,43 @@ export function clear(el: Element): void {
   el.replaceChildren();
 }
 
+/** Whether the page's first render has been painted (see afterPaint). */
+let painted = false;
+
+/**
+ * Resolve once the page has painted what's been rendered, so code loaded after it (Vega,
+ * ~290 KB) doesn't compete with the first paint (Lighthouse counts a download that starts
+ * before the largest paint towards it). On the first page: once the browser reports that
+ * paint (a largest-contentful-paint entry newer than the render; a second at most). Later,
+ * and where there's no such entry: two frames, since a frame's callbacks run before it
+ * paints. A hidden tab paints nothing and runs no frames: at once.
+ */
+export function afterPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    const go = () => setTimeout(resolve, 0);
+    if (document.visibilityState === "hidden") return go();
+    if (painted || !PerformanceObserver.supportedEntryTypes?.includes("largest-contentful-paint")) {
+      requestAnimationFrame(() => requestAnimationFrame(go));
+      return;
+    }
+    const since = performance.now();
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      painted = true;
+      observer.disconnect();
+      clearTimeout(timer);
+      go();
+    };
+    const observer = new PerformanceObserver((list) => {
+      if (list.getEntries().some((e) => e.startTime >= since)) finish();
+    });
+    observer.observe({ type: "largest-contentful-paint", buffered: true });
+    const timer = setTimeout(finish, 1000);
+  });
+}
+
 
 type Here = Pick<Location, "pathname" | "search" | "hash" | "href">;
 
