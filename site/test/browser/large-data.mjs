@@ -48,12 +48,17 @@ const DESKTOP = { viewport: { width: 1360, height: 900, deviceScaleFactor: 1, is
  * Open a dataset page, bring Explore (and, if asked, In Motion) into view, wait for the
  * page to settle, and report the data files requested so far and what Explore shows.
  */
-async function openPage(browser, name, device, { sections = ['#explore'], settle = 2500 } = {}) {
+async function openPage(browser, name, device, { sections = ['#explore'], settle = 2500, block = null } = {}) {
   const ctx = await browser.createBrowserContext();
   const page = await ctx.newPage();
   if (device.userAgent) await page.setUserAgent(device.userAgent);
   await page.setViewport(device.viewport);
   const requests = [];
+  // `block.on` aborts matching requests (a failed download) until the check turns it off.
+  if (block) {
+    await page.setRequestInterception(true);
+    page.on('request', (r) => (block.on && block.pattern.test(r.url()) ? r.abort('failed') : r.continue()));
+  }
   page.on('request', (r) => { if (r.url().includes('/vega-datasets/data/')) requests.push(r.url().slice(base.length)); });
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
@@ -139,6 +144,24 @@ try {
     };
     try { walk(JSON.parse(source)); } catch { inlined.push('unparsed'); }
     check('cars: "View Source" shows the public URL and no inlined rows', hasUrl && inlined.length === 0 && errors.length === 0, { length: source.length, hasUrl, inlined, requests, errors });
+    await ctx.close();
+  }
+
+  // A failed download says so, with a way to try again, and counts no rows.
+  {
+    const block = { on: true, pattern: /\/data\/cars\.json$/ };
+    const { ctx, page, errors } = await openPage(browser, 'cars', DESKTOP, { settle: 3000, block });
+    const failed = await page.evaluate(() => ({
+      message: document.querySelector('#explore .explore-chart')?.textContent?.trim() ?? '',
+      retry: Boolean(document.querySelector('#explore .explore-chart button[data-retry]')),
+      caption: document.querySelector('#explore .chart-caption .hint')?.textContent ?? '',
+    }));
+    check('cars, download fails: an error with Retry, and no row count', failed.message.startsWith("Couldn't load cars.json.") && failed.retry && !/of 406 rows/.test(failed.caption), { ...failed, errors });
+    block.on = false;
+    await page.click('#explore button[data-retry]').catch(() => {});
+    await page.waitForFunction(() => /of 406 rows/.test(document.querySelector('#explore .chart-caption .hint')?.textContent ?? ''), { timeout: 30_000 }).catch(() => {});
+    const caption = await page.$eval('#explore .chart-caption .hint', (e) => e.textContent);
+    check('cars, Retry after a failed download draws the chart', /398 of 406 rows/.test(caption) && Boolean(await page.$('#explore .vega-embed svg.marks')), { caption });
     await ctx.close();
   }
 

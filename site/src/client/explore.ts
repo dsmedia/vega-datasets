@@ -24,6 +24,13 @@ type Spec = Record<string, unknown>;
 
 const PHONE = "(max-width: 640px)";
 
+/** A data file that didn't load (Vega itself only logs it, and draws no rows). */
+class LoadError extends Error {
+  constructor(readonly file: string) {
+    super(`Couldn't load ${file}.`);
+  }
+}
+
 /** "an origin", "a species". */
 function withArticle(word: string): string {
   return `${/^[aeiou]/i.test(word) ? "an" : "a"} ${word}`;
@@ -101,11 +108,14 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
     const spec = currentSpec();
     binds.hidden = state.mode !== "scatter" || density !== null;
     // The live chart takes the place of the build's picture and its button.
-    host.querySelectorAll(".chart-preview, button.draw").forEach((el) => el.remove());
+    host.querySelectorAll(".chart-preview, button.draw, .load-error").forEach((el) => el.remove());
+    const failed: string[] = [];
     result = await v.vegaEmbed(host, spec as never, {
-      ...embedOptions(v, canvas && !density ? "canvas" : "svg", { export: true, source: true, compiled: true, editor: false }),
+      ...embedOptions(v, canvas && !density ? "canvas" : "svg", { export: true, source: true, compiled: true, editor: false }, (uri) => failed.push(uri)),
       bind: binds,
     });
+    // Vega draws an empty chart when its file doesn't load: say so instead, and count nothing.
+    if (failed.length) throw new LoadError(failed[0]!.split("/").pop()!);
     labelActions(host);
     const view = result.view;
     const source = state.mode === "scatter" && !density ? pointSource(result.vgSpec as never) : null;
@@ -129,7 +139,15 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
   const render = () => {
     requested = true;
     return (queue = queue.then(draw).catch((err: unknown) => {
-      host.replaceChildren(h("p", { class: "muted" }, `The chart didn't load: ${err instanceof Error ? err.message : String(err)}`));
+      result?.finalize();
+      result = undefined;
+      binds.replaceChildren();
+      plotted = null;
+      describe();
+      const retry = h("button", { class: "btn", type: "button", "data-retry": "" }, "Retry");
+      retry.addEventListener("click", () => void render(), { once: true });
+      const message = err instanceof LoadError ? `Couldn't load ${err.file}.` : `The chart didn't load: ${err instanceof Error ? err.message : String(err)}`;
+      host.replaceChildren(h("p", { class: "muted load-error" }, message, " ", retry));
     }));
   };
 

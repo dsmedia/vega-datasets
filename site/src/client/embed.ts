@@ -16,7 +16,8 @@ import { chartInk, token } from "./theme";
 export interface VegaModules {
   vegaEmbed: typeof import("vega-embed").default;
   expressionInterpreter: typeof import("vega-interpreter").expressionInterpreter;
-  loader: Loader;
+  /** A loader for one chart; `onError` hears of each file that failed to load. */
+  loader(onError?: (uri: string, err: unknown) => void): Loader;
 }
 
 let loading: Promise<VegaModules> | null = null;
@@ -26,14 +27,22 @@ export function loadVega(): Promise<VegaModules> {
     // vega-loader's `formats` registry is exported by vega but missing from its type declarations.
     const { formats } = vega as unknown as { formats(name: string, reader: unknown): void };
     for (const [name, reader] of Object.entries(readers())) formats(name, reader);
-    // The site's own copy of a public data file, fetched once per page (the gapminder page
-    // draws two charts from one file); anything else goes through Vega's loader.
-    const loader = vega.loader();
-    const load = loader.load.bind(loader);
     const local = siteDataBase();
-    loader.load = (uri: string, options?: unknown) => {
-      const url = siteDataUri(uri, local);
-      return url === uri ? load(uri, options as never) : siteText(url);
+    // The site's own copy of a public data file, fetched once per page (the gapminder page
+    // draws two charts from one file); anything else goes through Vega's loader. Vega
+    // swallows a failed load (the chart draws with no rows), so the caller hears of it.
+    const loader = (onError?: (uri: string, err: unknown) => void): Loader => {
+      const l = vega.loader();
+      const load = l.load.bind(l);
+      l.load = (uri: string, options?: unknown) => {
+        const url = siteDataUri(uri, local);
+        const text = url === uri ? load(uri, options as never) : siteText(url);
+        return text.catch((err: unknown) => {
+          onError?.(uri, err);
+          throw err;
+        });
+      };
+      return l;
     };
     return { vegaEmbed: embed.default, expressionInterpreter: interp.expressionInterpreter, loader };
   }));
@@ -43,13 +52,13 @@ export function loadVega(): Promise<VegaModules> {
  * Options for a chart drawn with `renderer`. SVG charts follow a theme switch through
  * site.css; canvas charts bake the colors in, so they are drawn again (see onThemeChange).
  */
-export function embedOptions(v: VegaModules, renderer: "svg" | "canvas", actions: EmbedOptions["actions"]): EmbedOptions {
+export function embedOptions(v: VegaModules, renderer: "svg" | "canvas", actions: EmbedOptions["actions"], onLoadError?: (uri: string, err: unknown) => void): EmbedOptions {
   return {
     config: chartConfig(chartInk(), token("--font-sans")) as EmbedOptions["config"],
     renderer,
     ast: true,
     expr: v.expressionInterpreter,
-    loader: v.loader,
+    loader: v.loader(onLoadError),
     tooltip: { theme: "custom" },
     actions,
   };
