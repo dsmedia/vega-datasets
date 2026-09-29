@@ -11,12 +11,14 @@ import {
   AUTO_DRAW_MAX_ROWS,
   BAND_POLICY,
   DENSITY_BINS,
+  DENSITY_MAX_LABELS,
   densityCaption,
   densityGrid,
   densityPageSpec,
   densitySpec,
   drawPointsLabel,
   hasMapPreview,
+  labelEdges,
   mapMarks,
   MAP_PREVIEW_MARKS,
   niceStep,
@@ -158,6 +160,23 @@ describe('the density builder', () => {
     // The diagonal fills only the cells where column equals row.
     expect(g.cells.every(([i, j]) => i === j)).toBe(true);
     expect(densityCaption(g)).toBe(`Rows per bin, from all 1,005 rows, binned when the site was built. The chart leaves out ${g.outside} rows beyond the 0.5th or 99.5th percentile of either field. Another 3 lack a value in one of them. Draw all points to pick the fields.`);
+  });
+
+  test('axis labels sit on bin edges, a round number of bins apart, at most 14 of them', () => {
+    expect(labelEdges(50, 50, 51)).toEqual([200, 400, 600, 800, 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2400, 2600]);
+    expect(labelEdges(-40, 10, 22)).toEqual([-40, -20, 0, 20, 40, 60, 80, 100, 120, 140, 160, 180]);
+    // 2-wide bins are never labelled every 5 (mid-bin): every 10 instead.
+    expect(labelEdges(0, 2, 30)).toEqual([0, 10, 20, 30, 40, 50, 60]);
+    expect(labelEdges(0, 0.1, 5)).toEqual([0, 0.1, 0.2, 0.3, 0.4, 0.5]);
+    for (const [start, step, n] of [[50, 50, 51], [-40, 10, 22], [0, 2, 30], [-3, 0.2, 31], [100, 5, 60]] as const) {
+      const values = labelEdges(start, step, n);
+      expect(values.length, `${start} ${step} ${n}`).toBeLessThanOrEqual(DENSITY_MAX_LABELS);
+      for (const v of values) {
+        expect(Math.abs((v - start) / step - Math.round((v - start) / step)), `${v}`).toBeLessThan(1e-9);
+        expect(v).toBeGreaterThanOrEqual(start);
+        expect(v).toBeLessThanOrEqual(start + n * step + 1e-9);
+      }
+    }
   });
 
   test('a value on the top edge of the box lands in the last bin, as in Vega', () => {

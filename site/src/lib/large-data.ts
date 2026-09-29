@@ -212,14 +212,44 @@ const EDITOR_COLOR = { ...DENSITY_COLOR, scheme: "blues" };
 /** Bin edges without floating-point noise (0.30000000000000004). */
 const edge = (start: number, step: number, i: number) => Number((start + i * step).toPrecision(12));
 
+/** At most this many labels on an overview axis (fewer when they would crowd: see densityAxis). */
+export const DENSITY_MAX_LABELS = 14;
+
+/**
+ * Where an overview axis puts its labels: on bin edges, every `k` bins, where `k × step` is
+ * the smallest round number (1, 2 or 5 × 10^j) that is a whole number of bins and leaves
+ * at most `max` labels. So distance in 50-mile bins is labelled every 200 miles, never
+ * mid-bin (a 2-wide bin never gets a label every 5).
+ */
+export function labelEdges(start: number, step: number, n: number, max = DENSITY_MAX_LABELS): number[] {
+  const end = start + n * step;
+  const whole = (x: number) => Math.abs(x - Math.round(x)) < 1e-9;
+  let every = step;
+  for (let j = Math.floor(Math.log10(step)); ; j++) {
+    const found = [1, 2, 5].map((m) => m * 10 ** j).find((c) => c >= step * (1 - 1e-12) && whole(c / step) && Math.floor(end / c + 1e-9) - Math.ceil(start / c - 1e-9) + 1 <= max);
+    if (found !== undefined) {
+      every = found;
+      break;
+    }
+  }
+  const out: number[] = [];
+  for (let k = Math.ceil(start / every - 1e-9); k * every <= end + every * 1e-9; k++) out.push(Number((k * every).toPrecision(12)));
+  return out;
+}
+
+/** An overview axis: labels on bin edges, and every other one dropped until they don't crowd (a narrow screen). */
+function densityAxis(start: number, step: number, n: number): Spec {
+  return { values: labelEdges(start, step, n), labelOverlap: "parity", labelSeparation: 6 };
+}
+
 /**
  * The overview as the Editor opens it: the whole file from its public URL, filtered to the
  * box and binned on the same edges, so it draws the same bins as the page.
  */
 export function densitySpec(d: Dataset, g: DensityGrid, height: number): Spec {
   const bin = (start: number, step: number, n: number) => ({ extent: [start, edge(start, step, n)], step });
-  const x = { field: fieldRef(g.x), type: "quantitative", bin: bin(g.xstart, g.xstep, g.nx), title: g.x };
-  const y = { field: fieldRef(g.y), type: "quantitative", bin: bin(g.ystart, g.ystep, g.ny), title: g.y };
+  const x = { field: fieldRef(g.x), type: "quantitative", bin: bin(g.xstart, g.xstep, g.nx), title: g.x, axis: densityAxis(g.xstart, g.xstep, g.nx) };
+  const y = { field: fieldRef(g.y), type: "quantitative", bin: bin(g.ystart, g.ystep, g.ny), title: g.y, axis: densityAxis(g.ystart, g.ystep, g.ny) };
   return {
     $schema: SCHEMA,
     description: `How the rows of ${d.name} spread over ${g.x} and ${g.y}: rows per bin, between the 0.5th and 99.5th percentiles of each.`,
@@ -264,9 +294,9 @@ export function densityPageSpec(d: Dataset, g: DensityGrid, height: number): Spe
     ],
     mark: "rect",
     encoding: {
-      x: { field: "x0", type: "quantitative", bin: { binned: true, step: g.xstep }, title: g.x },
+      x: { field: "x0", type: "quantitative", bin: { binned: true, step: g.xstep }, title: g.x, axis: densityAxis(g.xstart, g.xstep, g.nx) },
       x2: { field: "x1" },
-      y: { field: "y0", type: "quantitative", bin: { binned: true, step: g.ystep }, title: g.y },
+      y: { field: "y0", type: "quantitative", bin: { binned: true, step: g.ystep }, title: g.y, axis: densityAxis(g.ystart, g.ystep, g.ny) },
       y2: { field: "y1" },
       color: { field: "n", type: "quantitative", title: "Rows", scale: DENSITY_COLOR },
       tooltip: [

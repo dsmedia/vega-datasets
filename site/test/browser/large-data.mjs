@@ -84,6 +84,21 @@ async function openPage(browser, name, device, { sections = ['#explore'], settle
   return { ctx, page, requests, errors, state };
 }
 
+
+/** The smallest gap in pixels between neighboring visible labels of the Explore chart's x axis. */
+async function xLabelGap(page) {
+  return page.evaluate(() => {
+    const axis = [...document.querySelectorAll('#explore svg .role-axis')].find((g) => /^X-axis/.test(g.getAttribute('aria-label') ?? ''));
+    const boxes = [...(axis?.querySelectorAll('.role-axis-label text') ?? [])]
+      .filter((t) => t.getAttribute('opacity') !== '0' && getComputedStyle(t).opacity !== '0')
+      .map((t) => t.getBoundingClientRect())
+      .sort((a, b) => a.left - b.left);
+    let gap = Infinity;
+    for (let i = 1; i < boxes.length; i++) gap = Math.min(gap, boxes[i].left - boxes[i - 1].right);
+    return { labels: boxes.length, gap: Math.round(gap * 10) / 10 };
+  });
+}
+
 const server = await serve();
 const puppeteer = await loadPuppeteer();
 const browser = await puppeteer.launch({ executablePath: chrome, headless: true });
@@ -116,6 +131,13 @@ try {
   {
     const { ctx, requests, errors, state } = await openPage(browser, 'flights_200k_json', DESKTOP);
     check('desktop flights_200k_json: density overview, no data file before a click', requests.length === 0 && state.svg && errors.length === 0, { requests, errors, ...state });
+    await ctx.close();
+  }
+  // The overview's x-axis labels keep clear of each other, on a desktop and a phone.
+  for (const [label, device] of [['desktop', DESKTOP], ['phone', PHONE]]) {
+    const { ctx, page } = await openPage(browser, 'flights_200k_json', device);
+    const x = await xLabelGap(page);
+    check(`${label} flights_200k_json: x-axis labels at least 6 px apart`, x.labels >= 3 && x.gap >= 6, x);
     await ctx.close();
   }
 
