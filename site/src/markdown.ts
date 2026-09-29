@@ -5,9 +5,25 @@
  */
 import { Marked } from "marked";
 
-/** Escape text for a double-quoted attribute: a quote in a link would otherwise end it. */
+/**
+ * Write a link's destination or title (as marked hands it over: backslash escapes removed,
+ * entity references not yet decoded) into a double-quoted attribute. A quote, `<` or `>` is
+ * escaped, so it can't end the attribute; so is an `&` that doesn't start a reference.
+ * A reference (`&amp;`, `&quot;`, `&#58;`) passes through for the browser to decode, once,
+ * which is what CommonMark asks of a destination or title and needs no entity table here.
+ */
 function attr(value: string): string {
-  return value.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
+  return value.replace(/&(?![a-z][a-z\d]*;|#\d{1,7};|#x[\da-f]{1,6};)|[<>"]/gi, (c) => `&#${c.charCodeAt(0)};`);
+}
+
+/**
+ * Whether a destination may keep its target: http(s) and mailto only. The check reads the
+ * destination before references are decoded, so it passes only a scheme spelled out in plain
+ * characters; decoding can't change those, and a scheme hidden behind references
+ * (`&#106;avascript:`, `javascript&colon;`) never passes.
+ */
+function allowed(href: string): boolean {
+  return /^(https?:|mailto:)/i.test(href);
 }
 
 /** `headingShift` demotes headings so they nest under the section that holds them. */
@@ -23,7 +39,7 @@ function renderer(headingShift: number): Marked {
         const text = this.parser.parseInline(tokens);
         const t = title ? ` title="${attr(title)}"` : "";
         if (href.startsWith("#")) return `<a href="${attr(href)}"${t}>${text}</a>`;
-        const safe = /^(https?:|mailto:)/i.test(href) ? href : "#";
+        const safe = allowed(href) ? href : "#";
         return `<a href="${attr(safe)}"${t} target="_blank" rel="noopener">${text}</a>`;
       },
       heading({ tokens, depth }) {
