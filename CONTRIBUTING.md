@@ -236,20 +236,40 @@ test flips XFAIL → XPASS and the run fails, prompting allowlist removal.
 
 ## The Field Guide Site
 
-[vega.github.io/vega-datasets](https://vega.github.io/vega-datasets/) is deployed from `main` by `.github/workflows/site.yml`. It runs GitHub Pages' usual Jekyll build of the repository, so `data/`, `datapackage.json` and the other files keep their URLs, and puts the Field Guide from `site/` on top: the home page, and a page per dataset at `datasets/<name>/`.
+[vega.github.io/vega-datasets](https://vega.github.io/vega-datasets/) is deployed from `main` by `.github/workflows/site.yml`. It runs GitHub Pages' usual Jekyll build of the repository, so `data/`, `datapackage.json` and the other files keep their URLs, and puts the Field Guide from `site/` on top: the home page, and a page per dataset at `datasets/<name>/`. (`_config.yml` keeps `site/` out of the Jekyll build and names vega.github.io as the canonical host of the Jekyll pages.)
 
-The Field Guide is generated from `datapackage.json`, `data/` and `data/gallery-examples.json`, so documenting a dataset (see [Metadata and Documentation](#metadata-and-documentation)) also updates its page. It is built in two steps: `scripts/build_site_catalog.py` profiles every file into `site/generated/catalog.json` (and fetches gallery thumbnails into `site/public/thumbs/`), then [Astro](https://astro.build) renders every page to static HTML in `site/dist`. Each page's content, title, description and schema.org JSON-LD are in its HTML; small scripts in `site/src/client/` add the interactive parts (search and filters, live charts, tabs). The page's Content Security Policy allows only same-origin scripts and no `eval`, so charts run Vega's expression interpreter and tables are parsed with `d3-dsv`'s `parseRows` rather than Vega's CSV reader.
+The Field Guide is generated from `datapackage.json`, `data/` and `data/gallery-examples.json`, with sections of `README.md` for the home page's About list, so documenting a dataset (see [Metadata and Documentation](#metadata-and-documentation)) also updates its page. It is built in two steps: `scripts/build_site_catalog.py` profiles every file into `site/generated/catalog.json` and fetches the gallery thumbnails into `site/public/thumbs/`, then [Astro](https://astro.build) renders every page to static HTML in `site/dist`. Each page's content, title, description, canonical URL and schema.org JSON-LD are in its HTML; small scripts add the interactive parts.
 
 ```bash
 npm run site:build        # catalog and thumbnails, then the pages, into site/dist
-npm run site:serve        # preview at http://localhost:8000/vega-datasets/
+npm run site:pages        # the pages only, after a change to site/ (the catalog is kept)
+npm run site:serve        # preview at http://localhost:8000/vega-datasets/, served like GitHub Pages
 npm run site:dev          # Astro's dev server, reloading as you edit (after one site:build)
-npm run site:check        # type-check the pages and scripts
+npm run site:check        # type-check the pages and scripts (astro check)
 npm run site:test         # unit tests and checks of the built pages, offline (Node 22.12+)
 npm run site:check-links  # every outbound link; needs the network
 ```
 
-The unit tests cover the page models in `site/src/lib/` (starter charts, Explore charts drawn from the real files, the catalog chart, the gapminder animation, JSON-LD), and check every built page: one `h1`, a canonical URL, no inline scripts, and links that resolve. A snapshot test lists the starter chart each dataset gets. If a change alters one on purpose, check the new chart and update the snapshot with `npx vitest run --config site/vitest.config.ts --project unit -u`.
+`site/src/` is laid out by where the code runs:
+
+| Folder | What it holds |
+|---|---|
+| `lib/` | DOM-free models, used at build time and in the browser: the catalog, home and Explore models, starter-chart rules, formatting, field profiles, Markdown, the catalog chart and gapminder specs, SEO and JSON-LD |
+| `pages/`, `layouts/`, `components/` | The Astro pages, the shared page shell (`layouts/Base.astro`: head, CSP, header, footer) and their parts |
+| `client/` | The browser scripts: theme switch, home filters and live catalog chart, Explore, the gapminder animation, snippets, histograms |
+| `prerender/` | Build-time only: the catalog chart drawn to SVG, density overviews of long tables, pictures of heavy maps |
+| `styles/site.css` | The stylesheet, including the rules that theme Vega's SVG for dark mode and forced colors |
+
+The page's Content Security Policy allows only same-origin scripts and no `eval`, so charts run Vega's expression interpreter (`ast: true`, `vega-interpreter`), and tables are read with d3-dsv's `parseRows` and handed to Vega as values rather than through Vega's CSV reader, which compiles a row function. Builds with `SITE_NOINDEX=1` (site.yml sets it outside `vega/vega-datasets`) add `noindex`, so a fork's deploy stays out of search results.
+
+Where to add a test:
+
+- Logic in `lib/`: a unit test in `site/test/`, next to its neighbors (`dataset.test.ts` for Explore and the dataset page's models, `home.test.ts`, `format.test.ts`, `dates.test.ts`, `markdown.test.ts`, `seo.test.ts`, `keys.test.ts`, `motion.test.ts`). Every chart the site draws is compiled and drawn from the real file there: it must compile without Vega-Lite warnings, and scatter plots must plot the file's own values.
+- What a built page says or links to: `site/test/build.test.ts`, which reads `site/dist` (so run `npm run site:build` or `site:pages` first).
+- The page shell and stylesheet (CSP, tokens, dark mode, forced colors): `site/test/shell.test.ts`; chart colors in forced-colors mode: `site/test/theme.test.ts`. A test that needs a DOM starts with `// @vitest-environment jsdom`.
+- The catalog builder: `tests/test_build_site_catalog.py` (`uv run pytest tests/test_build_site_catalog.py`).
+
+A snapshot test lists the starter chart each dataset gets. If a change alters one on purpose, check the new chart and update the snapshot with `npx vitest run --config site/vitest.config.ts --project unit -u`.
 
 ## Contributing Process
 
