@@ -126,7 +126,19 @@ try {
     await sleep(500);
     const source = popup ? await popup.evaluate(() => document.body.innerText) : '';
     const hasUrl = source.includes('"url": "https://cdn.jsdelivr.net/npm/vega-datasets@3/data/cars.json"');
-    check('cars: "View Source" shows the public URL and no inlined values', hasUrl && !source.includes('"values"') && errors.length === 0, { length: source.length, hasUrl, values: source.includes('"values"'), requests, errors });
+    // Inlined rows: any `values` array other than the axis-title layers' single empty datum.
+    const inlined = [];
+    const walk = (node) => {
+      if (Array.isArray(node)) node.forEach(walk);
+      else if (node && typeof node === 'object') {
+        for (const [k, v] of Object.entries(node)) {
+          if (k === 'values' && Array.isArray(v) && v.some((row) => Object.keys(row ?? {}).length)) inlined.push(v.length);
+          walk(v);
+        }
+      }
+    };
+    try { walk(JSON.parse(source)); } catch { inlined.push('unparsed'); }
+    check('cars: "View Source" shows the public URL and no inlined rows', hasUrl && inlined.length === 0 && errors.length === 0, { length: source.length, hasUrl, inlined, requests, errors });
     await ctx.close();
   }
 

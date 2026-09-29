@@ -90,15 +90,25 @@ test('the home page has every dataset card, and the chart drawn', () => {
   expect(text).toContain('<a tabindex="-1" xlink:href="datasets/cars/"');
 });
 
-test('long tables carry their density bins, covering every row', () => {
+test('long tables carry their density bins: every row binned or counted outside, in under 30 KB, with no data file to load', () => {
   const d = catalog.dataset('flights_200k_json')!;
   const text = html(path.join(dist, 'datasets', d.name, 'index.html'));
-  const bins = JSON.parse(text.match(/<script type="application\/json" id="density-data">([\s\S]*?)<\/script>/)![1]!) as { count: number }[];
-  expect(bins.reduce((s, b) => s + b.count, 0)).toBe(d.rows);
+  const json = text.match(/<script type="application\/json" id="density-data">([\s\S]*?)<\/script>/)![1]!;
+  const g = JSON.parse(json) as { rows: number; complete: number; outside: number; cells: [number, number, number][] };
+  expect(g.cells.reduce((s, [, , n]) => s + n, 0) + g.outside + (g.rows - g.complete)).toBe(d.rows);
+  expect(json.length).toBeLessThan(30_000);
+  expect(text).toContain('data-draw-all>Draw All 200,000 Points (9.9 MB)</button>');
+});
+
+test('mid-size tables wait for a button, which stands aside on desktop-class devices only up to 20,000 rows', () => {
+  const button = (name: string) => html(path.join(dist, 'datasets', name, 'index.html')).match(/<button class="btn draw"[^>]*>[^<]*<\/button>/)?.[0] ?? null;
+  expect(button('flights_20k')).toBe('<button class="btn draw" type="button" data-auto-draw="desktop">Draw 20,000 Points (1.8 MB)</button>');
+  expect(button('flights_5k')).toBeNull();
+  expect(button('cars')).toBeNull();
 });
 
 test('heavy maps carry a picture of the map', () => {
-  for (const name of ['earthquakes', 'us_10m', 'zipcodes']) {
+  for (const name of ['airports', 'earthquakes', 'us_10m', 'windvectors', 'zipcodes']) {
     const text = html(path.join(dist, 'datasets', name, 'index.html'));
     expect(text, name).toContain(`src="/vega-datasets/previews/${name}.webp"`);
     expect(statSync(path.join(dist, 'previews', `${name}.webp`)).size, name).toBeGreaterThan(1000);

@@ -67,7 +67,11 @@ export interface Dataset {
   fields: Field[];
   rows: number | null;
   preview: { columns: string[]; rows: string[][] } | null;
+  /** TopoJSON: the objects, and how many features each one becomes. */
   objects?: string[];
+  objectFeatures?: Record<string, number>;
+  /** GeoJSON: how many features the file holds. */
+  features?: number;
   image?: string;
 }
 

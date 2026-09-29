@@ -14,8 +14,9 @@ import MotionSection from "../../components/MotionSection.astro";
 import Base from "../../layouts/Base.astro";
 import { type Dataset, type Gallery, GALLERIES, GALLERY_LABEL, licenseFamily } from "../../lib/catalog";
 import { fileName, formatDescription, interleave, isReleased, linkText, sizeDescription, useSnippets } from "../../lib/dataset-model";
-import { chartFeatures, defaultAxes, densitySpec, exploreModes, hasDensity, hasMapPreview, MODE_LABEL, scatterFields, scatterSpec, siteDataUrl, starterChart } from "../../lib/explore-model";
-import { densityBins } from "../../prerender/density";
+import { chartFeatures, defaultAxes, exploreModes, hasDensity, MODE_LABEL, scatterFields, scatterSpec, starterChart } from "../../lib/explore-model";
+import { BAND_POLICY, densityCaption, densityPageSpec, densitySpec, drawPointsLabel, hasMapPreview, tableBand } from "../../lib/large-data";
+import { densityOf } from "../../prerender/density";
 import { mapPreview } from "../../prerender/map-preview";
 import { FORMAT_LABEL, formatBytes, formatCount, plural } from "../../lib/format";
 import { markdownToHtml } from "../../lib/markdown";
@@ -32,7 +33,7 @@ const page = (name: string) => `${base}${datasetPath(name)}`;
 const METADATA = `${REPO}/blob/main/_data/datapackage_additions.toml`;
 const EXAMPLES_SHOWN = 8;
 const PREVIEW_ROWS = 5;
-/** Files above this size draw only when asked (flights_200k_json is ~10 MB). */
+/** Other charts of files above this size draw only when asked (the large-data policy covers scatter plots and maps). */
 const AUTO_LOAD_BYTES = 3e6;
 
 // Neighbors, for the stepper.
@@ -54,15 +55,24 @@ const fields = d.fields.map((f) => ({ f, spark: sparkline(f), miss: missingCount
 const modes = exploreModes(d);
 const sf = scatterFields(d);
 const axes = sf ? defaultAxes(sf) : null;
-const specFor = (mode: string, phone: boolean) =>
-  mode === "scatter" && sf && axes ? scatterSpec(d, sf, { ...axes, zoom: !phone, height: phone ? 300 : 380 }) : (starterChart(d) ?? starterSpec(d)!);
 const first = modes[0];
+// The large-data policy (lib/large-data.ts), for a scatter plot: whether the points draw by
+// themselves, on a desktop-class device only (the client decides), or when asked; and
+// whether they may zoom (a band that allows it only on desktop-class devices shows the
+// hint until the client knows the device).
+const band = first === "scatter" ? tableBand(d) : null;
+const policy = band ? BAND_POLICY[band] : null;
+const zoomable = !policy || policy.zoom !== "never";
+const specFor = (mode: string, phone: boolean) =>
+  mode === "scatter" && sf && axes ? scatterSpec(d, sf, { ...axes, zoom: !phone && zoomable, height: phone ? 300 : 380 }) : (starterChart(d) ?? starterSpec(d)!);
 const wideSpec = first ? specFor(first, false) : null;
 const phoneSpec = first ? specFor(first, true) : null;
-const bigFile = (d.bytes ?? 0) > AUTO_LOAD_BYTES;
+const pointsButton = band === "canvas" || band === "on-request";
+const bigFile = !band && (d.bytes ?? 0) > AUTO_LOAD_BYTES;
 const chartHeight = wideSpec ? Number((wideSpec as { height?: number }).height ?? 300) + 60 : 0;
 // Long tables open on a density overview binned now; heavy maps on a picture drawn now.
-const density = hasDensity(d) && axes ? { axes, bins: await densityBins(d, axes), spec: densitySpec(d, axes, 380) } : null;
+const grid = hasDensity(d) && axes ? densityOf(d, axes) : null;
+const density = grid ? { grid, spec: densitySpec(d, grid, 380), page: densityPageSpec(d, grid, 380) } : null;
 const mapPic = hasMapPreview(d) ? await mapPreview(d) : null;
 const color = sf?.color ? ` the legend to isolate ${/^[aeiou]/i.test(sf.color.name) ? "an" : "a"} ${sf.color.name.toLowerCase()}.` : "";
 
@@ -162,7 +172,7 @@ const title = datasetTitle(d);
       )}
 
       {wideSpec && phoneSpec && first && (
-        <section class="ds-sec explore" id="explore" aria-labelledby="explore-h" data-explore data-auto={bigFile || mapPic ? undefined : ""} data-density={density ? "" : undefined}>
+        <section class="ds-sec explore" id="explore" aria-labelledby="explore-h" data-explore data-density={density ? "" : undefined}>
           <div class="sec-head">
             <h2 id="explore-h">Explore</h2>
             {modes.length > 1 && (
@@ -175,20 +185,21 @@ const title = datasetTitle(d);
           <div class="explore-chart" style={`min-height: ${density ? 440 : mapPic ? mapPic.height : chartHeight}px`}>
             {mapPic && <img class="chart-preview" src={`${base}previews/${d.name}.webp`} width={mapPic.width} height={mapPic.height} alt={`The ${d.name} map, as the starter chart draws it`}>}
             {mapPic && <button class="btn draw" type="button">Draw the Live Map ({formatBytes(d.bytes)})</button>}
+            {pointsButton && !mapPic && <button class="btn draw" type="button" data-auto-draw={policy?.autoDraw}>{drawPointsLabel(d)}</button>}
             {bigFile && !density && !mapPic && <button class="btn draw" type="button">Draw Chart ({formatBytes(d.bytes)})</button>}
           </div>
           <div class="chart-foot">
             <div class="chart-caption">
               {density
-                ? <span class="hint">Rows per bin: all {formatCount(d.rows)} rows, binned when the site was built. Draw all points to pick the fields.</span>
+                ? <span class="hint">{densityCaption(density.grid)}</span>
                 : first === "scatter" && sf
-                ? <span class="hint"><span class="wide-only">Pick two fields. Scroll to zoom, drag to pan.{color && ` Click${color}`}</span><span class="phone-only">Pick two fields.{color && ` Tap${color}`}</span></span>
+                ? <span class="hint"><span class="wide-only">Pick two fields.{zoomable && " Scroll to zoom, drag to pan."}{color && ` Click${color}`}</span><span class="phone-only">Pick two fields.{color && ` Tap${color}`}</span></span>
                 : <span class="hint" hidden></span>}
               {density
-                ? <span class="features mono">{chartFeatures(density.spec).join(" · ")}</span>
+                ? <span class="features mono">{chartFeatures(density.page).join(" · ")}</span>
                 : <span class="features mono"><span class="wide-only">{chartFeatures(wideSpec).join(" · ")}</span><span class="phone-only">{chartFeatures(phoneSpec).join(" · ")}</span></span>}
             </div>
-            {density && <button class="btn" type="button" data-draw-all>Draw All Points ({formatBytes(d.bytes)})</button>}
+            {density && <button class="btn" type="button" data-draw-all>{drawPointsLabel(d)}</button>}
             <a class="btn btn-primary" target="_blank" rel="noopener" href={editorUrl(density ? density.spec : wideSpec)} data-editor>Open This Chart in the Vega Editor</a>
           </div>
         </section>
@@ -281,7 +292,7 @@ const title = datasetTitle(d);
         <h3>Use This Dataset</h3>
         <SnippetTabs id="use" label="Snippet language" snippets={useSnippets(d)} />
         {/* The site's own copy: browsers ignore `download` on other origins (jsDelivr) and open the file instead. */}
-        <a class="btn" href={`${base}${siteDataUrl(d)}`} download={fileName(d)}>Download {fileName(d)}</a>
+        <a class="btn" href={`${base}data/${d.file}`} download={fileName(d)}>Download {fileName(d)}</a>
       </div>
       <div class="rail-box wide-only">
         <h3>At a Glance</h3>
@@ -306,7 +317,7 @@ const title = datasetTitle(d);
   </div>
 
   <script type="application/json" id="dataset-data" set:html={jsonForScript(clientData)} />
-  {density && <script type="application/json" id="density-data" set:html={jsonForScript(density.bins)} />}
+  {density && <script type="application/json" id="density-data" set:html={jsonForScript(density.grid)} />}
 
   <Fragment slot="footer">Spot an error? <a href={METADATA}>Edit this dataset's metadata</a> on GitHub.</Fragment>
 </Base>

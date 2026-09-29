@@ -2,15 +2,13 @@
 // Chart colors in forced-colors mode (Windows High Contrast): the mode recolors the page's CSS
 // but not a canvas's pixels or Vega's SVG attributes, so the config itself must carry the
 // system colors, to every piece of chart chrome, while data marks keep their colors.
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
 import * as vega from 'vega';
 import { compile, type TopLevelSpec } from 'vega-lite';
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { defaultAxes, parseTable, scatterFields, scatterSpec, withValues } from '../src/lib/explore-model';
+import { defaultAxes, scatterFields, scatterSpec } from '../src/lib/explore-model';
 import { onThemeChange } from '../src/client/theme';
 import { type ChartInk, chartConfig, forcedInk, type SystemColors } from '../src/lib/vega-theme';
-import { loadCatalog, REPO } from './catalog';
+import { loadCatalog, readDataUrl } from './catalog';
 
 // A dark forced palette, as Chrome's emulation and Windows' "Night sky" give it.
 const SYSTEM: SystemColors = {
@@ -70,9 +68,11 @@ test("the cars scatter plot draws its chrome in the system colors and its points
   const catalog = loadCatalog();
   const d = catalog.dataset('cars')!;
   const f = scatterFields(d)!;
-  const spec = withValues(scatterSpec(d, f, { ...defaultAxes(f), zoom: true, height: 300 }), parseTable(readFileSync(path.join(REPO, 'data', d.file), 'utf8'), d.format));
+  const spec = scatterSpec(d, f, { ...defaultAxes(f), zoom: true, height: 300 });
+  const loader = vega.loader();
+  loader.load = async (uri: string) => readDataUrl(uri);
   const draw = async (ink: ChartInk) => {
-    const view = new vega.View(vega.parse(compile({ ...spec, width: 600 } as TopLevelSpec, { config: chartConfig(ink, 'sans-serif') }).spec), { renderer: 'none' });
+    const view = new vega.View(vega.parse(compile({ ...spec, width: 600 } as TopLevelSpec, { config: chartConfig(ink, 'sans-serif') }).spec), { renderer: 'none', loader });
     await view.runAsync();
     const scene = (role: string, key: 'fill' | 'stroke') => items(view, role).map((i) => i[key]);
     const out = {
