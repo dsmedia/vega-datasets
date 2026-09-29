@@ -53,7 +53,11 @@ async function main(): Promise<void> {
   }
   for (const link of document.querySelectorAll<HTMLAnchorElement>("a[data-home]")) {
     link.addEventListener("click", (e) => {
+      // A modified or middle click opens the link as usual (in a new tab, say).
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
       e.preventDefault();
+      // A new history entry, so Back returns to the dataset (show() only replaces the hash).
+      if (current !== "") history.pushState(null, "", location.pathname + location.search);
       show(c, "", true);
     });
   }
