@@ -1,13 +1,15 @@
 // Preview the built site the way GitHub Pages serves it: site/dist at /vega-datasets/, on
 // top of the repository root, so /vega-datasets/data/*, /vega-datasets/datapackage.json and
-// the rest resolve as in production. Directories redirect to their trailing-slash URL and
-// missing pages get the site's 404 page, as on Pages.
+// the rest resolve as in production. As on Pages, text is gzipped, directories redirect to
+// their trailing-slash URL, and missing pages get the site's 404 page (so a local
+// Lighthouse run measures what visitors download).
 // Usage: npm run site:serve [-- --port 8000]
 import { createReadStream, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
+import { createGzip } from 'node:zlib';
 
 const BASE = '/vega-datasets/';
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -55,9 +57,12 @@ function resolve(pathname) {
   return null;
 }
 
-function send(res, status, file) {
-  res.writeHead(status, { 'Content-Type': TYPES[path.extname(file)] ?? 'application/octet-stream' });
-  createReadStream(file).pipe(res);
+function send(req, res, status, file) {
+  const type = TYPES[path.extname(file)] ?? 'application/octet-stream';
+  const gzip = /\bgzip\b/.test(req.headers['accept-encoding'] ?? '') && /text|json|javascript|xml|svg/.test(type);
+  res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'max-age=600', ...(gzip ? { 'Content-Encoding': 'gzip' } : {}) });
+  const stream = createReadStream(file);
+  (gzip ? stream.pipe(createGzip()) : stream).pipe(res);
 }
 
 createServer((req, res) => {
@@ -69,13 +74,15 @@ createServer((req, res) => {
     return;
   }
   if (!pathname.startsWith(BASE)) {
-    res.writeHead(302, { Location: BASE }).end();
+    // The site lives under /vega-datasets/; the host's root (robots.txt and the rest) isn't ours.
+    if (pathname === '/' || pathname === BASE.slice(0, -1)) res.writeHead(302, { Location: BASE }).end();
+    else res.writeHead(404).end('Not found');
     return;
   }
   const found = resolve(pathname);
   if (found?.redirect) res.writeHead(301, { Location: found.redirect }).end();
-  else if (found?.file) send(res, 200, found.file);
-  else send(res, 404, path.join(dist, '404.html'));
+  else if (found?.file) send(req, res, 200, found.file);
+  else send(req, res, 404, path.join(dist, '404.html'));
 }).listen(Number(values.port), () => {
   console.log(`Field Guide at http://localhost:${values.port}${BASE}`);
 });
