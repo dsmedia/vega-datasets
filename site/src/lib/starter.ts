@@ -8,7 +8,7 @@
  * Identifier and code columns are never plotted as measurements.
  */
 import LZString from "lz-string";
-import type { Dataset, Field } from "./catalog";
+import { categoryLabels, type Dataset, documentedRange, type Field, orderedCategories } from "./catalog";
 
 type Spec = Record<string, unknown>;
 type Enc = Record<string, unknown>;
@@ -19,6 +19,55 @@ const SCHEMA = "https://vega.github.io/schema/vega-lite/v6.json";
 /** Vega-Lite treats `.` and `[ ]` in field names as nested access; escape them. */
 export function fieldRef(name: string): string {
   return name.replace(/([.[\]])/g, "\\$1");
+}
+
+// What a field's metadata adds to an encoding of it. Each addition needs its property,
+// so an undescribed field encodes exactly as before.
+
+/** The field's title for an axis, legend or tooltip; Vega-Lite's own "Mean of …" for a mean. */
+export function titled(f: Field, enc: Enc = {}): Enc {
+  return f.title ? { title: enc.aggregate === "mean" ? `Mean of ${f.title}` : f.title } : {};
+}
+
+/** An expression that shows each category's label in place of its value (object literals are CSP-safe: the interpreter reads them). */
+export function labelExpr(labels: Record<string, string>): string {
+  return `${JSON.stringify(labels)}[datum.label] || datum.label`;
+}
+
+/**
+ * A number field on a channel. A documented range that every value lies inside becomes
+ * the scale's bounds (a histogram's bin extent, when both ends are documented).
+ */
+export function measure(f: Field, enc: Enc = {}): Enc {
+  const out: Enc = { field: fieldRef(f.name), type: "quantitative", ...enc };
+  const range = documentedRange(f);
+  if (range?.fits && out.bin) {
+    if (range.min !== undefined && range.max !== undefined) out.bin = { ...(out.bin as Enc), extent: [range.min, range.max] };
+  } else if (range?.fits) {
+    out.scale = {
+      ...(out.scale as Enc | undefined),
+      ...(range.min !== undefined ? { domainMin: range.min } : {}),
+      ...(range.max !== undefined ? { domainMax: range.max } : {}),
+    };
+  }
+  return { ...out, ...titled(f, out) };
+}
+
+/**
+ * A category on a channel: nominal, or ordinal in the documented order when the metadata
+ * says the order matters (which then replaces `enc.sort`), with labels on its axis or legend.
+ */
+export function category(f: Field, enc: Enc = {}, labelsOn: "axis" | "legend" = "legend"): Enc {
+  const order = orderedCategories(f);
+  const labels = categoryLabels(f);
+  return {
+    field: fieldRef(f.name),
+    type: order ? "ordinal" : "nominal",
+    ...enc,
+    ...(order ? { sort: order } : {}),
+    ...titled(f),
+    ...(labels ? { [labelsOn]: { labelExpr: labelExpr(labels) } } : {}),
+  };
 }
 
 const ID_NAME = /(^id$|_id$|^id_|code$|^code|^zip|zip_code|^key$|^index$|^cluster$|^source$|^target$|^group$|^fips)/i;
@@ -119,9 +168,9 @@ function pointMap(d: Dataset, base: Spec, lat: Field, lon: Field, color: Field |
     projection: { type: us ? "albersUsa" : "equalEarth" },
     mark: { type: "circle", size: (d.rows ?? 0) > 5000 ? 4 : 16, opacity: 0.7, tooltip: true },
     encoding: {
-      longitude: { field: fieldRef(lon.name), type: "quantitative" },
-      latitude: { field: fieldRef(lat.name), type: "quantitative" },
-      ...(color ? { color: { field: fieldRef(color.name), type: "nominal" } } : {}),
+      longitude: { field: fieldRef(lon.name), type: "quantitative", ...titled(lon) },
+      latitude: { field: fieldRef(lat.name), type: "quantitative", ...titled(lat) },
+      ...(color ? { color: category(color) } : {}),
     },
   };
 }
@@ -144,7 +193,7 @@ export function starterSpec(d: Dataset): Spec | null {
   const smallCat = fields.find((f) => nominal(f, 10));
   const seriesCat = fields.find((f) => nominal(f, 12) && SERIES.test(f.name));
   const cat = fields.find((f) => nominal(f, 60));
-  const colorBy = (f: Field | undefined): Enc => (f ? { color: { field: fieldRef(f.name), type: "nominal" } } : {});
+  const colorBy = (f: Field | undefined): Enc => (f ? { color: category(f) } : {});
 
   // 1. Latitude/longitude columns → a point map.
   const lat = fields.find((f) => LAT.test(f.name) && f.profile.kind === "quantitative");
@@ -161,8 +210,9 @@ export function starterSpec(d: Dataset): Spec | null {
       width: 520,
       mark: { type: "bar", tooltip: true },
       encoding: {
-        y: { field: fieldRef(label.name), type: "nominal", sort: { field: fieldRef(start.name) } },
-        x: { field: fieldRef(start.name), type: "quantitative", scale: { zero: false }, axis: { format: "d" } },
+        // Ranges read in time order, whatever order the labels are documented in.
+        y: { field: fieldRef(label.name), type: "nominal", sort: { field: fieldRef(start.name) }, ...titled(label) },
+        x: { field: fieldRef(start.name), type: "quantitative", scale: { zero: false }, axis: { format: "d" }, ...titled(start) },
         x2: { field: fieldRef(end.name) },
       },
     };
@@ -180,8 +230,8 @@ export function starterSpec(d: Dataset): Spec | null {
       height: 300,
       mark: { type: "line", interpolate: "monotone", tooltip: true },
       encoding: {
-        x: { field: fieldRef(t.name), type: "temporal", ...(unit ? { timeUnit: unit } : {}) },
-        y: { field: fieldRef(m1.name), type: "quantitative", ...(unit || seriesCat ? { aggregate: "mean" } : {}) },
+        x: { field: fieldRef(t.name), type: "temporal", ...(unit ? { timeUnit: unit } : {}), ...titled(t) },
+        y: measure(m1, unit || seriesCat ? { aggregate: "mean" } : {}),
         ...colorBy(seriesCat),
       },
     };
@@ -194,8 +244,8 @@ export function starterSpec(d: Dataset): Spec | null {
       height: 300,
       mark: { type: "line", point: rows <= 60, tooltip: true },
       encoding: {
-        x: { field: fieldRef(y.name), type: "quantitative", scale: { zero: false }, axis: { format: "d" } },
-        y: { field: fieldRef(m1.name), type: "quantitative", aggregate: "mean" },
+        x: measure(y, { scale: { zero: false }, axis: { format: "d" } }),
+        y: measure(m1, { aggregate: "mean" }),
         ...colorBy(seriesCat),
       },
     };
@@ -209,8 +259,8 @@ export function starterSpec(d: Dataset): Spec | null {
       height: 360,
       mark: { type: "point", tooltip: true, opacity: rows > 5000 ? 0.3 : 0.8 },
       encoding: {
-        x: { field: fieldRef(m1.name), type: "quantitative", scale: { zero: false } },
-        y: { field: fieldRef(m2.name), type: "quantitative", scale: { zero: false } },
+        x: measure(m1, { scale: { zero: false } }),
+        y: measure(m2, { scale: { zero: false } }),
         ...colorBy(smallCat),
       },
     };
@@ -223,8 +273,8 @@ export function starterSpec(d: Dataset): Spec | null {
       width: 480,
       mark: { type: "bar", tooltip: true },
       encoding: {
-        y: { field: fieldRef(cat.name), type: "nominal", sort: "-x" },
-        x: { field: fieldRef(m1.name), type: "quantitative", aggregate: "mean" },
+        y: category(cat, { sort: "-x" }, "axis"),
+        x: measure(m1, { aggregate: "mean" }),
       },
     };
   }
@@ -237,7 +287,7 @@ export function starterSpec(d: Dataset): Spec | null {
       height: 260,
       mark: { type: "bar", tooltip: true },
       encoding: {
-        x: { field: fieldRef(m1.name), type: "quantitative", bin: { maxbins: 30 } },
+        x: measure(m1, { bin: { maxbins: 30 } }),
         y: { aggregate: "count", type: "quantitative" },
       },
     };
@@ -250,7 +300,7 @@ export function starterSpec(d: Dataset): Spec | null {
       width: 480,
       mark: { type: "bar", tooltip: true },
       encoding: {
-        y: { field: fieldRef(cat.name), type: "nominal", sort: "-x" },
+        y: category(cat, { sort: "-x" }, "axis"),
         x: { aggregate: "count", type: "quantitative" },
       },
     };

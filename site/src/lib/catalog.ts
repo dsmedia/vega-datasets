@@ -45,15 +45,53 @@ export interface EmptyProfile {
 
 export type Profile = QuantProfile | TemporalProfile | NominalProfile | EmptyProfile;
 
+/** A category's documented value, with an optional label (Table Schema v2 `categories`). */
+export interface LabeledValue {
+  value: string | number;
+  label?: string;
+}
+
+/** Table Schema `constraints` (the ones the site reads; others pass through untyped). */
+export interface Constraints {
+  required?: boolean;
+  unique?: boolean;
+  /** Numbers for number fields; dates and times are strings. */
+  minimum?: number | string;
+  maximum?: number | string;
+  enum?: (string | number | boolean)[];
+  [other: string]: unknown;
+}
+
+/** Values that mean "missing": strings, or `{value, label}` (Table Schema v2 `missingValues`). */
+export type MissingValues = string[] | { value: string; label?: string }[];
+
+/** Table Schema v2 `foreignKeys`: a string names one field; no resource (or "", as v1 wrote it) is the table itself. */
+export interface ForeignKey {
+  fields: string | string[];
+  reference: { resource?: string; fields: string | string[] };
+}
+
+/**
+ * A field. `description` is always present (null when not written); the other schema
+ * properties only when the metadata fills them in.
+ */
 export interface Field {
   name: string;
   type: string;
   description: string | null;
+  title?: string;
+  categories?: string[] | number[] | LabeledValue[];
+  categoriesOrdered?: boolean;
+  constraints?: Constraints;
+  format?: string;
+  missingValues?: MissingValues;
   profile: Profile;
 }
 
 export interface Dataset {
   name: string;
+  /** A short summary (Data Package `title`), when the metadata has one. */
+  title?: string;
   file: string;
   /** Where to load the file from: jsDelivr for released files, GitHub Pages otherwise. */
   url: string;
@@ -73,6 +111,10 @@ export interface Dataset {
   /** GeoJSON: how many features the file holds. */
   features?: number;
   image?: string;
+  /** The table schema's keys and missing-value markers, when the metadata has them. */
+  primaryKey?: string | string[];
+  foreignKeys?: ForeignKey[];
+  missingValues?: MissingValues;
 }
 
 export interface Example {
@@ -145,4 +187,70 @@ export function licenseFamily(d: Dataset): string {
   if (names.some((n) => n.startsWith("BSD") || n === "MIT" || n === "ISC")) return "Permissive";
   if (names.some((n) => n.startsWith("ODbL") || n.includes("GPL") || n.includes("-SA"))) return "Share-alike";
   return "Other open";
+}
+
+// --- Schema metadata, normalized -------------------------------------------------------------
+
+const list = (x: string | string[] | undefined): string[] => (x === undefined ? [] : Array.isArray(x) ? x : [x]);
+
+/** The field's title (which may carry units, "Horsepower (hp)"), else its name. */
+export function fieldTitle(f: Field): string {
+  return f.title ?? f.name;
+}
+
+/** The documented categories as `{value, label?}`, or null when there are none. */
+export function categoryValues(f: Field): LabeledValue[] | null {
+  if (!f.categories?.length) return null;
+  return (f.categories as (string | number | LabeledValue)[]).map((c) => (typeof c === "object" ? c : { value: c }));
+}
+
+/** The categories' values in their documented order, when the metadata says the order matters. */
+export function orderedCategories(f: Field): (string | number)[] | null {
+  const values = f.categoriesOrdered ? categoryValues(f) : null;
+  return values ? values.map((c) => c.value) : null;
+}
+
+/** Labels for the categories that have one, by value (as text), or null when none does. */
+export function categoryLabels(f: Field): Record<string, string> | null {
+  const labeled = (categoryValues(f) ?? []).filter((c) => c.label !== undefined);
+  return labeled.length ? Object.fromEntries(labeled.map((c) => [String(c.value), c.label!])) : null;
+}
+
+/**
+ * A number field's documented `minimum` and `maximum`, and whether every value lies
+ * inside them (the profile's range); null when neither is documented as a number.
+ */
+export function documentedRange(f: Field): { min?: number; max?: number; fits: boolean } | null {
+  const { minimum, maximum } = f.constraints ?? {};
+  const min = typeof minimum === "number" ? minimum : undefined;
+  const max = typeof maximum === "number" ? maximum : undefined;
+  if (min === undefined && max === undefined) return null;
+  const p = f.profile;
+  const fits = p.kind !== "quantitative" || ((min === undefined || p.min >= min) && (max === undefined || p.max <= max));
+  return { ...(min !== undefined ? { min } : {}), ...(max !== undefined ? { max } : {}), fits };
+}
+
+/** The primary key's fields (empty when there is none). */
+export function primaryKey(d: Dataset): string[] {
+  return list(d.primaryKey);
+}
+
+/** A foreign key with its string-or-array forms normalized; `resource` is the dataset's own name for a self-reference. */
+export interface Join {
+  fields: string[];
+  resource: string;
+  referenceFields: string[];
+  self: boolean;
+}
+
+export function joins(d: Dataset): Join[] {
+  return (d.foreignKeys ?? []).map((k) => {
+    const resource = k.reference.resource || d.name;
+    return { fields: list(k.fields), resource, referenceFields: list(k.reference.fields), self: resource === d.name };
+  });
+}
+
+/** The values a `missingValues` list marks as missing, as text (empty when there is no list). */
+export function missingMarkers(values: MissingValues | undefined): string[] {
+  return (values ?? []).map((m) => (typeof m === "object" ? m.value : m));
 }

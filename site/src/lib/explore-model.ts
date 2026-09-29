@@ -3,10 +3,10 @@
  * a scatter plot of two measures picked with input bindings, and the starter chart
  * (starter.ts) for everything else — "Over Time" when it is a time series.
  */
-import type { Dataset, Field } from "./catalog";
+import { type Dataset, documentedRange, type Field, fieldTitle } from "./catalog";
 import { formatCount } from "./format";
 import { BAND_POLICY, rowBand } from "./large-data";
-import { fieldRef, isMeasure, isYear, nominal, starterSpec } from "./starter";
+import { category, fieldRef, isMeasure, isYear, nominal, starterSpec, titled } from "./starter";
 
 type Spec = Record<string, unknown>;
 
@@ -70,16 +70,40 @@ export function defaultAxes(f: ScatterFields): { x: string; y: string } {
 }
 
 /**
+ * What the measures' metadata adds to the scatter plot, looked up by the picked field's
+ * name in expressions (object literals, which the CSP-safe interpreter reads): their
+ * titles, and the documented ranges that every value lies inside. Empty when no
+ * measure has either, so the spec stays as it was.
+ */
+function measureLookups(measures: Field[]) {
+  const titles = Object.fromEntries(measures.filter((m) => m.title).map((m) => [m.name, fieldTitle(m)]));
+  const ranges = measures.map((m) => [m.name, documentedRange(m)] as const).filter(([, r]) => r?.fits);
+  const mins = Object.fromEntries(ranges.flatMap(([n, r]) => (r?.min !== undefined ? [[n, r.min]] : [])));
+  const maxs = Object.fromEntries(ranges.flatMap(([n, r]) => (r?.max !== undefined ? [[n, r.max]] : [])));
+  const lookup = (map: Record<string, unknown>, param: string) => `${JSON.stringify(map)}[${param}]`;
+  return {
+    labels: Object.keys(titles).length ? measures.map(fieldTitle) : null,
+    title: (param: string) => (Object.keys(titles).length ? `${lookup(titles, param)} || ${param}` : param),
+    bounds: (param: string): Spec => ({
+      ...(Object.keys(mins).length ? { domainMin: { expr: lookup(mins, param) } } : {}),
+      ...(Object.keys(maxs).length ? { domainMax: { expr: lookup(maxs, param) } } : {}),
+    }),
+  };
+}
+
+/**
  * Two measures against each other. The x and y pickers are input bindings on the
  * xField and yField params, so they work the same in the Vega Editor; the axis titles
  * are text marks that read those params (an axis title can't).
  */
 export function scatterSpec(d: Dataset, f: ScatterFields, o: ScatterOptions): Spec {
   const options = f.measures.map((m) => m.name);
+  const meta = measureLookups(f.measures);
+  const labels = meta.labels ? { labels: meta.labels } : {};
   const title = (param: string, place: Spec) => ({
     data: { values: [{}] },
     // Zoom (scale binding) clips every mark in the view; the titles sit outside the plot.
-    mark: { type: "text", text: { expr: param }, fontWeight: "bold", fontSize: 11, clip: false, ...place },
+    mark: { type: "text", text: { expr: meta.title(param) }, fontWeight: "bold", fontSize: 11, clip: false, ...place },
   });
   const { opacity } = BAND_POLICY[rowBand(d.rows ?? 0)];
   const params: Spec[] = [];
@@ -98,8 +122,8 @@ export function scatterSpec(d: Dataset, f: ScatterFields, o: ScatterOptions): Sp
     autosize: { type: "fit-x", contains: "padding" },
     data: { url: d.url },
     params: [
-      { name: "xField", value: o.x, bind: { input: "select", options, name: "x " } },
-      { name: "yField", value: o.y, bind: { input: "select", options, name: "y " } },
+      { name: "xField", value: o.x, bind: { input: "select", options, ...labels, name: "x " } },
+      { name: "yField", value: o.y, bind: { input: "select", options, ...labels, name: "y " } },
     ],
     layer: [
       {
@@ -112,21 +136,21 @@ export function scatterSpec(d: Dataset, f: ScatterFields, o: ScatterOptions): Sp
         params,
         mark: { type: "point", opacity: opacity },
         encoding: {
-          x: { field: px, type: "quantitative", scale: { zero: false }, axis: { title: null } },
-          y: { field: py, type: "quantitative", scale: { zero: false }, axis: { title: null } },
+          x: { field: px, type: "quantitative", scale: { zero: false, ...meta.bounds("xField") }, axis: { title: null } },
+          y: { field: py, type: "quantitative", scale: { zero: false, ...meta.bounds("yField") }, axis: { title: null } },
           ...(f.color
             ? {
-                color: { field: fieldRef(f.color.name), type: "nominal" },
+                color: category(f.color),
                 opacity: { condition: { param: "pick", empty: true, value: opacity }, value: 0.08 },
               }
             : {}),
           tooltip: [
-            ...(f.label ? [{ field: fieldRef(f.label.name), type: "nominal" }] : []),
+            ...(f.label ? [{ field: fieldRef(f.label.name), type: "nominal", ...titled(f.label) }] : []),
             { field: px, type: "quantitative", title: "x" },
             { field: py, type: "quantitative", title: "y" },
-            ...(f.color ? [{ field: fieldRef(f.color.name), type: "nominal" }] : []),
+            ...(f.color ? [{ field: fieldRef(f.color.name), type: "nominal", ...titled(f.color) }] : []),
             ...(f.time
-              ? [{ field: fieldRef(f.time.name), type: f.time.profile.kind === "temporal" ? "temporal" : "quantitative", ...(isYear(f.time) ? { format: "d" } : {}) }]
+              ? [{ field: fieldRef(f.time.name), type: f.time.profile.kind === "temporal" ? "temporal" : "quantitative", ...(isYear(f.time) ? { format: "d" } : {}), ...titled(f.time) }]
               : []),
           ],
         },

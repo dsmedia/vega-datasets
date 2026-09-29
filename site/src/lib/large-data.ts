@@ -14,7 +14,7 @@
  * Maps with more than MAP_PREVIEW_MARKS shapes or points open on a picture drawn when the
  * site is built, with "Draw the Live Map".
  */
-import type { Dataset } from "./catalog";
+import { type Dataset, fieldTitle } from "./catalog";
 import { formatBytes, formatCount } from "./format";
 import { fieldRef, starterSpec } from "./starter";
 
@@ -242,14 +242,20 @@ function densityAxis(start: number, step: number, n: number): Spec {
   return { values: labelEdges(start, step, n), labelOverlap: "parity", labelSeparation: 6 };
 }
 
+/** A field's title for the overview's axes and tooltip (its name when it has none). */
+function titleOf(d: Dataset, name: string): string {
+  const f = d.fields.find((x) => x.name === name);
+  return f ? fieldTitle(f) : name;
+}
+
 /**
  * The overview as the Editor opens it: the whole file from its public URL, filtered to the
  * box and binned on the same edges, so it draws the same bins as the page.
  */
 export function densitySpec(d: Dataset, g: DensityGrid, height: number): Spec {
   const bin = (start: number, step: number, n: number) => ({ extent: [start, edge(start, step, n)], step });
-  const x = { field: fieldRef(g.x), type: "quantitative", bin: bin(g.xstart, g.xstep, g.nx), title: g.x, axis: densityAxis(g.xstart, g.xstep, g.nx) };
-  const y = { field: fieldRef(g.y), type: "quantitative", bin: bin(g.ystart, g.ystep, g.ny), title: g.y, axis: densityAxis(g.ystart, g.ystep, g.ny) };
+  const x = { field: fieldRef(g.x), type: "quantitative", bin: bin(g.xstart, g.xstep, g.nx), title: titleOf(d, g.x), axis: densityAxis(g.xstart, g.xstep, g.nx) };
+  const y = { field: fieldRef(g.y), type: "quantitative", bin: bin(g.ystart, g.ystep, g.ny), title: titleOf(d, g.y), axis: densityAxis(g.ystart, g.ystep, g.ny) };
   return {
     $schema: SCHEMA,
     description: `How the rows of ${d.name} spread over ${g.x} and ${g.y}: rows per bin, between the 0.5th and 99.5th percentiles of each.`,
@@ -301,14 +307,14 @@ export function densityPageSpec(d: Dataset, g: DensityGrid, height: number): Spe
     // (which Vega would also build with an interpreted expression per cell).
     mark: { type: "rect", aria: false },
     encoding: {
-      x: { field: "x0", type: "quantitative", bin: { binned: true, step: g.xstep }, title: g.x, axis: densityAxis(g.xstart, g.xstep, g.nx) },
+      x: { field: "x0", type: "quantitative", bin: { binned: true, step: g.xstep }, title: titleOf(d, g.x), axis: densityAxis(g.xstart, g.xstep, g.nx) },
       x2: { field: "x1" },
-      y: { field: "y0", type: "quantitative", bin: { binned: true, step: g.ystep }, title: g.y, axis: densityAxis(g.ystart, g.ystep, g.ny) },
+      y: { field: "y0", type: "quantitative", bin: { binned: true, step: g.ystep }, title: titleOf(d, g.y), axis: densityAxis(g.ystart, g.ystep, g.ny) },
       y2: { field: "y1" },
       color: { field: "n", type: "quantitative", title: "Rows", scale: DENSITY_COLOR },
       tooltip: [
-        { field: "x range", title: g.x },
-        { field: "y range", title: g.y },
+        { field: "x range", title: titleOf(d, g.x) },
+        { field: "y range", title: titleOf(d, g.y) },
         { field: "rows", title: "Rows" },
       ],
     },

@@ -17,7 +17,7 @@ const geo = d.format === "topojson" || d.format === "geojson";
 ---
 <a class="card" href={`${import.meta.env.BASE_URL}${datasetPath(d.name)}`} data-name={d.name}>
   <div class="card-head"><span class="card-name">{d.name}</span><span class="mono">{FORMAT_LABEL[d.format] ?? d.format}</span></div>
-  <p class="card-desc">{plainSummary(d.description)}</p>
+  <p class="card-desc">{d.title ?? plainSummary(d.description)}</p>
   <div class="card-foot">
     <div class="card-meta mono">
       {d.rows !== null && <span>{plural(d.rows, "row")}</span>}
