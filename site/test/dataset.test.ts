@@ -228,6 +228,52 @@ describe('every Explore chart draws from the rows the page reads', () => {
   }, 60_000);
 });
 
+/** The data of every item of the view's `type` marks (not legend or axis symbols). */
+function markData(view: vega.View, type: string): Record<string, unknown>[] {
+  type Node = { marktype?: string; role?: string; items?: (Node & { datum?: Record<string, unknown> })[] };
+  const out: Record<string, unknown>[] = [];
+  const visit = (mark: Node) => {
+    if (mark.marktype === type && mark.role === 'mark') for (const i of mark.items ?? []) out.push(i.datum!);
+    for (const item of mark.items ?? []) for (const child of item.items ?? []) visit(child);
+  };
+  visit((view.scenegraph() as unknown as { root: Node }).root);
+  return out;
+}
+
+describe('every scatter plots each row at its own values', () => {
+  const scatters = catalog.datasets.filter((d) => exploreModes(d)[0] === 'scatter');
+  const num = (v: unknown) => (v === null || v === undefined || v === '' ? NaN : Number(v));
+  const byXY = (a: number[], b: number[]) => a[0]! - b[0]! || a[1]! - b[1]!;
+
+  test.each(scatters.map((d) => [d.name, d] as const))('%s', async (_name, d) => {
+    const f = scatterFields(d)!;
+    const text = readFileSync(path.join(REPO, 'data', d.file), 'utf8');
+    const pristine = parseTable(text, d.format);
+    // The default axes, and the same two fields swapped: a derived field must not overwrite a source field.
+    const axes = defaultAxes(f);
+    for (const { x, y } of [axes, { x: axes.y, y: axes.x }]) {
+      const spec = scatterSpec(d, f, { x, y, zoom: false, height: 300 });
+      const layer = (spec.layer as { encoding: { x: { field: string }; y: { field: string } } }[])[0]!;
+      const view = new vega.View(vega.parse(compile({ ...withValues(spec, parseTable(text, d.format)), width: 600 } as TopLevelSpec).spec), { renderer: 'none' });
+      try {
+        await view.runAsync();
+        const plotted = markData(view, 'symbol').map((r) => [r[layer.encoding.x.field] as number, r[layer.encoding.y.field] as number]).sort(byXY);
+        const expected = pristine.map((r) => [num(r[x]), num(r[y])]).filter(([a, b]) => Number.isFinite(a) && Number.isFinite(b)).sort(byXY);
+        expect(plotted.length, `${x} × ${y}`).toBe(expected.length);
+        expect(plotted, `${x} × ${y}`).toEqual(expected);
+      } finally {
+        view.finalize();
+      }
+    }
+  }, 120_000);
+});
+
+test('fields named x and y start on the x and y axes', () => {
+  expect(defaultAxes(scatterFields(ds('platformer_terrain'))!)).toEqual({ x: 'x', y: 'y' });
+  expect(defaultAxes(scatterFields(ds('anscombe'))!)).toEqual({ x: 'X', y: 'Y' });
+  expect(defaultAxes(scatterFields(ds('cars'))!)).toEqual({ x: 'Displacement', y: 'Miles_per_Gallon' });
+});
+
 test('examples take the galleries in turn', () => {
   const order = interleave(catalog.examplesFor(ds('cars'))).slice(0, 6).map((e) => e.gallery);
   expect(order).toEqual(['vega-lite', 'vega', 'altair', 'vega-lite', 'vega', 'altair']);

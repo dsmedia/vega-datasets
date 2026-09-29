@@ -61,8 +61,11 @@ export interface ScatterOptions {
   height: number;
 }
 
-/** The measures to start with: the first two, the first on y. */
+/** The measures to start with: fields named x and y when there are both, else the first two, the first on y. */
 export function defaultAxes(f: ScatterFields): { x: string; y: string } {
+  const named = (axis: string) => f.measures.find((m) => m.name.toLowerCase() === axis);
+  const [x, y] = [named("x"), named("y")];
+  if (x && y) return { x: x.name, y: y.name };
   return { x: f.measures[1]!.name, y: f.measures[0]!.name };
 }
 
@@ -82,6 +85,11 @@ export function scatterSpec(d: Dataset, f: ScatterFields, o: ScatterOptions): Sp
   const params: Spec[] = [];
   if (o.zoom) params.push({ name: "zoom", select: "interval", bind: "scales" });
   if (f.color) params.push({ name: "pick", select: { type: "point", fields: [f.color.name] }, bind: "legend" });
+  // The plotted values need names no field of the file has: a calculate `as: "x"` would overwrite a
+  // field called x (platformer_terrain) before the next calculate reads it.
+  const taken = new Set(d.fields.map((m) => m.name));
+  const free = (name: string): string => (taken.has(name) ? free(`_${name}`) : name);
+  const [px, py] = [free("x"), free("y")];
   return {
     $schema: SCHEMA,
     description: `Two measures of ${d.name} from vega-datasets, picked with the x and y menus.`,
@@ -97,15 +105,15 @@ export function scatterSpec(d: Dataset, f: ScatterFields, o: ScatterOptions): Sp
       {
         // The field is picked at run time, so Vega-Lite can't parse it up front (CSV values are strings).
         transform: [
-          { calculate: "toNumber(datum[xField])", as: "x" },
-          { calculate: "toNumber(datum[yField])", as: "y" },
-          { filter: "isValid(datum.x) && isValid(datum.y) && isFinite(datum.x) && isFinite(datum.y)" },
+          { calculate: "toNumber(datum[xField])", as: px },
+          { calculate: "toNumber(datum[yField])", as: py },
+          { filter: `isValid(datum.${px}) && isValid(datum.${py}) && isFinite(datum.${px}) && isFinite(datum.${py})` },
         ],
         params,
         mark: { type: "point", opacity: rows > 5000 ? 0.35 : 0.8 },
         encoding: {
-          x: { field: "x", type: "quantitative", scale: { zero: false }, axis: { title: null } },
-          y: { field: "y", type: "quantitative", scale: { zero: false }, axis: { title: null } },
+          x: { field: px, type: "quantitative", scale: { zero: false }, axis: { title: null } },
+          y: { field: py, type: "quantitative", scale: { zero: false }, axis: { title: null } },
           ...(f.color
             ? {
                 color: { field: fieldRef(f.color.name), type: "nominal" },
@@ -114,8 +122,8 @@ export function scatterSpec(d: Dataset, f: ScatterFields, o: ScatterOptions): Sp
             : {}),
           tooltip: [
             ...(f.label ? [{ field: fieldRef(f.label.name), type: "nominal" }] : []),
-            { field: "x", type: "quantitative", title: "x" },
-            { field: "y", type: "quantitative", title: "y" },
+            { field: px, type: "quantitative", title: "x" },
+            { field: py, type: "quantitative", title: "y" },
             ...(f.color ? [{ field: fieldRef(f.color.name), type: "nominal" }] : []),
             ...(f.time
               ? [{ field: fieldRef(f.time.name), type: f.time.profile.kind === "temporal" ? "temporal" : "quantitative", ...(isYear(f.time) ? { format: "d" } : {}) }]
