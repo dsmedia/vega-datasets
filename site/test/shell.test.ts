@@ -3,6 +3,7 @@
 // and every color, font and size drawn from the theme tokens.
 import { readdirSync, readFileSync } from 'node:fs';
 import { expect, test } from 'vitest';
+import { pageShell } from '../scripts/page-shell.mjs';
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8');
 const html = read('../static/index.html');
@@ -31,6 +32,27 @@ test('no web fonts: system stacks only, and the CSP blocks font loads', () => {
 test('the header marks Datasets as the current section and has the theme switch', () => {
   expect(html).toMatch(/<a [^>]*aria-current="page"[^>]*>Datasets<\/a>/);
   expect(html).toMatch(/<button [^>]*id="theme-toggle"[^>]*aria-pressed="false"/);
+});
+
+test('search and link previews: canonical URL, Open Graph and Twitter card, theme color', () => {
+  const meta = (attr: string, key: string) => html.match(new RegExp(`<meta ${attr}="${key}" content="([^"]+)">`))?.[1];
+  expect(html).toContain('<link rel="canonical" href="https://vega.github.io/vega-datasets/">');
+  expect(meta('property', 'og:url')).toBe('https://vega.github.io/vega-datasets/');
+  expect(meta('property', 'og:type')).toBe('website');
+  expect(meta('property', 'og:site_name')).toBe('Vega Datasets');
+  // Link previews say what the page says.
+  expect(meta('property', 'og:title')).toBe(html.match(/<title>([^<]+)<\/title>/)![1]);
+  expect(meta('property', 'og:description')).toBe(meta('name', 'description'));
+  expect(meta('name', 'twitter:card')).toBe('summary');
+  expect(meta('name', 'theme-color')).toBe(css.match(/--header: (#[0-9a-f]{6})/)![1]);
+});
+
+test("a fork's build (SITE_NOINDEX=1) keeps out of search results; the canonical build doesn't", () => {
+  expect(pageShell(html)).toBe(html);
+  expect(html).not.toContain('noindex');
+  const fork = pageShell(html, { noindex: true });
+  expect(fork).toContain('<meta name="robots" content="noindex">');
+  expect(fork.indexOf('noindex')).toBeLessThan(fork.indexOf('</head>'));
 });
 
 test('the footer cannot shift: the empty page holds the fold until the script fills it', () => {
