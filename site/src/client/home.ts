@@ -24,7 +24,7 @@ import {
   type Sort,
 } from "../lib/home-model";
 import { mountCatalogChart, type MountedChart } from "./catalog-chart";
-import { $, h, whenIdle } from "./dom";
+import { $, h, placeInOrder, whenIdle } from "./dom";
 import { token } from "./theme";
 
 const PHONE = "(max-width: 640px)";
@@ -125,9 +125,13 @@ function update(): void {
   }
   // The cards are the page's own: reorder them and hide the rest (the stylesheet's
   // "first nine" rule steps aside once the script manages the list).
+  // Only cards out of place move, so a focused card that stays in order keeps focus; one that
+  // has to move, and stays shown, gets it back.
   const visible = new Set(shown.map((d) => d.name));
-  for (const d of list) cards.append(cardFor.get(d.name)!);
+  const focused = document.activeElement instanceof HTMLElement && cards.contains(document.activeElement) ? document.activeElement : null;
+  placeInOrder(cards, list.map((d) => cardFor.get(d.name)!));
   for (const [name, card] of cardFor) card.hidden = !visible.has(name);
+  if (focused && document.activeElement !== focused && !focused.closest("[hidden]")) focused.focus({ preventScroll: true });
   cards.dataset.managed = "";
   empty.hidden = list.length > 0;
   more.hidden = shown.length === list.length;

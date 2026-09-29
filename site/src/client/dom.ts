@@ -47,3 +47,27 @@ export function whenIdle(fn: () => void, timeout = 2000): void {
   if ("requestIdleCallback" in window) requestIdleCallback(() => fn(), { timeout });
   else setTimeout(fn, 200);
 }
+
+/**
+ * Put `nodes` into `parent` in this order, moving only the ones out of place: a node already
+ * after the one before it stays put, so it keeps focus (moving a node blurs it). Children not
+ * in `nodes` stay where they are. Returns how many nodes were moved.
+ */
+export function placeInOrder(parent: Element, nodes: Element[]): number {
+  const listed = new Set(nodes);
+  const nextListed = (el: Element | null): Element | null => {
+    while (el && !listed.has(el)) el = el.nextElementSibling;
+    return el;
+  };
+  let at = nextListed(parent.firstElementChild);
+  let moved = 0;
+  for (const node of nodes) {
+    if (node === at) {
+      at = nextListed(node.nextElementSibling);
+      continue;
+    }
+    parent.insertBefore(node, at);
+    moved++;
+  }
+  return moved;
+}
