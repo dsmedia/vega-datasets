@@ -193,8 +193,8 @@ def test_readme_markdown() -> None:
     ]
     out = readme_markdown("\n".join(lines), {"cars.json": "cars"})
     assert out.splitlines() == [
-        "Intro with [cars](#cars) and [rules](https://github.com/vega/vega-datasets/blob/main/CONTRIBUTING.md).",
-        "Browse the [Field Guide](#).",
+        "Intro with [cars](datasets/cars/) and [rules](https://github.com/vega/vega-datasets/blob/main/CONTRIBUTING.md).",
+        "Browse the [Field Guide](./).",
         "> **Licensing**: see [the metadata](https://github.com/vega/vega-datasets/blob/main/datapackage.md).",
         "Unknown anchor: [x](https://github.com/vega/vega-datasets/blob/main/datapackage.md#nopejson), external [y](https://x.org/a.md).",
         "```js",

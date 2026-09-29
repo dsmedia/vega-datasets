@@ -1,6 +1,6 @@
 // Stepping between datasets with the keyboard: the arrow keys, from the page only, no letters.
 import { expect, test } from 'vitest';
-import { datasetStep } from '../src/keys';
+import { datasetStep } from '../src/lib/keys';
 
 const key = (k: string, mods: Partial<KeyboardEvent> = {}) =>
   ({ key: k, defaultPrevented: false, metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, ...mods }) as KeyboardEvent;

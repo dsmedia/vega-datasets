@@ -1,10 +1,9 @@
 // @vitest-environment jsdom
-// Markdown from the repository's own files goes into the page as HTML (innerHTML):
-// raw HTML is escaped, links can't break out of their attributes, and headings nest.
+// Markdown from the repository's own files, rendered when the site is built: raw HTML
+// is escaped, a link can't add attributes (its href and title are escaped), and entity
+// references in a link decode once, as the browser reads the attribute.
 import { describe, expect, test } from 'vitest';
-import { markdownToHtml as render } from '../src/markdown';
-
-const markdownToHtml = (source: string, opts?: { sections?: boolean }) => render(source, opts).trim();
+import { escapeHtml, markdownToHtml } from '../src/lib/markdown';
 
 /** The one link `source` renders, as the browser parses it: its attribute values, decoded. */
 function link(source: string): { href: string | null; title: string | null } {
@@ -15,44 +14,37 @@ function link(source: string): { href: string | null; title: string | null } {
   return { href: links[0]!.getAttribute('href'), title: links[0]!.getAttribute('title') };
 }
 
-/** The attribute names of every <a> in `html`. */
-function linkAttributes(html: string): string[][] {
-  return [...html.matchAll(/<a\s([^>]*)>/g)].map((m) => [...m[1]!.matchAll(/([\w-]+)="[^"]*"/g)].map((a) => a[1]!));
-}
-
 describe('links', () => {
-  test('a quote in a link cannot add attributes (event handlers)', () => {
-    for (const source of [
+  test('attribute injection through an href or title is escaped', () => {
+    for (const src of [
       '[a](#x"onmouseover="alert(1))',
       '[b](https://e.com/"onfocus="alert(1)"autofocus=")',
-      '[c](<https://e.com/a b"x>)',
-      '[d](https://e.com "t\\" onmouseover=\\"alert(1)")',
+      '[c](https://e.com "t\\" onclick=\\"x")',
+      '[d](<https://e.com/a b"x>)',
       '[e](https://e.com/&quot;onmouseover=&quot;alert(1) "t&quot; onfocus=&quot;x")',
     ]) {
-      const html = markdownToHtml(source);
-      for (const names of linkAttributes(html)) {
-        expect(names.every((n) => ['href', 'title', 'target', 'rel'].includes(n)), `${source} → ${html}`).toBe(true);
-      }
-      expect(html).not.toMatch(/\son\w+="/);
+      const tag = /<a\s[^>]*>/.exec(markdownToHtml(src))?.[0] ?? '';
+      // The attribute names, reading each quoted value as a whole.
+      const names = [...tag.matchAll(/\s([\w:-]+)(?:="[^"]*")?/g)].map((m) => m[1]!);
+      expect(names, src).toContain('href');
+      expect(names.filter((n) => !['href', 'title', 'target', 'rel'].includes(n)), src).toEqual([]);
+      expect(markdownToHtml(src), src).not.toMatch(/\son\w+="/);
     }
     expect(markdownToHtml('[a](#x"onmouseover="alert(1))')).toContain('href="#x&#34;onmouseover=&#34;alert(1)"');
   });
 
-  test('#dataset links stay on the page; other sites open in a new tab', () => {
-    expect(markdownToHtml('[cars](#cars)')).toBe('<p><a href="#cars">cars</a></p>');
-    expect(markdownToHtml('[Vega](https://vega.github.io/vega/)')).toBe(
-      '<p><a href="https://vega.github.io/vega/" target="_blank" rel="noopener">Vega</a></p>',
-    );
+  test('other sites open in a new tab; in-page and dataset links stay', () => {
+    expect(markdownToHtml('[x](https://example.org/a?b=1&c=2)')).toBe('<p><a href="https://example.org/a?b=1&#38;c=2" target="_blank" rel="noopener">x</a></p>\n');
+    expect(markdownToHtml('[cars](datasets/cars/)')).toBe('<p><a href="datasets/cars/">cars</a></p>\n');
+    expect(markdownToHtml('[top](#browse)')).toBe('<p><a href="#browse">top</a></p>\n');
   });
 
-  test('only http(s) and mailto links keep their target', () => {
+  test('other schemes and malformed targets lead nowhere', () => {
     expect(markdownToHtml('[x](javascript:alert(1))')).toContain('href="#"');
     expect(markdownToHtml('[x](data:text/html,hi)')).toContain('href="#"');
     expect(markdownToHtml('[x](mailto:a@b.org)')).toContain('href="mailto:a@b.org"');
-  });
-
-  test('ampersands in URLs are written as entities', () => {
-    expect(markdownToHtml('[q](https://e.com/?a=1&b=2)')).toContain('href="https://e.com/?a=1&#38;b=2"');
+    // A doubled parenthesis in a description (us_state_capitals) is not a same-site path.
+    expect(markdownToHtml('[x]((https://example.org/a)')).toContain('href="#"');
   });
 
   // CommonMark decodes entity and numeric references in a destination or title exactly once.
@@ -86,7 +78,9 @@ describe('links', () => {
   });
 });
 
-test('raw HTML is shown as text, not parsed', () => {
+test('raw HTML is escaped, not passed through', () => {
+  expect(markdownToHtml('a <b onclick="x">b</b>')).toBe('<p>a &#60;b onclick=&#34;x&#34;&#62;b&#60;/b&#62;</p>\n');
+  expect(escapeHtml(`<"'&>`)).toBe('&#60;&#34;&#39;&#38;&#62;');
   const html = markdownToHtml('Before <script>alert(1)</script> after <img src=x onerror=alert(1)>');
   expect(html).not.toContain('<script');
   expect(html).not.toContain('<img');
@@ -94,7 +88,7 @@ test('raw HTML is shown as text, not parsed', () => {
 });
 
 test('headings nest under the section that holds them, unless the Markdown is the page', () => {
-  expect(markdownToHtml('## Sources')).toBe('<h4>Sources</h4>');
-  expect(markdownToHtml('## Sources', { sections: true })).toBe('<h2>Sources</h2>');
-  expect(markdownToHtml('#### Deep')).toBe('<h6>Deep</h6>');
+  expect(markdownToHtml('## Versioning').trim()).toBe('<h4>Versioning</h4>');
+  expect(markdownToHtml('## Versioning', { sections: true }).trim()).toBe('<h2>Versioning</h2>');
+  expect(markdownToHtml('#### Deep').trim()).toBe('<h6>Deep</h6>');
 });

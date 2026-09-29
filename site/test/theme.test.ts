@@ -7,9 +7,9 @@ import path from 'node:path';
 import * as vega from 'vega';
 import { compile, type TopLevelSpec } from 'vega-lite';
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { defaultAxes, parseTable, scatterFields, scatterSpec, withValues } from '../src/explore-model';
-import { type ChartInk, forcedInk, onThemeChange, type SystemColors } from '../src/theme';
-import { chartConfig } from '../src/vl';
+import { defaultAxes, parseTable, scatterFields, scatterSpec, withValues } from '../src/lib/explore-model';
+import { onThemeChange } from '../src/client/theme';
+import { type ChartInk, chartConfig, forcedInk, type SystemColors } from '../src/lib/vega-theme';
 import { loadCatalog, REPO } from './catalog';
 
 // A dark forced palette, as Chrome's emulation and Windows' "Night sky" give it.

@@ -6,19 +6,22 @@ import path from 'node:path';
 import * as vega from 'vega';
 import { compile, type TopLevelSpec } from 'vega-lite';
 import { describe, expect, test } from 'vitest';
-import { catalogSpec, toBrush } from '../src/catalog-chart';
-import { formatBytes } from '../src/format';
+import { catalogSpec, toBrush } from '../src/lib/catalog-chart';
+import { formatBytes } from '../src/lib/format';
 import {
   baseMatches,
   chartRows,
   FORMAT_GROUPS,
+  formatCounts,
   homeCounts,
+  homeIndex,
+  indexCatalog,
   listDatasets,
   NO_FILTERS,
   plainSummary,
   readmeSection,
   showcase,
-} from '../src/home-model';
+} from '../src/lib/home-model';
 import { loadCatalog, REPO } from './catalog';
 
 const catalog = loadCatalog();
@@ -122,7 +125,7 @@ test('links to README sections use anchors GitHub gives its headings', () => {
   const slug = (heading: string) => heading.trim().toLowerCase().replace(/[^\w\- ]/g, '').replace(/ /g, '-');
   const readme = readFileSync(path.join(REPO, 'README.md'), 'utf8');
   const anchors = new Set([...readme.matchAll(/^#{1,6} (.+)$/gm)].map((m) => slug(m[1]!)));
-  const source = readFileSync(path.join(REPO, 'site', 'src', 'home.ts'), 'utf8');
+  const source = readFileSync(path.join(REPO, 'site', 'src', 'pages', 'index.astro'), 'utf8');
   const used = [...source.matchAll(/`\$\{REPO\}#([^`]+)`/g)].map((m) => m[1]!);
   expect(used.length).toBeGreaterThanOrEqual(4);
   expect(used.filter((a) => !anchors.has(a))).toEqual([]);
@@ -137,9 +140,9 @@ describe('the catalog chart', () => {
     expect(values.find((v) => v.name === 'cars')!.description).toMatch(/^cars: JSON, \d+ KB, \d+ gallery examples$/);
   });
 
-  test('has a row per dataset with a same-page link', () => {
+  test('has a row per dataset, linking to its page', () => {
     expect(rows).toHaveLength(counts.datasets);
-    expect(rows.every((r) => r.href === `#${encodeURIComponent(r.name)}` && r.bytes > 0)).toBe(true);
+    expect(rows.every((r) => r.href === `datasets/${encodeURIComponent(r.name)}/` && r.bytes > 0)).toBe(true);
   });
 
   test.each([
@@ -198,4 +201,21 @@ describe('the catalog chart', () => {
     expect(toBrush({})).toBeNull();
     expect(toBrush(null)).toBeNull();
   });
+});
+
+test('the home page index (home-index.json) lists, counts and charts like the full catalog', () => {
+  const index = indexCatalog(JSON.parse(JSON.stringify(homeIndex(catalog))));
+  const names = (c: typeof catalog, f: Parameters<typeof listDatasets>[1]) => listDatasets(c, f).map((d) => d.name);
+  for (const f of [
+    NO_FILTERS,
+    { ...NO_FILTERS, query: 'weather' },
+    { ...NO_FILTERS, query: 'Miles_per_Gallon' },
+    { ...NO_FILTERS, formats: new Set(['CSV', 'TopoJSON'] as const), sort: 'size' as const },
+    { ...NO_FILTERS, galleries: new Set(['altair'] as const), sort: 'az' as const },
+  ]) {
+    expect(names(index, f)).toEqual(names(catalog, f));
+  }
+  expect(formatCounts(index)).toEqual(counts.formats);
+  expect(chartRows(index, formatBytes)).toEqual(chartRows(catalog, formatBytes));
+  for (const d of catalog.datasets) expect(index.usage(index.dataset(d.name)!)).toEqual(catalog.usage(d));
 });

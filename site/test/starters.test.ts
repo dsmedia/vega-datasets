@@ -4,8 +4,8 @@ import LZString from 'lz-string';
 import * as vega from 'vega';
 import { compile, type TopLevelSpec } from 'vega-lite';
 import { describe, expect, test } from 'vitest';
-import type { Dataset } from '../src/catalog';
-import { starterEditorUrl, starterSpec } from '../src/starter';
+import type { Dataset } from '../src/lib/catalog';
+import { starterEditorUrl, starterSpec } from '../src/lib/starter';
 import { loadCatalog, readDataUrl } from './catalog';
 
 const catalog = loadCatalog();

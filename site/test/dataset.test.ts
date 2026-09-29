@@ -8,7 +8,7 @@ import LZString from 'lz-string';
 import * as vega from 'vega';
 import { compile, type TopLevelSpec } from 'vega-lite';
 import { describe, expect, test } from 'vitest';
-import { interleave, isReleased, linkText, useSnippets } from '../src/dataset-model';
+import { interleave, isReleased, linkText, useSnippets } from '../src/lib/dataset-model';
 import {
   bothValuesNote,
   chartFeatures,
@@ -22,13 +22,15 @@ import {
   starterChart,
   withDataUrl,
   withValues,
-} from '../src/explore-model';
-import { missingCount, profileSummary } from '../src/profile';
-import { editorUrl } from '../src/starter';
+} from '../src/lib/explore-model';
+import { missingCount, profileSummary } from '../src/lib/profile';
+import { editorUrl } from '../src/lib/starter';
 import { loadCatalog, readDataUrl, REPO } from './catalog';
 
 const catalog = loadCatalog();
 const ds = (name: string) => catalog.dataset(name)!;
+
+
 const snippetNames = (name: string) => useSnippets(ds(name)).map((s) => s.name);
 
 /**
@@ -147,7 +149,7 @@ describe('Explore', () => {
     expect((withDataUrl(spec, siteDataUrl(ds('cars'))).data as { url: string }).url).toBe('data/cars.json');
   });
 
-  // dataset-page.test.ts checks that the Download button links to this path.
+  // build.test.ts checks that every built page's Download button links to this path.
   test('every file has a same-origin path, and the file is there', () => {
     const page = 'https://vega.github.io/vega-datasets/';
     for (const d of catalog.datasets) {

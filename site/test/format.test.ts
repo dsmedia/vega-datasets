@@ -1,6 +1,6 @@
 // Numbers as the pages print them.
 import { expect, test } from 'vitest';
-import { formatBytes } from '../src/format';
+import { formatBytes } from '../src/lib/format';
 
 test('file sizes are in decimal units, as on the catalog chart axis', () => {
   expect(formatBytes(null)).toBe('–');

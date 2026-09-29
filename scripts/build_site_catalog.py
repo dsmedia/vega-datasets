@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run --group site
 """
-Build the Field Guide's catalog and thumbnails (``site/dist``).
+Build the Field Guide's catalog (``site/generated``) and thumbnails (``site/public/thumbs``).
 
 Everything describing the data comes from this checkout, so the site always
 matches the commit it was built from:
@@ -45,7 +45,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 REPO_ROOT: Final = Path(__file__).resolve().parent.parent
-DEFAULT_OUT: Final = REPO_ROOT / "site" / "dist"
+DEFAULT_OUT: Final = REPO_ROOT / "site" / "generated"
+DEFAULT_THUMBS: Final = REPO_ROOT / "site" / "public" / "thumbs"
 DEFAULT_CACHE: Final = REPO_ROOT / "site" / ".cache"
 
 PAGES_BASE: Final = "https://vega.github.io/vega-datasets/"
@@ -179,7 +180,7 @@ def fetch_cached(client: httpx.Client, url: str, cache: Path | None) -> bytes | 
 
 
 def build_examples(
-    client: httpx.Client, out: Path, cache: Path | None
+    client: httpx.Client, thumbs: Path, cache: Path | None
 ) -> list[dict[str, Any]]:
     registry = json.loads(
         (REPO_ROOT / "data" / "gallery-examples.json").read_text("utf-8")
@@ -193,7 +194,7 @@ def build_examples(
             raw = fetch_cached(client, url, cache)
             if raw is not None:
                 name, size = write_thumbnail(
-                    raw, Path(url).suffix, out / "thumbs" / gallery / slug
+                    raw, Path(url).suffix, thumbs / gallery / slug
                 )
                 thumb = f"thumbs/{gallery}/{name}"
                 break
@@ -425,7 +426,7 @@ def data_url(file: str, major: str, released: set[str]) -> str:
 
 
 def build_dataset(
-    resource: dict[str, Any], used_by: list[str], url: str, out: Path
+    resource: dict[str, Any], used_by: list[str], url: str, thumbs: Path
 ) -> dict[str, Any]:
     fmt = resource["format"].lstrip(".")
     path = REPO_ROOT / "data" / resource["path"]
@@ -448,7 +449,7 @@ def build_dataset(
         entry["objects"] = list(json.loads(path.read_text("utf-8")).get("objects", {}))
     if fmt == "png":
         name, _ = write_thumbnail(
-            path.read_bytes(), ".png", out / "thumbs" / "data" / resource["name"]
+            path.read_bytes(), ".png", thumbs / "data" / resource["name"]
         )
         entry["image"] = f"thumbs/data/{name}"
     df = read_table(path, fmt) if resource["type"] == "table" else None
@@ -486,8 +487,9 @@ def readme_markdown(text: str, resource_paths: dict[str, str]) -> str:
     Drops the title and the badge row (the page has its own heading, and its
     CSP only loads same-origin images), turns GitHub's ``[!IMPORTANT]`` marker
     into a plain note, points links to a dataset's ``datapackage.md`` entry at
-    that dataset's plate and links to the site itself at the home page, and
-    sends other relative links to GitHub.
+    that dataset's page (``datasets/<name>/``, relative to the home page, where the
+    sections are shown) and links to the site itself at the home page, and sends
+    other relative links to GitHub.
 
     ``resource_paths`` maps each resource's file path to its name.
     """
@@ -505,11 +507,11 @@ def readme_markdown(text: str, resource_paths: dict[str, str]) -> str:
         target = m.group(1)
         path, _, anchor = target.partition("#")
         if path == "datapackage.md" and anchor in anchors:
-            return f"](#{anchors[anchor]})"
+            return f"](datasets/{anchors[anchor]}/)"
         return f"]({REPO_BLOB}{target})"
 
     def prose(part: str) -> str:
-        return _RELATIVE_LINK.sub(link, part).replace(f"]({PAGES_BASE})", "](#)")
+        return _RELATIVE_LINK.sub(link, part).replace(f"]({PAGES_BASE})", "](./)")
 
     # Rewrite prose only: fenced code (odd-numbered parts) is left as written.
     parts = re.split(
@@ -534,21 +536,25 @@ def git_commit() -> str:
     ).stdout.strip()
 
 
-def build(out: Path, cache: Path | None) -> dict[str, Any]:
+def build(
+    out: Path, cache: Path | None, thumbs: Path = DEFAULT_THUMBS
+) -> dict[str, Any]:
     pkg = json.loads((REPO_ROOT / "datapackage.json").read_text("utf-8"))
     version = json.loads((REPO_ROOT / "package.json").read_text("utf-8"))["version"]
     out.mkdir(parents=True, exist_ok=True)
     major = version.split(".", 1)[0]
     headers = {"User-Agent": "vega-datasets-site-build"}
     with httpx.Client(timeout=30, follow_redirects=True, headers=headers) as client:
-        examples = build_examples(client, out, cache)
+        examples = build_examples(client, thumbs, cache)
         released = released_files(client, major)
     used_by: dict[str, list[str]] = defaultdict(list)
     for example in examples:
         for name in example["datasets"]:
             used_by[name].append(example["id"])
     datasets = [
-        build_dataset(r, used_by[r["name"]], data_url(r["path"], major, released), out)
+        build_dataset(
+            r, used_by[r["name"]], data_url(r["path"], major, released), thumbs
+        )
         for r in pkg["resources"]
     ]
     readme = readme_markdown(
@@ -576,10 +582,16 @@ def build(out: Path, cache: Path | None) -> dict[str, Any]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Build the Field Guide's catalog and thumbnails (site/dist)."
+        description="Build the Field Guide's catalog and thumbnails."
     )
     parser.add_argument(
-        "--out", type=Path, default=DEFAULT_OUT, help="output directory"
+        "--out", type=Path, default=DEFAULT_OUT, help="where catalog.json goes"
+    )
+    parser.add_argument(
+        "--thumbs",
+        type=Path,
+        default=DEFAULT_THUMBS,
+        help="where thumbnails go (served as thumbs/ next to the pages)",
     )
     parser.add_argument(
         "--no-cache",
@@ -589,7 +601,7 @@ def main() -> None:
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
-    build(args.out, None if args.no_cache else DEFAULT_CACHE)
+    build(args.out, None if args.no_cache else DEFAULT_CACHE, args.thumbs)
 
 
 if __name__ == "__main__":
