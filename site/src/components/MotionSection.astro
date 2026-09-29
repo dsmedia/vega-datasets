@@ -19,7 +19,7 @@ const summary = `${countries.length} countries, ${FIRST_YEAR} to ${lastYear}`;
     <label class="motion-scrub" for="motion-year"><input id="motion-year" type="range" min="0" max={frames - 1} step="0.01" value="0" aria-label="Year"><output for="motion-year" class="motion-year">{FIRST_YEAR}</output></label>
   </div>
   <div class="motion-regions" role="group" aria-label="Highlight a region">
-    <button type="button" class="chip" aria-pressed="true" data-region="">No region</button>
+    <button type="button" class="chip" aria-pressed="true" data-region="">None</button>
     {Object.values(REGION).map((r) => <button type="button" class="chip" aria-pressed="false" data-region={r}>{r}</button>)}
   </div>
   <div class="motion-chart" role="figure" aria-label={`Animated bubble chart of life expectancy against fertility for ${summary}. Bubble size is population.`}></div>

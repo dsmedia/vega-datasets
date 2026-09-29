@@ -1,5 +1,5 @@
 /**
- * "In motion": smooth, eased animation between a dataset's keyframes, built on the
+ * "In Motion": smooth, eased animation between a dataset's keyframes, built on the
  * easing functions and `interpolateLinear` that Vega 6.4 added to the expression
  * language. Vega-Lite's animation support for these is still in review
  * (vega/vega-lite#9916, #9914), so this is a hand-written Vega spec.

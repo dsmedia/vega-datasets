@@ -1,7 +1,7 @@
 /**
  * A dataset page, live: the section links mark the section in view, the examples
  * filter by gallery and expand, Explore draws when it comes near the screen, and the
- * left and right arrow keys step to the neighbouring datasets (only while nothing on
+ * left and right arrow keys step to the neighboring datasets (only while nothing on
  * the page has focus, so they never steal a widget's keys).
  */
 import type { Dataset } from "../lib/catalog";

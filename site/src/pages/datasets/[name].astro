@@ -35,7 +35,7 @@ const PREVIEW_ROWS = 5;
 /** Files above this size draw only when asked (flights_200k_json is ~10 MB). */
 const AUTO_LOAD_BYTES = 3e6;
 
-// Neighbours, for the stepper.
+// Neighbors, for the stepper.
 const i = c.datasets.indexOf(d);
 const n = c.datasets.length;
 const prev = c.datasets[(i - 1 + n) % n]!;
@@ -105,9 +105,9 @@ const title = datasetTitle(d);
       <a href={base} class="wide-only">Datasets</a>
       <span class="wide-only" aria-hidden="true">/</span>
       <span class="wide-only" aria-current="page">{d.name}</span>
-      <a href={base} class="phone-only">‹ All datasets</a>
+      <a href={base} class="phone-only">‹ All Datasets</a>
     </nav>
-    <nav class="stepper" aria-label="Neighbouring datasets">
+    <nav class="stepper" aria-label="Neighboring datasets">
       <a class="step" href={page(prev.name)} data-step="prev" aria-label={`Previous dataset: ${prev.name}`}>‹<span class="wide-only"> {prev.name}</span></a>
       <span class="mono"><span class="wide-only">{i + 1} of {n}</span><span class="phone-only">{i + 1} / {n}</span></span>
       <a class="step" href={page(next.name)} data-step="next" aria-label={`Next dataset: ${next.name}`}><span class="wide-only">{next.name} </span>›</a>
@@ -189,7 +189,7 @@ const title = datasetTitle(d);
                 : <span class="features mono"><span class="wide-only">{chartFeatures(wideSpec).join(" · ")}</span><span class="phone-only">{chartFeatures(phoneSpec).join(" · ")}</span></span>}
             </div>
             {density && <button class="btn" type="button" data-draw-all>Draw All Points ({formatBytes(d.bytes)})</button>}
-            <a class="btn btn-primary" target="_blank" rel="noopener" href={editorUrl(density ? density.spec : wideSpec)} data-editor>Edit This Chart in the Vega Editor</a>
+            <a class="btn btn-primary" target="_blank" rel="noopener" href={editorUrl(density ? density.spec : wideSpec)} data-editor>Open This Chart in the Vega Editor</a>
           </div>
         </section>
       )}
@@ -237,7 +237,7 @@ const title = datasetTitle(d);
                   <a class="ex-name" href={e.url} target="_blank" rel="noopener"><span class={`gdot g-${e.gallery}`} aria-hidden="true"></span>{e.name}</a>
                   <span class="ex-links">
                     {e.gallery === "altair"
-                      ? <a href={e.source} target="_blank" rel="noopener">Python source</a>
+                      ? <a href={e.source} target="_blank" rel="noopener">Python Source</a>
                       : e.editor
                         ? <a href={e.editor} target="_blank" rel="noopener">Open in Vega Editor</a>
                         : <a href={e.source} target="_blank" rel="noopener">Spec</a>}
@@ -271,7 +271,7 @@ const title = datasetTitle(d);
             )}
           </dd>
           <dt>File</dt>
-          <dd><code>data/{d.file}</code>{d.bytes !== null ? ` · ${formatCount(d.bytes)} bytes · ` : " · "}<a href={`${REPO}/blob/main/data/${d.file}`}>view on GitHub</a></dd>
+          <dd><code>data/{d.file}</code>{d.bytes !== null ? ` · ${formatCount(d.bytes)} bytes · ` : " · "}<a href={`${REPO}/blob/main/data/${d.file}`}>View on GitHub</a></dd>
         </dl>
       </section>
     </div>

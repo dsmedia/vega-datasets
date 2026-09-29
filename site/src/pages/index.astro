@@ -38,7 +38,7 @@ const readmeItems: [string, string, string, string][] = [
   ["about-metadata", "Metadata", "Data Package v2: schema, sources, licenses", "Dataset Information"],
   ["about-versioning", "Versioning", "Semantic versioning, applied to data", "Versioning"],
   ["about-use", "Intended Use", "Teaching and demos. Some flaws are deliberate.", "Data Usage Note"],
-  ["about-gallery", "Gallery Index", `${formatCount(counts.examples)} examples mapped to their data. It's a dataset too.`, "Example Galleries"],
+  ["about-gallery", "Gallery Index", `All ${formatCount(counts.examples)} examples, mapped to their data. It's a dataset too.`, "Example Galleries"],
 ];
 const about = readmeItems.flatMap(([id, title, hint, heading]) => {
   const md = readmeSection(c.readme, heading);
@@ -119,9 +119,9 @@ const about = readmeItems.flatMap(([id, title, hint, heading]) => {
   <section class="wrap use" aria-labelledby="use-h">
     <h2 id="use-h">Use the Data</h2>
     <div class="use-grid">
-      <div><h3>Load by URL</h3><p>Every file has a CDN URL. Publish with the versioned jsDelivr link.</p><a class="use-link" href={`${REPO}#http-direct-access`}>URL patterns</a></div>
-      <div><h3>Import in JavaScript</h3><pre class="snippet"><code>npm install vega-datasets</code></pre><a class="use-link" href={`${REPO}#using-esm-import`}>ESM example</a></div>
-      <div><h3>Reference in a Spec</h3><pre class="snippet"><code>"data": {"{"}"url": ".../cars.json"{"}"}</code></pre><a class="use-link" href={`${REPO}#in-vegavega-lite-specifications`}>Vega-Lite example</a></div>
+      <div><h3>Load by URL</h3><p>Every file has a CDN URL. Publish with the versioned jsDelivr link.</p><a class="use-link" href={`${REPO}#http-direct-access`}>URL Patterns</a></div>
+      <div><h3>Import in JavaScript</h3><pre class="snippet"><code>npm install vega-datasets</code></pre><a class="use-link" href={`${REPO}#using-esm-import`}>ESM Example</a></div>
+      <div><h3>Reference in a Spec</h3><pre class="snippet"><code>"data": {"{"}"url": ".../cars.json"{"}"}</code></pre><a class="use-link" href={`${REPO}#in-vegavega-lite-specifications`}>Vega-Lite Example</a></div>
       <div><h3>Load in Python</h3><pre class="snippet"><code>from altair.datasets import data</code></pre><a class="use-link" href={`${REPO}#language-interfaces`}>Julia and Observable</a></div>
     </div>
   </section>
@@ -143,7 +143,7 @@ const about = readmeItems.flatMap(([id, title, hint, heading]) => {
     <aside class="contribute" aria-labelledby="contribute-h">
       <h3 id="contribute-h">Contribute</h3>
       <p>Add a dataset, document one, or fix an error. Existing files rarely change: Vega, Vega-Lite and the Vega Editor test against them.</p>
-      <a href={`${REPO}/blob/main/CONTRIBUTING.md`}>Contribution guidelines</a>
+      <a href={`${REPO}/blob/main/CONTRIBUTING.md`}>Contribution Guidelines</a>
     </aside>
   </section>
 

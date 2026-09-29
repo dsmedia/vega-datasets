@@ -104,3 +104,11 @@ test('heavy maps carry a picture of the map', () => {
     expect(statSync(path.join(dist, 'previews', `${name}.webp`)).size, name).toBeGreaterThan(1000);
   }
 });
+
+test('copy: both Editor buttons read "Open This Chart in the Vega Editor", headings and buttons in Title Case', () => {
+  const gapminder = html(path.join(dist, 'datasets', 'gapminder', 'index.html'));
+  expect(gapminder.match(/>Open This Chart in the Vega Editor<\/a>/g)).toHaveLength(2);
+  for (const file of all) {
+    expect(html(file), file).not.toMatch(/Edit This Chart|No region<|Neighbouring|All datasets<|Python source<|view on GitHub<|Contribution guidelines</);
+  }
+});
