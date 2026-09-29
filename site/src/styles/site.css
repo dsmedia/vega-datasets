@@ -228,7 +228,12 @@ table.preview tr:last-child td { border-bottom: 0; }
 /* Windows High Contrast and other forced-color modes replace the page's colors with the
    user's. The usage bars and gallery keys carry data, so they keep theirs; pressed controls,
    which a fill marked, get an outline. Vega's charts take the mode's colors from their config
-   (lib/vega-theme.ts chartConfig), since CSS can't reach a canvas and the mode leaves SVG attributes alone. */
+   (lib/vega-theme.ts chartConfig), since CSS can't reach a canvas and the mode leaves SVG
+   attributes alone. SVG charts here are also themed by the role-class rules above, which
+   the mode leaves alone too and which outrank the config's attributes, and the catalog
+   chart drawn when the site was built (.chart-static) has no config to redraw with: so
+   their text and rules take the system colors here as well. With :is(), these rules are
+   as specific as those and come after them, so they win. */
 @media (forced-colors: active) {
   .stack > span, .gdot { forced-color-adjust: none; }
   .stack { outline: 1px solid CanvasText; }
@@ -236,6 +241,9 @@ table.preview tr:last-child td { border-bottom: 0; }
     outline: 2px solid Highlight; outline-offset: -2px;
   }
   .hist-bin.active .bar { fill: Highlight; }
+  :is(.catalog-chart, .explore-chart) svg text { fill: CanvasText; }
+  :is(.catalog-chart, .explore-chart) svg :is(.role-axis-domain, .role-axis-tick) line { stroke: CanvasText; }
+  :is(.catalog-chart, .explore-chart) svg .role-axis-grid line { stroke: GrayText; }
 }
 
 /* --- Layout ------------------------------------------------------------------------ */

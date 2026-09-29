@@ -105,3 +105,13 @@ test('dark mode only overrides tokens that light mode defines', () => {
   expect(dark.size).toBeGreaterThan(20);
   expect([...dark].filter((name) => !light.has(name))).toEqual([]);
 });
+
+test('forced colors: data colors kept; chart text and rules, built or live, take the mode\'s colors', () => {
+  const block = css.slice(css.indexOf('@media (forced-colors: active)'));
+  expect(block.length).toBeGreaterThan(0);
+  const body = block.slice(0, block.indexOf('\n}\n'));
+  expect(body).toMatch(/\.stack > span, \.gdot \{ forced-color-adjust: none; \}/);
+  // The prerendered catalog chart sits in .catalog-chart, outside any .vega-embed.
+  expect(body).toMatch(/:is\(\.catalog-chart, \.explore-chart\) svg text \{ fill: CanvasText; \}/);
+  expect(body).not.toMatch(/\.vega-embed svg/);
+});
