@@ -1,4 +1,4 @@
-// The "In motion" gapminder chart: eased interpolation between five-year keyframes,
+// The "In Motion" gapminder chart: eased interpolation between five-year keyframes,
 // checked in a headless Vega view with the CSP-safe expression interpreter the page uses.
 import { readFileSync } from 'node:fs';
 import path from 'node:path';

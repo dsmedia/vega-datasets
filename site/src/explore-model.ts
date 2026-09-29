@@ -1,7 +1,7 @@
 /**
  * The Explore section's charts, as Vega-Lite specs (no DOM, so they are unit-tested):
  * a scatter plot of two measures picked with input bindings, and the starter chart
- * (starter.ts) for everything else — "Over time" when it is a time series.
+ * (starter.ts) for everything else — "Over Time" when it is a time series.
  */
 import { dsvFormat } from "d3-dsv";
 import type { Dataset, Field } from "./catalog";
@@ -11,7 +11,7 @@ import { fieldRef, isMeasure, isYear, nominal, starterSpec } from "./starter";
 type Spec = Record<string, unknown>;
 
 export type Mode = "scatter" | "time" | "starter";
-export const MODE_LABEL: Record<Mode, string> = { scatter: "Scatter", time: "Over time", starter: "Chart" };
+export const MODE_LABEL: Record<Mode, string> = { scatter: "Scatter", time: "Over Time", starter: "Chart" };
 
 const SCHEMA = "https://vega.github.io/schema/vega-lite/v6.json";
 
@@ -185,13 +185,13 @@ function countBoth(rows: Record<string, unknown>[], x: string, y: string): numbe
 }
 
 /**
- * "398 of 406 rows have both values." for the scatter caption, from the rows already read
+ * "Both fields have values in 398 of 406 rows." for the scatter caption, from the rows already read
  * to draw the chart; null until then, so the caption never downloads a file on its own
  * (a large file waits for its Draw Chart button).
  */
 export function bothValuesNote(d: Dataset, rows: Record<string, unknown>[] | null, x: string, y: string): string | null {
   if (!rows || d.rows === null) return null;
-  return `${formatCount(countBoth(rows, x, y))} of ${formatCount(d.rows)} rows have both values.`;
+  return `Both fields have values in ${formatCount(countBoth(rows, x, y))} of ${formatCount(d.rows)} rows.`;
 }
 
 /** The Vega-Lite features a spec uses, for the line under the chart. */

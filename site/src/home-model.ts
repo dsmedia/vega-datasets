@@ -24,7 +24,7 @@ export function formatGroup(d: Dataset): FormatGroup {
 }
 
 export type Sort = "used" | "az" | "size";
-export const SORT_LABEL: Record<Sort, string> = { used: "Most used", az: "A to Z", size: "Largest" };
+export const SORT_LABEL: Record<Sort, string> = { used: "Most Used", az: "A to Z", size: "Largest" };
 export const SORT_NOTE: Record<Sort, string> = { used: "Most used first", az: "A to Z", size: "Largest first" };
 
 /** A chart brush, in data units: file size in bytes and gallery examples. */

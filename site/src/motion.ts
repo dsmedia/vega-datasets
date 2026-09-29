@@ -1,5 +1,5 @@
 /**
- * "In motion": smooth, eased animation between a dataset's keyframes, built on the
+ * "In Motion": smooth, eased animation between a dataset's keyframes, built on the
  * easing functions and `interpolateLinear` that Vega 6.4 added to the expression
  * language. Vega-Lite's animation support for these is still in review
  * (vega/vega-lite#9916, #9914), so this is a hand-written Vega spec.
@@ -273,11 +273,11 @@ export function motionSection(d: Dataset): HTMLElement | null {
   const yearOut = h("output", { for: "motion-year", class: "motion-year" }, String(FIRST_YEAR));
   const regions = h("div", { class: "motion-regions", role: "group", "aria-label": "Highlight a region" });
   const followNote = h("p", { class: "motion-note" });
-  const editor = h("a", { class: "btn btn-quiet", target: "_blank", rel: "noopener", href: "#" }, "Open this chart in the Vega Editor");
+  const editor = h("a", { class: "btn btn-quiet", target: "_blank", rel: "noopener", href: "#" }, "Open This Chart in the Vega Editor");
   const status = h("p", { class: "motion-status muted" }, "Loading…");
 
   const section = h("section", { class: "ds-sec motion", "aria-labelledby": "motion-h" },
-    h("div", { class: "sec-head" }, h("h2", { id: "motion-h" }, "In motion")),
+    h("div", { class: "sec-head" }, h("h2", { id: "motion-h" }, "In Motion")),
     h("p", { class: "sec-intro" },
       "Life expectancy against babies per woman for 62 countries, 1955 to 2005. Gapminder publishes a snapshot every five years; the bubbles glide between them using the easing functions new in Vega 6.4. ",
       "Vega-Lite's own support for eased, interpolated animation is in review."),
@@ -373,7 +373,7 @@ export function motionSection(d: Dataset): HTMLElement | null {
       });
       return b;
     };
-    regions.append(chip("No region", null), ...Object.values(REGION).map((r) => chip(r, r)));
+    regions.append(chip("None", null), ...Object.values(REGION).map((r) => chip(r, r)));
 
     play.addEventListener("click", () => {
       state.userPaused = state.playing;

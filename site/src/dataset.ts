@@ -56,8 +56,8 @@ function topBar(c: Catalog, d: Dataset): HTMLElement {
       h("a", { href: "#", class: "wide-only" }, "Datasets"),
       h("span", { class: "wide-only", "aria-hidden": "true" }, "/"),
       h("span", { class: "wide-only", "aria-current": "page" }, d.name),
-      h("a", { href: "#", class: "phone-only" }, "‹ All datasets")),
-    h("nav", { class: "stepper", "aria-label": "Neighbouring datasets" },
+      h("a", { href: "#", class: "phone-only" }, "‹ All Datasets")),
+    h("nav", { class: "stepper", "aria-label": "Neighboring datasets" },
       step(prev, "Previous"),
       h("span", { class: "mono" }, h("span", { class: "wide-only" }, `${i + 1} of ${n}`), h("span", { class: "phone-only" }, `${i + 1} / ${n}`)),
       step(next, "Next")),
@@ -140,7 +140,7 @@ function previewSection(d: Dataset): HTMLElement | null {
 
 function exampleCard(e: Example): HTMLElement {
   const second = e.gallery === "altair"
-    ? h("a", { href: e.source, target: "_blank", rel: "noopener" }, "Python source")
+    ? h("a", { href: e.source, target: "_blank", rel: "noopener" }, "Python Source")
     : e.editor
       ? h("a", { href: e.editor, target: "_blank", rel: "noopener" }, "Open in Vega Editor")
       : h("a", { href: e.source, target: "_blank", rel: "noopener" }, "Spec");
@@ -222,7 +222,7 @@ function provenanceSection(d: Dataset): HTMLElement {
       h("dt", null, "File"), h("dd", null,
         h("code", null, `data/${d.file}`),
         d.bytes !== null ? ` · ${formatCount(d.bytes)} bytes · ` : " · ",
-        h("a", { href: `${REPO}/blob/main/data/${d.file}` }, "view on GitHub"))),
+        h("a", { href: `${REPO}/blob/main/data/${d.file}` }, "View on GitHub"))),
   );
 }
 

@@ -127,8 +127,8 @@ describe('Explore', () => {
     const cars = ds('cars');
     const rows = parseTable(readFileSync(path.join(REPO, 'data', cars.file), 'utf8'), cars.format);
     expect(bothValuesNote(cars, null, 'Horsepower', 'Miles_per_Gallon')).toBeNull();
-    expect(bothValuesNote(cars, rows, 'Horsepower', 'Miles_per_Gallon')).toBe('392 of 406 rows have both values.');
-    expect(bothValuesNote(cars, rows, 'Displacement', 'Miles_per_Gallon')).toBe('398 of 406 rows have both values.');
+    expect(bothValuesNote(cars, rows, 'Horsepower', 'Miles_per_Gallon')).toBe('Both fields have values in 392 of 406 rows.');
+    expect(bothValuesNote(cars, rows, 'Displacement', 'Miles_per_Gallon')).toBe('Both fields have values in 398 of 406 rows.');
   });
 
   const scatters = catalog.datasets.filter((d) => exploreModes(d)[0] === 'scatter');

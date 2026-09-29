@@ -56,7 +56,7 @@ export function exploreSection(d: Dataset): HTMLElement | null {
   const host = h("div", { class: "explore-chart" });
   const note = h("span", { class: "hint" });
   const features = h("span", { class: "features mono" });
-  const edit = h("a", { class: "btn btn-primary", target: "_blank", rel: "noopener", href: "#" }, "Edit This Chart in the Vega Editor");
+  const edit = h("a", { class: "btn btn-primary", target: "_blank", rel: "noopener", href: "#" }, "Open This Chart in the Vega Editor");
   const seg = modes.length > 1
     ? h("div", { class: "seg", role: "group", "aria-label": "Chart" }, modes.map((m) =>
         h("button", {
