@@ -107,6 +107,18 @@ test('mid-size tables wait for a button, which stands aside on desktop-class dev
   expect(button('cars')).toBeNull();
 });
 
+// The browser check (test/browser/large-data.mjs) measures that these match what draws, at 1360 and 390 px.
+test("Explore holds the chart's measured height, the pickers' row and the caption's count before it draws", () => {
+  const cars = html(path.join(dist, 'datasets', 'cars', 'index.html'));
+  expect(cars).toMatch(/<div class="explore-chart" style="--chart-h: \d+px; --chart-h-phone: \d+px">/);
+  expect(cars).toContain('<div class="binds" data-reserve>');
+  expect(cars).toContain('Both fields have values in 398 of 406 rows.');
+  expect(cars).toContain('data-plotted="398"');
+  // A map on its picture reserves nothing (the picture has its size); a chart with no pickers hides their row.
+  expect(html(path.join(dist, 'datasets', 'us_10m', 'index.html'))).toContain('<div class="explore-chart">');
+  expect(html(path.join(dist, 'datasets', 'barley', 'index.html'))).toContain('<div class="binds" hidden>');
+});
+
 test('heavy maps carry a picture of the map', () => {
   for (const name of ['airports', 'earthquakes', 'us_10m', 'windvectors', 'zipcodes']) {
     const text = html(path.join(dist, 'datasets', name, 'index.html'));

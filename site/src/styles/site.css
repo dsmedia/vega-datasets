@@ -318,12 +318,18 @@ td.f-miss.any { color: var(--missing); }
 /* vega-embed puts each .vega-bind straight into the element passed as `bind`. */
 .binds { display: flex; flex-wrap: wrap; gap: 18px; font-size: 13px; }
 .binds .vega-bind label { display: flex; align-items: center; gap: 6px; }
-.binds .vega-bind-name { color: var(--ink-muted); }
+.binds .vega-bind-name { color: var(--ink-muted); line-height: 18px; }
+/* The pickers' row, held before vega-embed fills it (one row of 32px selects; on a phone, names over 44px selects). */
+.binds[data-reserve] { min-height: 32px; }
 .binds select {
   height: 32px; border: 1px solid var(--rule); border-radius: var(--radius-button); background: var(--surface);
   color: var(--ink); font: 13px var(--font-mono); padding: 0 6px;
 }
-.explore-chart { position: relative; min-height: 300px; }
+/* The height the chart draws at (--chart-h, --chart-h-phone: measured when the site is built), held
+   before it draws; a chart waiting for its button shows the button in the middle of that space. */
+.explore-chart { position: relative; min-height: var(--chart-h, 0); }
+@media (max-width: 640px) { .explore-chart { min-height: var(--chart-h-phone, var(--chart-h, 0)); } }
+.explore-chart > .btn.draw:only-child { position: absolute; inset: 0; margin: auto; width: fit-content; height: fit-content; }
 /* A heavy map's picture from the build, until the reader draws the live map. */
 .explore-chart .chart-preview { display: block; max-width: 100%; height: auto; }
 .explore-chart .chart-preview + .btn { margin-top: 12px; }
@@ -623,6 +629,7 @@ html:not(.js) :is(.filters, .browse-foot .more, #examples .seg, #examples .more,
   .binds { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .binds .vega-bind label { flex-direction: column; align-items: stretch; gap: 2px; }
   .binds select { height: 44px; }
+  .binds[data-reserve] { min-height: 64px; }
   .chart-foot, .sec-foot { flex-direction: column; align-items: stretch; gap: 12px; }
   .chart-foot .btn, .sec-foot .btn { min-height: 44px; }
 

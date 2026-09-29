@@ -58,8 +58,9 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
   const drawAll = section.querySelector<HTMLButtonElement>("[data-draw-all]");
   // The density overview, while it shows: bins written into the page when it was built.
   let density = section.hasAttribute("data-density") ? readJson<DensityGrid>("density-data") : null;
-  // How many rows the scatter plot draws, read from the view once it has run.
-  let plotted: number | null = null;
+  // How many rows the scatter plot draws: counted for the default fields when the site was
+  // built (so the caption keeps its length), then read from the view after each run.
+  let plotted: number | null = note.dataset.plotted ? Number(note.dataset.plotted) : null;
 
   section.querySelectorAll<HTMLButtonElement>(".seg [data-mode]").forEach((b) => {
     b.addEventListener("click", () => {

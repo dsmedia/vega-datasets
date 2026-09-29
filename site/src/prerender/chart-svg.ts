@@ -5,7 +5,9 @@
  */
 import * as vega from "vega";
 import { compile, type TopLevelSpec } from "vega-lite";
+import { pointSource } from "../lib/vega-data";
 import { themeConfig } from "../lib/vega-theme";
+import { readDataUrl } from "./repo";
 import { lightToken } from "./tokens";
 
 /**
@@ -59,6 +61,39 @@ export async function staticChart(spec: Record<string, unknown>): Promise<Static
     svg = hideBrush(svg);
     const size = svg.match(/<svg [^>]*width="(\d+(?:\.\d+)?)" height="(\d+(?:\.\d+)?)"/);
     return { svg, width: Number(size?.[1] ?? 0), height: Number(size?.[2] ?? 0) };
+  } finally {
+    view.finalize();
+  }
+}
+
+/** What Explore's chart draws, known when the site is built. */
+export interface DrawnChart {
+  /** Its height in CSS pixels (axes, titles, legend and padding included). */
+  height: number;
+  /** For a scatter plot, the rows it plots (both values present); null otherwise. */
+  plotted: number | null;
+}
+
+/**
+ * How a chart draws at `width`, from the local data file: the height Explore reserves
+ * before it draws, so the page doesn't move when the chart arrives and no gap is left
+ * after it, and the scatter caption's row count.
+ */
+export async function drawnChart(spec: Record<string, unknown>, width: number): Promise<DrawnChart> {
+  const config = themeConfig(lightToken);
+  const { spec: vg } = compile({ ...spec, width } as unknown as TopLevelSpec, { config: config as never });
+  const loader = vega.loader();
+  loader.load = async (uri: string) => readDataUrl(uri);
+  const view = new vega.View(vega.parse(vg), { renderer: "none", loader });
+  try {
+    await view.runAsync();
+    // The SVG's own height: the plot, its axes and titles, the legend and the padding.
+    const svg = await view.toSVG();
+    const source = pointSource(vg as never);
+    return {
+      height: Math.ceil(Number(svg.match(/<svg [^>]*height="(\d+(?:\.\d+)?)"/)?.[1] ?? 0)),
+      plotted: source ? (view.data(source) as unknown[]).length : null,
+    };
   } finally {
     view.finalize();
   }

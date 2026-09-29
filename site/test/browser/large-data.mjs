@@ -52,6 +52,13 @@ async function openPage(browser, name, device, { sections = ['#explore'], settle
   const ctx = await browser.createBrowserContext();
   const page = await ctx.newPage();
   if (device.userAgent) await page.setUserAgent(device.userAgent);
+  // Cumulative layout shift, as Lighthouse counts it (shifts without recent input).
+  await page.evaluateOnNewDocument(() => {
+    window.__cls = 0;
+    new PerformanceObserver((list) => {
+      for (const e of list.getEntries()) if (!e.hadRecentInput) window.__cls += e.value;
+    }).observe({ type: 'layout-shift', buffered: true });
+  });
   await page.setViewport(device.viewport);
   const requests = [];
   // `block.on` aborts matching requests (a failed download) until the check turns it off.
@@ -96,6 +103,23 @@ async function xLabelGap(page) {
     let gap = Infinity;
     for (let i = 1; i < boxes.length; i++) gap = Math.min(gap, boxes[i].left - boxes[i - 1].right);
     return { labels: boxes.length, gap: Math.round(gap * 10) / 10 };
+  });
+}
+
+/** Explore's reserved height against what it drew, once drawn, and the page's layout shift so far. */
+async function exploreHeights(page) {
+  await page.waitForSelector('#explore .vega-embed svg.marks, #explore .vega-embed canvas, #explore img.chart-preview, #explore button.draw', { timeout: 60_000 });
+  await sleep(1000);
+  return page.evaluate(() => {
+    const host = document.querySelector('#explore .explore-chart');
+    // vega-embed draws into the host itself (its actions menu floats over the chart).
+    const cs = getComputedStyle(host);
+    const box = host.getBoundingClientRect();
+    const bottoms = [...host.children].filter((c) => getComputedStyle(c).position !== 'absolute').map((c) => c.getBoundingClientRect().bottom + parseFloat(getComputedStyle(c).marginBottom));
+    // A chart waiting for its button holds the chart's space, with the button in the middle.
+    const placeholder = host.children.length === 1 && host.firstElementChild.matches('button.draw');
+    const drawn = placeholder ? box.height : bottoms.length ? Math.max(...bottoms) - box.top : 0;
+    return { reserved: parseFloat(cs.minHeight), drawn: Math.round(drawn), gap: Math.round(box.height - drawn), placeholder, cls: Math.round(window.__cls * 1000) / 1000 };
   });
 }
 
@@ -184,6 +208,32 @@ try {
     await page.waitForFunction(() => /of 406 rows/.test(document.querySelector('#explore .chart-caption .hint')?.textContent ?? ''), { timeout: 30_000 }).catch(() => {});
     const caption = await page.$eval('#explore .chart-caption .hint', (e) => e.textContent);
     check('cars, Retry after a failed download draws the chart', /398 of 406 rows/.test(caption) && Boolean(await page.$('#explore .vega-embed svg.marks')), { caption });
+    await ctx.close();
+  }
+
+  // Explore reserves the height it draws: no shift when it draws, no gap after.
+  for (const [label, device] of [['desktop', DESKTOP], ['phone', PHONE]]) {
+    for (const name of ['cars', 'flights_200k_json', 'seattle_weather', 'stocks', 'barley', 'london_boroughs', 'us_10m', 'airports']) {
+      const { ctx, page } = await openPage(browser, name, device, { settle: 1500 });
+      const m = await exploreHeights(page);
+      // Maps on a picture reserve nothing: the picture holds its own place.
+      const fits = Math.abs(m.gap) <= 8 && (Number.isNaN(m.reserved) || m.reserved === 0 || Math.abs(m.drawn - m.reserved) <= 8);
+      check(`${label} ${name}: Explore's reserved height fits the chart`, fits && m.cls < 0.01, m);
+      await ctx.close();
+    }
+  }
+  // flights_20k at 1360 px: no shift whether the device draws the points itself or shows the button.
+  for (const [label, device] of [['desktop', DESKTOP], ['coarse pointer', { viewport: { ...DESKTOP.viewport, hasTouch: true } }]]) {
+    const { ctx, page, state } = await openPage(browser, 'flights_20k', device, { settle: 6000 });
+    const m = await exploreHeights(page);
+    let after = null;
+    if (m.placeholder) {
+      await page.click('#explore button.draw');
+      await page.waitForSelector('#explore .explore-chart canvas', { timeout: 60_000 });
+      after = await exploreHeights(page);
+    }
+    const fits = (x) => Math.abs(x.gap) <= 8 && Math.abs(x.drawn - x.reserved) <= 8;
+    check(`1360 px ${label} flights_20k: no layout shift, and the chart fills its space`, m.cls < 0.01 && fits(m) && (!after || fits(after)), { ...m, after, pointerCoarse: state.pointerCoarse, drawButton: state.drawButton });
     await ctx.close();
   }
 

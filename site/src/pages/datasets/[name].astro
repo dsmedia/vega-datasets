@@ -14,10 +14,11 @@ import MotionSection from "../../components/MotionSection.astro";
 import Base from "../../layouts/Base.astro";
 import { type Dataset, type Gallery, GALLERIES, GALLERY_LABEL, licenseFamily } from "../../lib/catalog";
 import { fileName, formatDescription, interleave, isReleased, linkText, sizeDescription, useSnippets } from "../../lib/dataset-model";
-import { chartFeatures, defaultAxes, exploreModes, hasDensity, MODE_LABEL, scatterFields, scatterSpec, starterChart } from "../../lib/explore-model";
+import { bothValuesNote, chartFeatures, defaultAxes, exploreModes, hasDensity, MODE_LABEL, scatterFields, scatterSpec, starterChart } from "../../lib/explore-model";
 import { BAND_POLICY, densityCaption, densityPageSpec, densitySpec, drawPointsLabel, hasMapPreview, tableBand } from "../../lib/large-data";
 import { densityOf } from "../../prerender/density";
 import { mapPreview } from "../../prerender/map-preview";
+import { drawnChart } from "../../prerender/chart-svg";
 import { FORMAT_LABEL, formatBytes, formatCount, plural } from "../../lib/format";
 import { markdownToHtml } from "../../lib/markdown";
 import { hasMotion } from "../../lib/motion";
@@ -33,6 +34,8 @@ const page = (name: string) => `${base}${datasetPath(name)}`;
 const METADATA = `${REPO}/blob/main/_data/datapackage_additions.toml`;
 const EXAMPLES_SHOWN = 8;
 const PREVIEW_ROWS = 5;
+/** The Explore column's width (px) at a 1360 px window and on a 390 px phone. */
+const EXPLORE_WIDTH = { wide: 880, phone: 358 };
 /** Other charts of files above this size draw only when asked (the large-data policy covers scatter plots and maps). */
 const AUTO_LOAD_BYTES = 3e6;
 
@@ -69,11 +72,21 @@ const wideSpec = first ? specFor(first, false) : null;
 const phoneSpec = first ? specFor(first, true) : null;
 const pointsButton = band === "canvas" || band === "on-request";
 const bigFile = !band && (d.bytes ?? 0) > AUTO_LOAD_BYTES;
-const chartHeight = wideSpec ? Number((wideSpec as { height?: number }).height ?? 300) + 60 : 0;
 // Long tables open on a density overview binned now; heavy maps on a picture drawn now.
 const grid = hasDensity(d) && axes ? densityOf(d, axes) : null;
 const density = grid ? { grid, spec: densitySpec(d, grid, 380), page: densityPageSpec(d, grid, 380) } : null;
 const mapPic = hasMapPreview(d) ? await mapPreview(d) : null;
+// The height Explore's chart draws at, on a wide screen and a phone (the column's width
+// at 1360 and 390 px), reserved so nothing moves when it arrives. A map's picture holds its own place.
+const reserve = wideSpec && phoneSpec && !mapPic
+  ? {
+      wide: await drawnChart(density ? densityPageSpec(d, density.grid, 380) : wideSpec, EXPLORE_WIDTH.wide),
+      phone: await drawnChart(density ? densityPageSpec(d, density.grid, 300) : phoneSpec, EXPLORE_WIDTH.phone),
+    }
+  : null;
+// The scatter caption's count for the default fields, so the caption doesn't grow when the chart draws.
+const plotted = reserve?.wide.plotted ?? null;
+const countNote = plotted === null ? null : bothValuesNote(d, plotted);
 const color = sf?.color ? ` the legend to isolate ${/^[aeiou]/i.test(sf.color.name) ? "an" : "a"} ${sf.color.name.toLowerCase()}.` : "";
 
 const motion = hasMotion(d);
@@ -181,8 +194,8 @@ const title = datasetTitle(d);
               </div>
             )}
           </div>
-          <div class="binds"></div>
-          <div class="explore-chart" style={`min-height: ${density ? 440 : mapPic ? mapPic.height : chartHeight}px`}>
+          <div class="binds" data-reserve={first === "scatter" && !density ? "" : undefined} hidden={first !== "scatter" || density ? true : undefined}></div>
+          <div class="explore-chart" style={reserve ? `--chart-h: ${reserve.wide.height}px; --chart-h-phone: ${reserve.phone.height}px` : undefined}>
             {mapPic && <img class="chart-preview" src={`${base}previews/${d.name}.webp`} width={mapPic.width} height={mapPic.height} alt={`The ${d.name} map, as the starter chart draws it`}>}
             {mapPic && <button class="btn draw" type="button">Draw the Live Map ({formatBytes(d.bytes)})</button>}
             {pointsButton && !mapPic && <button class="btn draw" type="button" data-auto-draw={policy?.autoDraw}>{drawPointsLabel(d)}</button>}
@@ -193,7 +206,7 @@ const title = datasetTitle(d);
               {density
                 ? <span class="hint">{densityCaption(density.grid)}</span>
                 : first === "scatter" && sf
-                ? <span class="hint"><span class="wide-only">Pick two fields.{zoomable && " Scroll to zoom, drag to pan."}{color && ` Click${color}`}</span><span class="phone-only">Pick two fields.{color && ` Tap${color}`}</span></span>
+                ? <span class="hint" data-plotted={plotted ?? undefined}><span class="wide-only">Pick two fields.{zoomable && " Scroll to zoom, drag to pan."}{color && ` Click${color}`}{countNote && ` ${countNote}`}</span><span class="phone-only">Pick two fields.{color && ` Tap${color}`}{countNote && ` ${countNote}`}</span></span>
                 : <span class="hint" hidden></span>}
               {density
                 ? <span class="features mono">{chartFeatures(density.page).join(" · ")}</span>
