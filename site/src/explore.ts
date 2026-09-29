@@ -87,10 +87,12 @@ export function exploreSection(d: Dataset): HTMLElement | null {
   };
 
   // Tables are read once, when the chart is first drawn, and handed to Vega (see parseTable);
-  // the caption's count reuses them but never reads the file itself.
+  // the caption's count reuses them but never reads the file itself. Leaving the page stops a
+  // download still under way.
+  const aborter = new AbortController();
   let rowsPromise: Promise<Record<string, unknown>[]> | null = null;
   let loadedRows: Record<string, unknown>[] | null = null;
-  const rows = () => (rowsPromise ??= fetch(siteDataUrl(d)).then((res) => {
+  const rows = () => (rowsPromise ??= fetch(siteDataUrl(d), { signal: aborter.signal }).then((res) => {
     if (!res.ok) throw new Error(`Could not load ${d.file} (HTTP ${res.status})`);
     return res.text();
   }).then((text) => (loadedRows = parseTable(text, d.format))));
@@ -144,17 +146,24 @@ export function exploreSection(d: Dataset): HTMLElement | null {
       view.addSignalListener("yField", follow("y"));
     }
   };
-  const render = () => (queue = queue.then(draw).catch((err: unknown) => {
-    host.replaceChildren(h("p", { class: "muted" }, `The chart didn't load: ${err instanceof Error ? err.message : String(err)}`));
-  }));
+  let requested = false;
+  const render = () => {
+    requested = true;
+    return (queue = queue.then(draw).catch((err: unknown) => {
+      if (destroyed) return; // The page was left (and its download aborted) meanwhile.
+      host.replaceChildren(h("p", { class: "muted" }, `The chart didn't load: ${err instanceof Error ? err.message : String(err)}`));
+    }));
+  };
 
-  // Redraw for a new theme or screen size only once drawn (a large file waits to be asked for).
-  const redraw = () => { if (result) void render(); };
+  // Redraw for a new theme or screen size once a chart is asked for (a large file waits for its
+  // button); a change during the first draw queues a second one, with the new size.
+  const redraw = () => { if (requested) void render(); };
   const unsubscribeTheme = onThemeChange(redraw);
   const onScreen = redraw;
   phone.addEventListener("change", onScreen);
   teardown = () => {
     destroyed = true;
+    aborter.abort();
     unsubscribeTheme();
     phone.removeEventListener("change", onScreen);
     result?.finalize();
