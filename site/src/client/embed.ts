@@ -8,6 +8,7 @@
  */
 import type { Loader } from "vega";
 import type { EmbedOptions } from "vega-embed";
+import { onceUnlessFailed } from "../lib/once";
 import { chartConfig } from "../lib/vega-theme";
 import { readers, siteDataUri } from "../lib/vega-data";
 import { siteDataBase, siteText } from "./data";
@@ -20,33 +21,50 @@ export interface VegaModules {
   loader(onError?: (uri: string, err: unknown) => void): Loader;
 }
 
-let loading: Promise<VegaModules> | null = null;
+/** The chart code (Vega's modules) didn't load: a dropped connection, say. */
+export class ChartCodeError extends Error {
+  constructor(cause: unknown) {
+    super("Couldn't load the chart code.", { cause });
+  }
+}
 
-export function loadVega(): Promise<VegaModules> {
-  return (loading ??= Promise.all([import("vega-embed"), import("vega-interpreter"), import("vega")]).then(([embed, interp, vega]) => {
-    // vega-loader's `formats` registry is exported by vega but missing from its type declarations.
-    const { formats } = vega as unknown as { formats(name: string, reader: unknown): void };
-    for (const [name, reader] of Object.entries(readers())) formats(name, reader);
-    const local = siteDataBase();
-    // The site's own copy of a public data file, fetched once per page (the gapminder page
-    // draws two charts from one file); anything else goes through Vega's loader. Vega
-    // swallows a failed load (the chart draws with no rows), so the caller hears of it.
-    const loader = (onError?: (uri: string, err: unknown) => void): Loader => {
-      const l = vega.loader();
-      const load = l.load.bind(l);
-      l.load = async (uri: string, options?: unknown) => {
-        const url = siteDataUri(uri, local);
-        try {
-          return await (url === uri ? load(uri, options as never) : siteText(url));
-        } catch (err) {
-          onError?.(uri, err);
-          throw err;
-        }
-      };
-      return l;
-    };
-    return { vegaEmbed: embed.default, expressionInterpreter: interp.expressionInterpreter, loader };
+type Modules = [typeof import("vega-embed"), typeof import("vega-interpreter"), typeof import("vega")];
+
+/**
+ * Vega, imported once for the page and set up for its CSP; a failed import isn't kept, so
+ * the next chart (or a Retry) imports again. Takes the importer so tests can fail it.
+ */
+export function vegaLoader(importModules: () => Promise<Modules>): () => Promise<VegaModules> {
+  return onceUnlessFailed(() => importModules().then(setUp, (err: unknown) => {
+    throw new ChartCodeError(err);
   }));
+}
+
+export const loadVega = vegaLoader(() => Promise.all([import("vega-embed"), import("vega-interpreter"), import("vega")]));
+
+function setUp([embed, interp, vega]: Modules): VegaModules {
+  // vega-loader's `formats` registry is exported by vega but missing from its type declarations.
+  const { formats } = vega as unknown as { formats(name: string, reader: unknown): void };
+  for (const [name, reader] of Object.entries(readers())) formats(name, reader);
+  const local = siteDataBase();
+  // The site's own copy of a public data file, fetched once per page (the gapminder page
+  // draws two charts from one file); anything else goes through Vega's loader. Vega
+  // swallows a failed load (the chart draws with no rows), so the caller hears of it.
+  const loader = (onError?: (uri: string, err: unknown) => void): Loader => {
+    const l = vega.loader();
+    const load = l.load.bind(l);
+    l.load = async (uri: string, options?: unknown) => {
+      const url = siteDataUri(uri, local);
+      try {
+        return await (url === uri ? load(uri, options as never) : siteText(url));
+      } catch (err) {
+        onError?.(uri, err);
+        throw err;
+      }
+    };
+    return l;
+  };
+  return { vegaEmbed: embed.default, expressionInterpreter: interp.expressionInterpreter, loader };
 }
 
 /**

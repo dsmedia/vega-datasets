@@ -237,6 +237,29 @@ try {
     await ctx.close();
   }
 
+  // The chart code itself fails to load (a dropped connection): the same error state, and Retry recovers.
+  {
+    const block = { on: true, pattern: /\/assets\/vega-interpreter\.[\w-]+\.js$/ };
+    const { ctx, page, errors } = await openPage(browser, 'cars', DESKTOP, { settle: 3000, block });
+    const failed = await page.evaluate(() => ({
+      message: document.querySelector('#explore .explore-chart')?.textContent?.trim() ?? '',
+      retry: Boolean(document.querySelector('#explore .explore-chart button[data-retry]')),
+    }));
+    check("cars, chart code fails to load: an error with Retry", failed.message.startsWith("Couldn't load the chart code.") && failed.retry, { ...failed, errors });
+    block.on = false;
+    // Chrome keeps the failed import, so Retry reloads the page when importing again fails.
+    const reloaded = page.waitForNavigation({ timeout: 15_000 }).then(() => true, () => false);
+    await page.click('#explore button[data-retry]').catch(() => {});
+    const didReload = await reloaded;
+    await page.evaluate(() => document.querySelector('#explore')?.scrollIntoView());
+    await page.waitForSelector('#explore .vega-embed svg.marks', { timeout: 30_000 }).catch(() => {});
+    await page.waitForFunction(() => /of 406 rows/.test(document.querySelector('#explore .chart-caption .hint')?.textContent ?? ''), { timeout: 10_000 }).catch(() => {});
+    const caption = await page.$eval('#explore .chart-caption .hint', (e) => e.textContent);
+    console.log(`      (Retry ${didReload ? 'reloaded the page' : 'imported again in place'})`);
+    check('cars, Retry after the chart code failed draws the chart', Boolean(await page.$('#explore .vega-embed svg.marks')) && /398 of 406 rows/.test(caption), { caption, message: await page.$eval('#explore .explore-chart', (e) => e.textContent.trim().slice(0, 120)) });
+    await ctx.close();
+  }
+
   // gapminder has two charts on one file: the page fetches it once.
   {
     const { ctx, page, requests, errors } = await openPage(browser, 'gapminder', DESKTOP, { sections: ['#explore', '#motion'], settle: 4000 });

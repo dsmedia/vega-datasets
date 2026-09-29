@@ -17,7 +17,7 @@ import { allowed, BAND_POLICY, type DensityGrid, densityCaption, densityPageSpec
 import { editorUrl, starterSpec } from "../lib/starter";
 import { pointSource } from "../lib/vega-data";
 import { $, h, readJson } from "./dom";
-import { embedOptions, labelActions, loadVega } from "./embed";
+import { ChartCodeError, embedOptions, labelActions, loadVega } from "./embed";
 import { onThemeChange } from "./theme";
 
 type Spec = Record<string, unknown>;
@@ -137,17 +137,34 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
     }
   };
   let requested = false;
+  // A Retry after the chart code failed to load is under way.
+  let retryingCode = false;
   const render = () => {
     requested = true;
     return (queue = queue.then(draw).catch((err: unknown) => {
+      // Chrome keeps a failed dynamic import in its module map, so importing again fails at
+      // once even when the connection is back (other browsers fetch again). When a Retry of
+      // the chart code fails while online, reload the page, as Vite advises: a new document
+      // fetches every module afresh.
+      if (err instanceof ChartCodeError && retryingCode && navigator.onLine) {
+        location.reload();
+        return;
+      }
+      retryingCode = false;
       result?.finalize();
       result = undefined;
       binds.replaceChildren();
       plotted = null;
       describe();
       const retry = h("button", { class: "btn", type: "button", "data-retry": "" }, "Retry");
-      retry.addEventListener("click", () => void render(), { once: true });
-      const message = err instanceof LoadError ? `Couldn't load ${err.file}.` : `The chart didn't load: ${err instanceof Error ? err.message : String(err)}`;
+      retry.addEventListener("click", () => {
+        retryingCode = err instanceof ChartCodeError;
+        void render();
+      }, { once: true });
+      const message =
+        err instanceof LoadError ? `Couldn't load ${err.file}.`
+        : err instanceof ChartCodeError ? err.message
+        : `The chart didn't load: ${err instanceof Error ? err.message : String(err)}`;
       host.replaceChildren(h("p", { class: "muted load-error" }, message, " ", retry));
     }));
   };
