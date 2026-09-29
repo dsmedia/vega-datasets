@@ -4,39 +4,32 @@
  * line naming its Vega-Lite features and the Editor button following the pickers.
  * dataset.ts loads this module when the section comes near the screen.
  *
- * Long tables open on their density overview (bins from the page, no download) until
- * the reader asks to draw all points; heavy maps open on a picture until asked.
+ * The chart runs the spec the Editor opens, public data URL included (embed.ts adapts
+ * Vega to the page's CSP). How and when it draws follows the large-data policy
+ * (lib/large-data.ts): long tables open on their density overview (bins from the page,
+ * no download) until the reader asks for all points; mid-size tables draw by themselves
+ * only on a desktop-class device (lib/device.ts); heavy maps open on a picture.
  */
 import type { Dataset } from "../lib/catalog";
-import {
-  bothValuesNote,
-  chartFeatures,
-  defaultAxes,
-  type DensityBin,
-  densityFromBins,
-  densitySpec,
-  exploreModes,
-  type Mode,
-  parseTable,
-  readsRows,
-  scatterFields,
-  scatterSpec,
-  siteDataUrl,
-  starterChart,
-  withDataUrl,
-  withValues,
-} from "../lib/explore-model";
-import { formatCount } from "../lib/format";
+import { deviceSignals, isDesktopClass } from "../lib/device";
+import { bothValuesNote, chartFeatures, defaultAxes, exploreModes, type Mode, scatterFields, scatterSpec, starterChart } from "../lib/explore-model";
+import { allowed, BAND_POLICY, type DensityGrid, densityPageSpec, tableBand } from "../lib/large-data";
 import { editorUrl, starterSpec } from "../lib/starter";
+import { pointSource } from "../lib/vega-data";
 import { $, h, readJson } from "./dom";
-import { embedOptions, labelActions, loadVega } from "./embed";
+import { ChartCodeError, embedOptions, labelActions, loadVega } from "./embed";
 import { onThemeChange } from "./theme";
 
 type Spec = Record<string, unknown>;
 
 const PHONE = "(max-width: 640px)";
-/** Above this many rows, draw on canvas: SVG slows down with tens of thousands of marks. */
-const CANVAS_ROWS = 5000;
+
+/** A data file that didn't load (Vega itself only logs it, and draws no rows). */
+class LoadError extends Error {
+  constructor(readonly file: string) {
+    super(`Couldn't load ${file}.`);
+  }
+}
 
 /** "an origin", "a species". */
 function withArticle(word: string): string {
@@ -47,9 +40,14 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
   const modes = exploreModes(d);
   if (!modes.length) return;
   const phone = matchMedia(PHONE);
+  const desktop = isDesktopClass(deviceSignals(window));
+  const band = tableBand(d);
+  const policy = band ? BAND_POLICY[band] : null;
+  const canvas = policy?.renderer === "canvas";
+  // Scroll to zoom traps page scrolling on a narrow screen, and redraws every point per wheel step.
+  const zoom = () => !phone.matches && (!policy || allowed(policy.zoom, desktop));
   const fields = scatterFields(d);
   const state: { mode: Mode; x: string; y: string } = { mode: modes[0]!, ...(fields ? defaultAxes(fields) : { x: "", y: "" }) };
-  const canvas = (d.rows ?? 0) > CANVAS_ROWS;
 
   const binds = $(".binds", section);
   const host = $(".explore-chart", section);
@@ -59,7 +57,10 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
   const drawButton = host.querySelector<HTMLButtonElement>("button.draw");
   const drawAll = section.querySelector<HTMLButtonElement>("[data-draw-all]");
   // The density overview, while it shows: bins written into the page when it was built.
-  let density = section.hasAttribute("data-density") ? readJson<DensityBin[]>("density-data") : null;
+  let density = section.hasAttribute("data-density") ? readJson<DensityGrid>("density-data") : null;
+  // How many rows the scatter plot draws: counted for the default fields when the site was
+  // built (so the caption keeps its length), then read from the view after each run.
+  let plotted: number | null = note.dataset.plotted ? Number(note.dataset.plotted) : null;
 
   section.querySelectorAll<HTMLButtonElement>(".seg [data-mode]").forEach((b) => {
     b.addEventListener("click", () => {
@@ -71,97 +72,133 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
     });
   });
 
-  /** The spec as the page draws it (and, with the public data URL, as the Editor opens it). */
+  const height = () => (phone.matches ? 300 : 380);
+  // The overview's spec per height, built once: a thousand bins, each with its tooltip text.
+  const overviews = new Map<number, Spec>();
+  const overview = (g: DensityGrid, h: number): Spec => {
+    let spec = overviews.get(h);
+    if (!spec) overviews.set(h, (spec = densityPageSpec(d, g, h)));
+    return spec;
+  };
+  /** The spec the page draws, exactly as the Editor opens it (the overview's Editor spec bins the public file). */
   const currentSpec = (): Spec => {
-    if (state.mode === "scatter" && fields) {
-      return scatterSpec(d, fields, { x: state.x, y: state.y, zoom: !phone.matches, height: phone.matches ? 300 : 380 });
-    }
+    if (density) return overview(density, height());
+    if (state.mode === "scatter" && fields) return scatterSpec(d, fields, { x: state.x, y: state.y, zoom: zoom(), height: height() });
     return starterChart(d) ?? starterSpec(d)!;
   };
 
-  // Tables are read once, here, when the chart is first drawn, and handed to Vega (see
-  // parseTable); the caption's row count reuses them but never reads the file itself.
-  let rowsPromise: Promise<Record<string, unknown>[]> | null = null;
-  let loadedRows: Record<string, unknown>[] | null = null;
-  const dataUrl = `${import.meta.env.BASE_URL}${siteDataUrl(d)}`;
-  const rows = () => (rowsPromise ??= fetch(dataUrl).then((res) => {
-    if (!res.ok) throw new Error(`Could not load ${d.file} (HTTP ${res.status})`);
-    return res.text();
-  }).then((text) => (loadedRows = parseTable(text, d.format))));
-
-  const describe = (spec: Spec) => {
-    if (density) {
-      edit.href = editorUrl(densitySpec(d, state, 380));
-      features.textContent = chartFeatures(densitySpec(d, state, 380)).join(" · ");
-      note.hidden = false;
-      note.textContent = `Rows per bin: all ${formatCount(d.rows)} rows, binned when the site was built. Draw all points to pick the fields.`;
-      return;
-    }
+  const describe = () => {
+    // The overview's caption, features and Editor link are in the page as built (they
+    // don't change while it shows); working them out again would cost a thousand-bin spec.
+    if (density) return;
+    const spec = currentSpec();
     edit.href = editorUrl(spec);
     features.textContent = chartFeatures(spec).join(" · ");
     note.hidden = state.mode !== "scatter" || !fields;
     if (state.mode !== "scatter" || !fields) return;
     const color = fields.color ? ` ${phone.matches ? "Tap" : "Click"} the legend to isolate ${withArticle(fields.color.name.toLowerCase())}.` : "";
-    const lead = phone.matches ? `Pick two fields.${color}` : `Pick two fields. Scroll to zoom, drag to pan.${color}`;
-    const count = bothValuesNote(d, loadedRows, state.x, state.y);
+    const lead = zoom() ? `Pick two fields. Scroll to zoom, drag to pan.${color}` : `Pick two fields.${color}`;
+    const count = bothValuesNote(d, plotted);
     note.textContent = count ? `${lead} ${count}` : lead;
   };
 
-  let result: { view: import("vega").View; finalize(): void } | undefined;
+  let result: import("vega-embed").Result | undefined;
   let queue: Promise<void> = Promise.resolve();
   const draw = async () => {
     const v = await loadVega();
     result?.finalize();
     binds.replaceChildren();
+    plotted = null;
     const spec = currentSpec();
-    const site = density
-      ? densityFromBins(d, state, phone.matches ? 300 : 380, density)
-      : readsRows(d) ? withValues(spec, await rows()) : withDataUrl(spec, dataUrl);
     binds.hidden = state.mode !== "scatter" || density !== null;
     // The live chart takes the place of the build's picture and its button.
-    host.querySelectorAll(".chart-preview, button.draw").forEach((el) => el.remove());
-    // The menu's Editor action would open the page's same-origin data path; the button opens the public one.
-    result = await v.vegaEmbed(host, site as never, {
-      ...embedOptions(v, canvas && !density ? "canvas" : "svg", { export: true, source: true, compiled: true, editor: false }),
+    host.querySelectorAll(".chart-preview, button.draw, .load-error").forEach((el) => el.remove());
+    const failed: string[] = [];
+    result = await v.vegaEmbed(host, spec as never, {
+      ...embedOptions(v, canvas && !density ? "canvas" : "svg", { export: true, source: true, compiled: true, editor: false }, (uri) => failed.push(uri)),
       bind: binds,
     });
+    // How many times the chart has been drawn: once on open, unless asked (the browser check reads it).
+    section.dataset.draws = String(Number(section.dataset.draws ?? 0) + 1);
+    // Vega draws an empty chart when its file doesn't load: say so instead, and count nothing.
+    if (failed.length) throw new LoadError(failed[0]!.split("/").pop()!);
     labelActions(host);
-    describe(spec);
-    if (state.mode === "scatter" && !density) {
-      const view = result.view;
+    // A select narrowed to fit its row clips a long field name: its tooltip gives it in full.
+    binds.querySelectorAll("select").forEach((select) => {
+      const name = () => (select.title = select.value);
+      name();
+      select.addEventListener("change", name);
+    });
+    const view = result.view;
+    const source = state.mode === "scatter" && !density ? pointSource(result.vgSpec as never) : null;
+    const recount = () => {
+      plotted = source ? (view.data(source) as unknown[]).length : null;
+      describe();
+    };
+    recount();
+    if (source) {
       const follow = (axis: "x" | "y") => (_name: string, value: unknown) => {
         state[axis] = String(value);
         // A zoom on the old fields would hide the new ones: clear it (the scale domains read this store).
-        if (!phone.matches) void view.change("zoom_store", view.changeset().remove(() => true)).runAsync();
-        describe(currentSpec());
+        if (zoom()) void view.change("zoom_store", view.changeset().remove(() => true)).runAsync();
+        void view.runAsync().then(recount);
       };
       view.addSignalListener("xField", follow("x"));
       view.addSignalListener("yField", follow("y"));
     }
   };
   let requested = false;
+  // A Retry after the chart code failed to load is under way.
+  let retryingCode = false;
   const render = () => {
     requested = true;
     return (queue = queue.then(draw).catch((err: unknown) => {
-      host.replaceChildren(h("p", { class: "muted" }, `The chart didn't load: ${err instanceof Error ? err.message : String(err)}`));
+      // Chrome keeps a failed dynamic import in its module map, so importing again fails at
+      // once even when the connection is back (other browsers fetch again). When a Retry of
+      // the chart code fails while online, reload the page, as Vite advises: a new document
+      // fetches every module afresh.
+      if (err instanceof ChartCodeError && retryingCode && navigator.onLine) {
+        location.reload();
+        return;
+      }
+      retryingCode = false;
+      result?.finalize();
+      result = undefined;
+      binds.replaceChildren();
+      plotted = null;
+      describe();
+      const retry = h("button", { class: "btn", type: "button", "data-retry": "" }, "Retry");
+      retry.addEventListener("click", () => {
+        retryingCode = err instanceof ChartCodeError;
+        void render();
+      }, { once: true });
+      const message =
+        err instanceof LoadError ? `Couldn't load ${err.file}.`
+        : err instanceof ChartCodeError ? err.message
+        : `The chart didn't load: ${err instanceof Error ? err.message : String(err)}`;
+      host.replaceChildren(h("p", { class: "muted load-error" }, message, " ", retry));
     }));
   };
 
   // Redraw for a new screen size once a chart is asked for (a large file waits for its
   // button): a change during the first draw, while the file is still loading, queues a
   // second draw at the new size. Canvas charts also redraw for a new theme (SVG charts
-  // restyle through the stylesheet).
+  // restyle through the stylesheet, except for the overview's data colors).
   const redraw = () => {
     if (requested) void render();
   };
-  if (canvas) onThemeChange(redraw);
+  // The density overview's ramp follows the theme (config.range.heatmap), so it redraws too.
+  onThemeChange(() => {
+    if (canvas || density) redraw();
+  });
   phone.addEventListener("change", redraw);
-  describe(currentSpec());
+  describe();
   drawAll?.addEventListener("click", () => {
     density = null;
     drawAll.remove();
     void render();
   }, { once: true });
-  if (drawButton) drawButton.addEventListener("click", () => void render(), { once: true });
-  else void render();
+  // A mid-size table's button (data-auto-draw="desktop") stands aside on a desktop-class device.
+  if (!drawButton || (drawButton.dataset.autoDraw === "desktop" && desktop)) void render();
+  else drawButton.addEventListener("click", () => void render(), { once: true });
 }

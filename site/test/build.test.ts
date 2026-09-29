@@ -4,6 +4,9 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, test } from 'vitest';
+import { chartFeatures } from '../src/lib/explore-model';
+import { type DensityGrid, densityCaption, densityPageSpec, densitySpec } from '../src/lib/large-data';
+import { editorUrl } from '../src/lib/starter';
 import { loadCatalog, REPO } from './catalog';
 
 const catalog = loadCatalog();
@@ -90,15 +93,42 @@ test('the home page has every dataset card, and the chart drawn', () => {
   expect(text).toContain('<a tabindex="-1" xlink:href="datasets/cars/"');
 });
 
-test('long tables carry their density bins, covering every row', () => {
+test('long tables carry their density bins: every row binned or counted outside, in under 30 KB, with no data file to load', () => {
   const d = catalog.dataset('flights_200k_json')!;
   const text = html(path.join(dist, 'datasets', d.name, 'index.html'));
-  const bins = JSON.parse(text.match(/<script type="application\/json" id="density-data">([\s\S]*?)<\/script>/)![1]!) as { count: number }[];
-  expect(bins.reduce((s, b) => s + b.count, 0)).toBe(d.rows);
+  const json = text.match(/<script type="application\/json" id="density-data">([\s\S]*?)<\/script>/)![1]!;
+  const g = JSON.parse(json) as { rows: number; complete: number; outside: number; cells: [number, number, number][] };
+  expect(g.cells.reduce((s, [, , n]) => s + n, 0) + g.outside + (g.rows - g.complete)).toBe(d.rows);
+  expect(json.length).toBeLessThan(30_000);
+  expect(text).toContain('data-draw-all>Draw All 200,000 Points (9.9 MB)</button>');
+  // The client leaves the overview's caption, features and Editor link as built: they must be final.
+  const grid = JSON.parse(json) as DensityGrid;
+  expect(text).toContain(`<span class="hint">${densityCaption(grid)}</span>`);
+  expect(text).toContain(`<span class="features mono">${chartFeatures(densityPageSpec(d, grid, 380)).join(' · ')}</span>`);
+  expect(text).toContain(`href="${editorUrl(densitySpec(d, grid, 380))}" data-editor`);
+});
+
+test('mid-size tables wait for a button, which stands aside on desktop-class devices only up to 20,000 rows', () => {
+  const button = (name: string) => html(path.join(dist, 'datasets', name, 'index.html')).match(/<button class="btn draw"[^>]*>[^<]*<\/button>/)?.[0] ?? null;
+  expect(button('flights_20k')).toBe('<button class="btn draw" type="button" data-auto-draw="desktop">Draw 20,000 Points (1.8 MB)</button>');
+  expect(button('flights_5k')).toBeNull();
+  expect(button('cars')).toBeNull();
+});
+
+// The browser check (test/browser/large-data.mjs) measures that these match what draws, at 1360 and 390 px.
+test("Explore holds the chart's measured height, the pickers' row and the caption's count before it draws", () => {
+  const cars = html(path.join(dist, 'datasets', 'cars', 'index.html'));
+  expect(cars).toMatch(/<div class="explore-chart" style="--chart-h: \d+px; --chart-h-phone: \d+px">/);
+  expect(cars).toContain('<div class="binds" data-reserve>');
+  expect(cars).toContain('Both fields have values in 398 of 406 rows.');
+  expect(cars).toContain('data-plotted="398"');
+  // A map on its picture reserves nothing (the picture has its size); a chart with no pickers hides their row.
+  expect(html(path.join(dist, 'datasets', 'us_10m', 'index.html'))).toContain('<div class="explore-chart">');
+  expect(html(path.join(dist, 'datasets', 'barley', 'index.html'))).toContain('<div class="binds" hidden>');
 });
 
 test('heavy maps carry a picture of the map', () => {
-  for (const name of ['earthquakes', 'us_10m', 'zipcodes']) {
+  for (const name of ['airports', 'earthquakes', 'us_10m', 'windvectors', 'zipcodes']) {
     const text = html(path.join(dist, 'datasets', name, 'index.html'));
     expect(text, name).toContain(`src="/vega-datasets/previews/${name}.webp"`);
     expect(statSync(path.join(dist, 'previews', `${name}.webp`)).size, name).toBeGreaterThan(1000);

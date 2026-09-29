@@ -1,35 +1,30 @@
 // The dataset page: how it tells you to load a file, what it says about each field,
 // and which live chart Explore draws — every scatter plot must compile and draw
 // points from the real file, with pickers and axis titles that follow each other.
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { csvParse } from 'd3-dsv';
 import LZString from 'lz-string';
 import * as vega from 'vega';
 import { compile, type TopLevelSpec } from 'vega-lite';
 import { describe, expect, test } from 'vitest';
 import { interleave, isReleased, linkText, useSnippets } from '../src/lib/dataset-model';
-import {
-  bothValuesNote,
-  chartFeatures,
-  defaultAxes,
-  densityFromBins,
-  densitySpec,
-  exploreModes,
-  hasDensity,
-  hasMapPreview,
-  parseTable,
-  readsRows,
-  scatterFields,
-  scatterSpec,
-  siteDataUrl,
-  starterChart,
-  withDataUrl,
-  withValues,
-} from '../src/lib/explore-model';
+import { bothValuesNote, chartFeatures, defaultAxes, exploreModes, hasDensity, scatterFields, scatterSpec, starterChart } from '../src/lib/explore-model';
+import { densityPageSpec, densitySpec, hasMapPreview } from '../src/lib/large-data';
 import { missingCount, profileSummary } from '../src/lib/profile';
 import { editorUrl } from '../src/lib/starter';
+import { PUBLIC_DATA, pointSource, readers, siteDataUri } from '../src/lib/vega-data';
+import { densityOf, readRows } from '../src/prerender/density';
 import { loadCatalog, readDataUrl, REPO } from './catalog';
+
+// Vega reads CSV and TSV with the readers the page registers (client/embed.ts).
+for (const [name, reader] of Object.entries(readers())) (vega as unknown as { formats(n: string, r: unknown): void }).formats(name, reader);
+
+/** A Vega loader that reads public data URLs from the local copies, as the page's loader reads them from the site. */
+function localLoader() {
+  const loader = vega.loader();
+  loader.load = async (uri: string) => readDataUrl(uri);
+  return loader;
+}
 
 const catalog = loadCatalog();
 const ds = (name: string) => catalog.dataset(name)!;
@@ -147,27 +142,39 @@ describe('Explore', () => {
     expect(spec.params.map((p: { name: string; value: string }) => `${p.name}=${p.value}`)).toEqual(['xField=Horsepower', 'yField=Miles_per_Gallon']);
   });
 
-  test('the page loads data from its own origin; the Editor keeps the public URL', () => {
-    const spec = starterChart(ds('cars'))!;
-    expect((spec.data as { url: string }).url).toBe(ds('cars').url);
-    expect((withDataUrl(spec, siteDataUrl(ds('cars'))).data as { url: string }).url).toBe('data/cars.json');
+  test('the page draws the spec the Editor opens: the public data URL, no inlined rows', () => {
+    const spec = scatterSpec(ds('cars'), scatterFields(ds('cars'))!, { x: 'Horsepower', y: 'Miles_per_Gallon', zoom: true, height: 380 });
+    expect(spec.data).toEqual({ url: ds('cars').url });
+    expect(JSON.stringify(spec)).not.toContain('"values":[{"');
+    expect((starterChart(ds('cars'))!.data as { url: string }).url).toBe(ds('cars').url);
   });
 
-  // build.test.ts checks that every built page's Download button links to this path.
-  test('every file has a same-origin path, and the file is there', () => {
-    const page = 'https://vega.github.io/vega-datasets/';
+  // The page's loader fetches every public URL from the site's data/ (build.test.ts checks the Download button's path).
+  test("every dataset's public URL maps to its file under the site's data/, and the file is there", () => {
+    const site = 'http://localhost:8000/vega-datasets/data/';
     for (const d of catalog.datasets) {
-      expect(new URL(siteDataUrl(d), page).origin, d.name).toBe(new URL(page).origin);
+      expect(d.url, d.name).toMatch(PUBLIC_DATA);
+      expect(siteDataUri(d.url, site), d.name).toBe(`${site}${d.file}`);
       expect(existsSync(path.join(REPO, 'data', d.file)), d.name).toBe(true);
     }
   });
 
-  test('the caption counts rows only once they are read to draw (it never loads a file itself)', () => {
+  test('the caption counts the rows the view plots, once it has run (it never loads a file itself)', async () => {
     const cars = ds('cars');
-    const rows = parseTable(readFileSync(path.join(REPO, 'data', cars.file), 'utf8'), cars.format);
-    expect(bothValuesNote(cars, null, 'Horsepower', 'Miles_per_Gallon')).toBeNull();
-    expect(bothValuesNote(cars, rows, 'Horsepower', 'Miles_per_Gallon')).toBe('Both fields have values in 392 of 406 rows.');
-    expect(bothValuesNote(cars, rows, 'Displacement', 'Miles_per_Gallon')).toBe('Both fields have values in 398 of 406 rows.');
+    expect(bothValuesNote(cars, null)).toBeNull();
+    const spec = scatterSpec(cars, scatterFields(cars)!, { x: 'Horsepower', y: 'Miles_per_Gallon', zoom: true, height: 380 });
+    const { spec: vg } = compile({ ...spec, width: 600 } as TopLevelSpec);
+    const source = pointSource(vg as never);
+    expect(source).not.toBeNull();
+    const view = new vega.View(vega.parse(vg), { renderer: 'none', loader: localLoader() });
+    try {
+      await view.runAsync();
+      expect(bothValuesNote(cars, view.data(source!).length)).toBe('Both fields have values in 392 of 406 rows.');
+      await view.signal('xField', 'Displacement').runAsync();
+      expect(bothValuesNote(cars, view.data(source!).length)).toBe('Both fields have values in 398 of 406 rows.');
+    } finally {
+      view.finalize();
+    }
   });
 
   const scatters = catalog.datasets.filter((d) => exploreModes(d)[0] === 'scatter');
@@ -187,9 +194,7 @@ describe('Explore', () => {
       const columns = new Set(d.fields.map((x) => x.name));
       for (const m of f.measures) expect(columns.has(m.name)).toBe(true);
 
-      const loader = vega.loader();
-      loader.load = async (uri: string) => readDataUrl(uri);
-      const view = new vega.View(vega.parse(vg), { renderer: 'none', loader });
+      const view = new vega.View(vega.parse(vg), { renderer: 'none', loader: localLoader() });
       try {
         await view.runAsync();
         const svg = await view.toSVG();
@@ -207,50 +212,16 @@ describe('Explore', () => {
   });
 });
 
-/** Run `fn` as under the page's CSP (script-src 'self', no 'unsafe-eval'): compiling code throws. */
-function withoutEval<T>(fn: () => T): T {
-  const original = globalThis.Function;
-  globalThis.Function = new Proxy(original, {
-    apply() { throw new EvalError('CSP: unsafe-eval'); },
-    construct() { throw new EvalError('CSP: unsafe-eval'); },
-  });
-  try {
-    return fn();
-  } finally {
-    globalThis.Function = original;
-  }
-}
-
-describe('reading tables under the page CSP', () => {
-  const tables = catalog.datasets.filter((d) => readsRows(d) && d.format !== 'json');
-  const text = (d: (typeof tables)[number]) => readFileSync(path.join(REPO, 'data', d.file), 'utf8');
-
-  test('the harness catches code compilation (d3 csvParse, which Vega uses, fails)', () => {
-    expect(() => withoutEval(() => csvParse(text(ds('seattle_weather'))))).toThrow(EvalError);
-  });
-
-  test.each(tables.map((d) => [d.name, d] as const))('%s parses without compiling code', (_name, d) => {
-    const rows = withoutEval(() => parseTable(text(d), d.format));
-    expect(rows).toHaveLength(d.rows!);
-    expect(Object.keys(rows[0]!)).toEqual(d.fields.map((f) => f.name));
-  });
-});
-
-describe('every Explore chart draws from the rows the page reads', () => {
+describe('every Explore chart draws from its public URL, as the page runs it', () => {
   const charts = catalog.datasets.flatMap((d) => exploreModes(d).map((mode) => [`${d.name} ${mode}`, d, mode] as const));
 
   test.each(charts)('%s', async (_name, d, mode) => {
     const f = scatterFields(d);
     const spec = mode === 'scatter' ? scatterSpec(d, f!, { ...defaultAxes(f!), zoom: true, height: 380 }) : starterChart(d)!;
-    const site = readsRows(d)
-      ? withValues(spec, parseTable(readFileSync(path.join(REPO, 'data', d.file), 'utf8'), d.format))
-      : spec;
-    const loader = vega.loader();
-    loader.load = async (uri: string) => readDataUrl(uri);
     const { logger, warnings } = collectingLogger();
-    const { spec: vg } = compile({ ...site, width: 600 } as TopLevelSpec, { logger });
+    const { spec: vg } = compile({ ...spec, width: 600 } as TopLevelSpec, { logger });
     expect(warnings.filter((w) => w !== KNOWN_VL_WARNING)).toEqual([]);
-    const view = new vega.View(vega.parse(vg), { renderer: 'none', loader });
+    const view = new vega.View(vega.parse(vg), { renderer: 'none', loader: localLoader() });
     try {
       await view.runAsync();
       const svg = await view.toSVG();
@@ -282,14 +253,13 @@ describe('every scatter plots each row at its own values', () => {
 
   test.each(scatters.map((d) => [d.name, d] as const))('%s', async (_name, d) => {
     const f = scatterFields(d)!;
-    const text = readFileSync(path.join(REPO, 'data', d.file), 'utf8');
-    const pristine = parseTable(text, d.format);
+    const pristine = readRows(d);
     // The default axes, and the same two fields swapped: a derived field must not overwrite a source field.
     const axes = defaultAxes(f);
     for (const { x, y } of [axes, { x: axes.y, y: axes.x }]) {
       const spec = scatterSpec(d, f, { x, y, zoom: false, height: 300 });
       const layer = (spec.layer as { encoding: { x: { field: string }; y: { field: string } } }[])[0]!;
-      const view = new vega.View(vega.parse(compile({ ...withValues(spec, parseTable(text, d.format)), width: 600 } as TopLevelSpec).spec), { renderer: 'none' });
+      const view = new vega.View(vega.parse(compile({ ...spec, width: 600 } as TopLevelSpec).spec), { renderer: 'none', loader: localLoader() });
       try {
         await view.runAsync();
         const plotted = markData(view, 'symbol').map((r) => [r[layer.encoding.x.field] as number, r[layer.encoding.y.field] as number]).sort(byXY);
@@ -320,21 +290,20 @@ test('link text is the file name, or the host', () => {
 });
 
 describe('overviews drawn when the site is built', () => {
-  test('long tables open on a density overview; heavy maps on a picture', () => {
+  test('tables over 50,000 rows open on a density overview; maps of over 1,000 shapes or points on a picture', () => {
     expect(catalog.datasets.filter(hasDensity).map((d) => d.name)).toEqual(['flights_200k_json']);
-    expect(catalog.datasets.filter(hasMapPreview).map((d) => d.name).sort()).toEqual(['earthquakes', 'us_10m', 'zipcodes']);
+    expect(catalog.datasets.filter(hasMapPreview).map((d) => d.name).sort()).toEqual(['airports', 'earthquakes', 'us_10m', 'windvectors', 'zipcodes']);
   });
 
-  test('the density overview compiles without warnings, from the Editor spec or from bins', () => {
+  test('the density overview compiles without warnings, from the Editor spec or from the bins', () => {
     const d = ds('flights_200k_json');
-    const axes = defaultAxes(scatterFields(d)!);
-    const bins = [{ x0: 0, x1: 100, y0: -20, y1: 0, count: 5 }, { x0: 100, x1: 200, y0: 0, y1: 20, count: 12 }];
-    for (const spec of [densitySpec(d, axes, 380), densityFromBins(d, axes, 380, bins)]) {
+    const grid = densityOf(d, defaultAxes(scatterFields(d)!));
+    for (const spec of [densitySpec(d, grid, 380), densityPageSpec(d, grid, 380)]) {
       const warnings: string[] = [];
       const logger = { level: () => logger, error: (...m: unknown[]) => { throw new Error(m.join(' ')); }, warn: (...m: unknown[]) => { warnings.push(m.join(' ')); return logger; }, info: () => logger, debug: () => logger };
       compile({ ...spec, width: 600 } as TopLevelSpec, { logger: logger as never });
       expect(warnings).toEqual([]);
     }
-    expect((densitySpec(d, axes, 380).data as { url: string }).url).toBe(d.url);
+    expect((densitySpec(d, grid, 380).data as { url: string }).url).toBe(d.url);
   });
 });

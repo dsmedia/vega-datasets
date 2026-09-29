@@ -14,7 +14,10 @@ import { REPO, loadCatalog } from '../catalog';
  */
 const PAGES_DATA = 'https://vega.github.io/vega-datasets/data/';
 
-const ATTEMPTS = 4;
+/** Six tries back off 1 + 2 + 4 + 8 + 16 s: a host that is down for half a minute (it happens to
+ *  idl.cs.washington.edu) doesn't fail a pull request. A try that hangs is cut off at 30 s. */
+const ATTEMPTS = 6;
+const TRY_TIMEOUT_MS = 30_000;
 const CONCURRENCY = 12;
 
 /**
@@ -47,12 +50,12 @@ async function status(url: string): Promise<number> {
   let last = 0;
   for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
     try {
-      last = (await fetch(url, { method: 'HEAD', redirect: 'follow' })).status;
+      last = (await fetch(url, { method: 'HEAD', redirect: 'follow', signal: AbortSignal.timeout(TRY_TIMEOUT_MS) })).status;
       if (last === 200 || last === 404) return last;
     } catch {
       last = -1;
     }
-    await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
+    if (attempt < ATTEMPTS - 1) await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
   }
   return last;
 }
