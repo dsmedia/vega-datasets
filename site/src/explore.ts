@@ -112,7 +112,7 @@ export function exploreSection(d: Dataset): HTMLElement | null {
   let destroyed = false;
   const draw = async () => {
     if (destroyed) return;
-    const [{ default: vegaEmbed }, { expressionInterpreter }, { themeConfig }] = await Promise.all([
+    const [{ default: vegaEmbed }, { expressionInterpreter }, { labelActions, themeConfig }] = await Promise.all([
       import("vega-embed"), import("vega-interpreter"), import("./vl"),
     ]);
     if (destroyed) return;
@@ -133,6 +133,7 @@ export function exploreSection(d: Dataset): HTMLElement | null {
       actions: { export: true, source: true, compiled: true, editor: false },
     });
     if (destroyed) { result.finalize(); return; }
+    labelActions(host);
     describe(spec);
     if (state.mode === "scatter") {
       const view = result.view;

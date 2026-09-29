@@ -1,9 +1,18 @@
 /**
  * Vega config built from the page's theme tokens, so charts match light and dark mode.
  * Marks keep Vega's defaults (tableau10, which the --chart-* tokens mirror); only the
- * chrome around them (axes, legends, text) follows the page.
+ * chrome around them (axes, legends, text) follows the page. Also what every embed needs
+ * from the page afterwards.
  */
 import { token } from "./theme";
+
+/**
+ * Name vega-embed's actions menu for screen readers: its <summary> holds only an icon
+ * (axe: summary-name). Call after each embed into `host`.
+ */
+export function labelActions(host: Element): void {
+  host.querySelector(".vega-actions")?.closest("details")?.querySelector("summary")?.setAttribute("aria-label", "Chart actions");
+}
 
 type Config = Record<string, unknown>;
 
