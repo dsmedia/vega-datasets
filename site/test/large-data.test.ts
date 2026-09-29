@@ -189,11 +189,11 @@ describe('the density builder', () => {
       try {
         await Promise.all([view.runAsync(), page.runAsync()]);
         const cells = (v: vega.View) => {
-          type Node = { marktype?: string; role?: string; items?: (Node & { x?: number; y?: number; width?: number; height?: number; fill?: string })[] };
+          type Node = { marktype?: string; role?: string; items?: (Node & { x?: number; y?: number; width?: number; height?: number })[] };
           const out: string[] = [];
           const walk = (n: Node) => {
             for (const it of n.items ?? []) {
-              if (n.marktype === 'rect' && n.role === 'mark') out.push([it.x, it.y, it.width, it.height, it.fill].map((z) => (typeof z === 'number' ? z.toFixed(1) : z)).join(' '));
+              if (n.marktype === 'rect' && n.role === 'mark') out.push([it.x, it.y, it.width, it.height].map((z) => (typeof z === 'number' ? z.toFixed(1) : z)).join(' '));
               walk(it);
             }
           };

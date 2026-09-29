@@ -67,6 +67,31 @@ export function forcedInk(c: SystemColors): ChartInk {
   };
 }
 
+/** How light a color is (0 black, 1 white; WCAG relative luminance), from #rgb, #rrggbb or rgb(). */
+export function luminance(color: string): number {
+  const hex = color.trim().match(/^#([\da-f]{3}|[\da-f]{6})$/i)?.[1];
+  const rgb = hex
+    ? (hex.length === 3 ? [...hex].map((h) => h + h) : hex.match(/../g)!).map((h) => parseInt(h, 16))
+    : (color.match(/\d+(?:\.\d+)?/g) ?? ["0", "0", "0"]).slice(0, 3).map(Number);
+  const [r, g, b] = rgb.map((v) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+}
+
+/**
+ * The sequential ramp for heatmaps (the density overview), from few to many: the fewest
+ * rows sit closest to the ground and the most stand out, so it runs light to dark on a
+ * light ground and dim to bright on a dark one (the page's dark theme, or a dark forced palette).
+ */
+export const HEATMAP_ON_LIGHT = ["#deebf7", "#6baed6", "#08306b"] as const;
+export const HEATMAP_ON_DARK = ["#1b3150", "#3b7dc4", "#d4e8ff"] as const;
+
+export function heatmapRamp(surface: string): readonly string[] {
+  return luminance(surface) < 0.2 ? HEATMAP_ON_DARK : HEATMAP_ON_LIGHT;
+}
+
 /**
  * The config for chart chrome `c`, in `font`. It sets every color Vega draws the chrome
  * with: the canvas renderer paints pixels, and forced-colors mode leaves SVG attributes alone.
@@ -83,6 +108,7 @@ export function chartConfig(c: ChartInk, font: string): Config {
     background: null,
     font,
     view: { stroke: null },
+    range: { heatmap: [...heatmapRamp(c.surface)] },
     axis: { ...guide, domainColor: c.rule, tickColor: c.rule, gridColor: c.grid, gridWidth: 1 },
     // The base colors draw a legend's symbols when no color scale does (size, shape).
     legend: { ...guide, symbolBaseStrokeColor: c.rule },

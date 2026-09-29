@@ -154,11 +154,14 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
   // Redraw for a new screen size once a chart is asked for (a large file waits for its
   // button): a change during the first draw, while the file is still loading, queues a
   // second draw at the new size. Canvas charts also redraw for a new theme (SVG charts
-  // restyle through the stylesheet).
+  // restyle through the stylesheet, except for the overview's data colors).
   const redraw = () => {
     if (requested) void render();
   };
-  if (canvas) onThemeChange(redraw);
+  // The density overview's ramp follows the theme (config.range.heatmap), so it redraws too.
+  onThemeChange(() => {
+    if (canvas || density) redraw();
+  });
   phone.addEventListener("change", redraw);
   describe();
   drawAll?.addEventListener("click", () => {

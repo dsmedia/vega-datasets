@@ -206,7 +206,9 @@ export function densityGrid(rows: readonly Record<string, unknown>[], x: string,
 }
 
 const SCHEMA = "https://vega.github.io/schema/vega-lite/v6.json";
-const DENSITY_COLOR = { type: "log", scheme: "blues" };
+/** Rows per bin on a log scale. The page takes its ramp from the theme (config.range.heatmap, lib/vega-theme.ts); the Editor, on white, from the blues scheme. */
+const DENSITY_COLOR = { type: "log" };
+const EDITOR_COLOR = { ...DENSITY_COLOR, scheme: "blues" };
 /** Bin edges without floating-point noise (0.30000000000000004). */
 const edge = (start: number, step: number, i: number) => Number((start + i * step).toPrecision(12));
 
@@ -233,7 +235,7 @@ export function densitySpec(d: Dataset, g: DensityGrid, height: number): Spec {
     encoding: {
       x,
       y,
-      color: { aggregate: "count", type: "quantitative", title: "Rows", scale: DENSITY_COLOR },
+      color: { aggregate: "count", type: "quantitative", title: "Rows", scale: EDITOR_COLOR },
       tooltip: [x, y, { aggregate: "count", type: "quantitative", title: "Rows", format: "," }],
     },
   };
