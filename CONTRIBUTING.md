@@ -238,16 +238,19 @@ test flips XFAIL → XPASS and the run fails, prompting allowlist removal.
 
 [vega.github.io/vega-datasets](https://vega.github.io/vega-datasets/) is deployed from `main` by `.github/workflows/site.yml`. It runs GitHub Pages' usual Jekyll build of the repository, so `data/`, `datapackage.json` and the other files keep their URLs, and puts the Field Guide from `site/` on top as the home page.
 
-The Field Guide is generated from `datapackage.json`, `data/` and `data/gallery-examples.json`, so documenting a dataset (see [Metadata and Documentation](#metadata-and-documentation)) also updates its page. The home page is `README.md`.
+The Field Guide is a home page and one page per dataset (`#cars`), rendered in the browser from `site/dist/catalog.json`. `scripts/build_site_catalog.py` writes that file from `datapackage.json` (descriptions, schemas, licenses, sources), `data/` (each table profiled field by field) and `data/gallery-examples.json` (which examples use which dataset), with sections of `README.md` for the home page's About list, and fetches the examples' thumbnails. Documenting a dataset (see [Metadata and Documentation](#metadata-and-documentation)) also updates its page.
 
 ```bash
-npm run site:build        # catalog and thumbnails (scripts/build_site_catalog.py), then the bundle, into site/dist
-npm run site:serve        # preview at http://localhost:8000
-npm run site:test         # starter charts and the gapminder animation, offline (Node 22.12+)
+npm run site:build        # catalog and thumbnails, then the bundle (site/src → site/dist/assets)
+npm run site:bundle       # the bundle only, after a change to site/src or site/static
+npm run site:serve        # preview at http://localhost:8000, served like GitHub Pages
+npm run site:test         # unit tests, offline, against the built catalog (Node 22.12+)
 npm run site:check-links  # every outbound link; needs the network
 ```
 
-A snapshot test lists the starter chart each dataset gets. If a change alters one on purpose, check the new chart and update the snapshot with `npx vitest run --config site/vitest.config.ts --project unit -u`.
+The unit tests (`site/test`) check the numbers the pages state, the search, filters and sort, the snippets and field summaries, and every chart the site draws: each compiles without Vega-Lite warnings and draws the real file, the scatter plots plot the file's own values, and a snapshot lists the starter chart each dataset gets (after a deliberate change, check the new chart and update it with `npx vitest run --config site/vitest.config.ts --project unit -u`). They also cover the page shell and stylesheet, Markdown escaping, dates in every timezone, and keyboard and history behavior.
+
+The page's Content Security Policy allows no `eval`, so Vega runs with its expression interpreter (`ast: true`, `vega-interpreter`), and tables are read with d3-dsv's `parseRows` and handed to Vega as values: Vega's own CSV reader (`csvParse`) compiles a row function. `site/test/dataset.test.ts` runs the reading under a simulated CSP. Deploys from repositories other than `vega/vega-datasets` are built with `SITE_NOINDEX=1`, which keeps them out of search results.
 
 ## Contributing Process
 
