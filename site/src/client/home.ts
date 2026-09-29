@@ -17,6 +17,7 @@ import {
   type HomeIndex,
   indexCatalog,
   isFiltered,
+  legacyDataset,
   listDatasets,
   NO_FILTERS,
   SORT_LABEL,
@@ -33,15 +34,16 @@ const CARDS = { wide: 9, phone: 4 };
 const cards = $(".cards");
 const cardFor = new Map([...cards.querySelectorAll<HTMLAnchorElement>("a.card[data-name]")].map((a) => [a.dataset.name!, a]));
 
-// Links from before the site had a page per dataset (#cars) open that dataset's page.
-const legacy = (() => {
-  try {
-    return decodeURIComponent(location.hash.slice(1));
-  } catch {
-    return "";
-  }
-})();
-if (legacy && cardFor.has(legacy)) location.replace(cardFor.get(legacy)!.href);
+// Links from before the site had a page per dataset (#cars) open that dataset's page: on
+// arrival, and when the fragment changes later (a link followed, or one typed in). The home
+// page's entry is replaced, so Back returns to where the reader was before it.
+const names = new Set(cardFor.keys());
+function openLegacy(): boolean {
+  const name = legacyDataset(location.hash, names);
+  if (name) location.replace(cardFor.get(name)!.href);
+  return name !== null;
+}
+openLegacy();
 
 const phone = matchMedia(PHONE);
 const search = $<HTMLInputElement>("#home-q");
@@ -229,7 +231,9 @@ const openTarget = () => {
     target.querySelector("summary")?.focus({ preventScroll: true });
   }
 };
-window.addEventListener("hashchange", openTarget);
+window.addEventListener("hashchange", () => {
+  if (!openLegacy()) openTarget();
+});
 openTarget();
 
 // Filters from the URL (a shared link, or Back from a dataset): apply them straight away.

@@ -219,3 +219,16 @@ test('the home page index (home-index.json) lists, counts and charts like the fu
   expect(chartRows(index, formatBytes)).toEqual(chartRows(catalog, formatBytes));
   for (const d of catalog.datasets) expect(index.usage(index.dataset(d.name)!)).toEqual(catalog.usage(d));
 });
+
+test('legacy #name links name a dataset; About anchors and unknown names do not', async () => {
+  const { legacyDataset } = await import('../src/lib/home-model');
+  const names = new Set(['cars', 'us_10m', 'weather']);
+  expect(legacyDataset('#cars', names)).toBe('cars');
+  expect(legacyDataset('#us_10m', names)).toBe('us_10m');
+  expect(legacyDataset('#about-versioning', names)).toBeNull();
+  expect(legacyDataset('#browse', names)).toBeNull();
+  expect(legacyDataset('', names)).toBeNull();
+  expect(legacyDataset('#', names)).toBeNull();
+  expect(legacyDataset('#%E0', names)).toBeNull();
+  expect(legacyDataset('#c%61rs', names)).toBe('cars');
+});

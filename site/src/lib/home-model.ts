@@ -228,3 +228,17 @@ export function readmeSection(readme: string, heading: string): string | null {
   const end = lines.findIndex((l, i) => i > start && l.startsWith("## "));
   return lines.slice(start + 1, end < 0 ? undefined : end).join("\n").trim();
 }
+
+/**
+ * The dataset a legacy link names (`#cars`, from before each dataset had a page), or null:
+ * for no fragment, a malformed one, or one that names no dataset (an About item's anchor).
+ */
+export function legacyDataset(hash: string, names: ReadonlySet<string>): string | null {
+  let name: string;
+  try {
+    name = decodeURIComponent(hash.replace(/^#/, ""));
+  } catch {
+    return null;
+  }
+  return name && names.has(name) ? name : null;
+}
