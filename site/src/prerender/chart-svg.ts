@@ -35,6 +35,11 @@ textMetrics.width = (item: TextItem, text?: unknown) => {
   return em * size * (bold ? 1.06 : 1);
 };
 
+/** Mark an interval brush's groups aria-hidden (their role has no name to read). */
+export function hideBrush(svg: string): string {
+  return svg.replace(/<g class="(mark-rect role-mark [^"]*brush_brush[^"]*)"/g, '<g aria-hidden="true" class="$1"');
+}
+
 export interface StaticChart {
   svg: string;
   width: number;
@@ -50,6 +55,8 @@ export async function staticChart(spec: Record<string, unknown>): Promise<Static
     let svg = await view.toSVG();
     // Links on the points repeat the cards' links; keep them out of the tab order (as the live view does).
     svg = svg.replace(/<a xlink:href=/g, '<a tabindex="-1" xlink:href=');
+    // Vega-Lite gives an interval brush's marks an ARIA role but no name; they're decoration.
+    svg = hideBrush(svg);
     const size = svg.match(/<svg [^>]*width="(\d+(?:\.\d+)?)" height="(\d+(?:\.\d+)?)"/);
     return { svg, width: Number(size?.[1] ?? 0), height: Number(size?.[2] ?? 0) };
   } finally {

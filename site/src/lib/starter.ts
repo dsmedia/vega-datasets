@@ -91,7 +91,8 @@ function geoFile(d: Dataset, base: Spec): Spec | null {
       height: 400,
       data: { url: d.url, format: { type: "topojson", feature } },
       projection: { type: PROJECTION[d.name] ?? "equalEarth" },
-      mark: { type: "geoshape", stroke: "white", strokeWidth: 0.5 },
+      // Thousands of shapes: screen readers get the chart's description, not each one.
+      mark: { type: "geoshape", stroke: "white", strokeWidth: 0.5, aria: false },
     };
   }
   return {
@@ -100,7 +101,7 @@ function geoFile(d: Dataset, base: Spec): Spec | null {
     height: 360,
     data: { url: d.url, format: { type: "json", property: "features" } },
     projection: { type: PROJECTION[d.name] ?? "equalEarth" },
-    mark: { type: "geoshape" },
+    mark: { type: "geoshape", aria: false },
   };
 }
 

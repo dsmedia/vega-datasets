@@ -50,6 +50,8 @@ export async function mountCatalogChart(
       return;
     }
     labelActions(host);
+    // Vega-Lite gives an interval brush's marks an ARIA role but no name; they're decoration.
+    live.querySelectorAll('[class*="brush_brush"]').forEach((g) => g.setAttribute("aria-hidden", "true"));
     // The live view is drawn: the static drawing goes.
     host.querySelectorAll(".chart-static").forEach((el) => el.remove());
     live.classList.remove("pending");
