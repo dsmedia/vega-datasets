@@ -1,0 +1,25 @@
+---
+/**
+ * Code snippets behind ARIA tabs, one panel per snippet. The first panel shows
+ * without scripts; client/snippets.ts adds switching (arrows, Home, End) and Copy.
+ */
+import type { Snippet } from "../lib/dataset-model";
+
+interface Props {
+  /** Prefixes the element ids. */
+  id: string;
+  label: string;
+  snippets: Snippet[];
+}
+const { id, label, snippets } = Astro.props;
+---
+<div class="snippets" data-snippets>
+  <div class="tabs" role="tablist" aria-label={label}>
+    {snippets.map((s, i) => (
+      <button class="tab" role="tab" type="button" id={`${id}-tab-${i}`} aria-controls={`${id}-panel-${i}`} aria-selected={i === 0 ? "true" : "false"} tabindex={i === 0 ? 0 : -1}>{s.name}</button>
+    ))}
+  </div>
+  {snippets.map((s, i) => (
+    <pre class="snippet" role="tabpanel" id={`${id}-panel-${i}`} aria-labelledby={`${id}-tab-${i}`} tabindex="0" hidden={i !== 0}><code>{s.code}</code></pre>
+  ))}
+</div>

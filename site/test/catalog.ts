@@ -2,12 +2,12 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Catalog, type CatalogFile } from '../src/catalog';
+import { Catalog, type CatalogFile } from '../src/lib/catalog';
 
 export const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 export function loadCatalog(): Catalog {
-  const file = path.join(REPO, 'site', 'dist', 'catalog.json');
+  const file = path.join(REPO, 'site', 'generated', 'catalog.json');
   if (!existsSync(file)) throw new Error(`${file} is missing: run \`npm run site:build\` first.`);
   return new Catalog(JSON.parse(readFileSync(file, 'utf8')) as CatalogFile);
 }

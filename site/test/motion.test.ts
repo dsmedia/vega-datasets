@@ -15,7 +15,7 @@ import {
   gapminderSpec,
   toCountries,
   vegaEditorUrl,
-} from '../src/motion';
+} from '../src/lib/motion';
 import { REPO } from './catalog';
 
 const rows = JSON.parse(readFileSync(path.join(REPO, 'data', 'gapminder.json'), 'utf8')) as GapminderRow[];

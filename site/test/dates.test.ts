@@ -2,8 +2,8 @@
 // date-times are the files' own values, so they must not shift with the viewer's timezone
 // (JavaScript reads them as local time: a day early in Tokyo).
 import { afterAll, expect, test } from 'vitest';
-import { parseDate } from '../src/format';
-import { binLabels, profileSummary } from '../src/profile';
+import { parseDate } from '../src/lib/format';
+import { binLabels, profileSummary } from '../src/lib/profile';
 import { loadCatalog } from './catalog';
 
 const catalog = loadCatalog();

@@ -1,11 +1,11 @@
 // Every outbound link the site generates must resolve: gallery pages, example
 // sources, Vega Editor example routes, each dataset's file URL (which the starter
-// charts load), and the links written into the page shell and the page code.
+// charts load), and the links written into the layout, pages and scripts.
 // Needs the network; run with `npm run site:check-links`.
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test } from 'vitest';
-import { starterSpec } from '../../src/starter';
+import { starterSpec } from '../../src/lib/starter';
 import { REPO, loadCatalog } from '../catalog';
 
 /**
@@ -18,18 +18,18 @@ const ATTEMPTS = 4;
 const CONCURRENCY = 12;
 
 /**
- * Fixed links in index.html and site/src: literal https URLs, and `${REPO}…` templates
+ * Fixed links in site/src (layout, pages, components, scripts): literal https URLs, and `${REPO}…` templates
  * with the repository URL filled in. Links built from other values (a dataset's file,
  * an encoded spec) are covered by the catalog loop instead. Fragments are dropped:
  * a HEAD request can't see them (home.test.ts checks the README anchors).
  */
 function writtenLinks(): string[] {
   const repo = 'https://github.com/vega/vega-datasets';
-  const src = path.join(REPO, 'site', 'src');
-  const texts = [
-    readFileSync(path.join(REPO, 'site', 'static', 'index.html'), 'utf8'),
-    ...readdirSync(src).map((f) => readFileSync(path.join(src, f), 'utf8')),
-  ];
+  const files = (dir: string): string[] => readdirSync(dir).flatMap((f) => {
+    const p = path.join(dir, f);
+    return statSync(p).isDirectory() ? files(p) : [p];
+  });
+  const texts = files(path.join(REPO, 'site', 'src')).map((f) => readFileSync(f, 'utf8'));
   const urls = texts.flatMap((t) => [
     ...[...t.matchAll(/https:\/\/[^\s"'`)<>]+/g)].map((m) => m[0]),
     ...[...t.matchAll(/`\$\{REPO\}([^`]*)`/g)].map((m) => repo + m[1]),

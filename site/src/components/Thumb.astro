@@ -1,0 +1,11 @@
+---
+/** A gallery example's thumbnail (drawn on white; stays on white in dark mode). */
+import { GALLERY_LABEL, type Example } from "../lib/catalog";
+
+interface Props {
+  example: Example;
+  eager?: boolean;
+}
+const { example: e, eager = false } = Astro.props;
+---
+<img src={e.thumb ? `${import.meta.env.BASE_URL}${e.thumb}` : ""} alt={`Thumbnail of the ${GALLERY_LABEL[e.gallery]} example “${e.name}”`} loading={eager ? "eager" : "lazy"} decoding="async" width={e.thumbSize?.[0]} height={e.thumbSize?.[1]}>
