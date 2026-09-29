@@ -18,6 +18,8 @@ export interface ChartOptions {
   labels: number;
   /** Put the legend above the plot (narrow screens) instead of at the right. */
   legendTop: boolean;
+  /** Legend entries per row when it sits on top: 2 on the narrowest phones, so it clears the menu button. */
+  legendColumns?: number;
   /** Font for the name labels (the page's mono stack). */
   monoFont: string;
 }
@@ -85,7 +87,7 @@ export function catalogSpec(rows: ChartRow[], counts: Record<FormatGroup, number
             title: "Format",
             scale: { domain: [...FORMAT_GROUPS], range: FORMAT_GROUPS.map((g) => FORMAT_COLORS[g]) },
             legend: o.legendTop
-              ? { orient: "top", direction: "horizontal", title: null, labelExpr: legendLabel, columnPadding: 10, symbolSize: 50, offset: 6 }
+              ? { orient: "top", direction: "horizontal", columns: o.legendColumns ?? 4, title: null, labelExpr: legendLabel, columnPadding: 10, symbolSize: 50, offset: 6 }
               : { labelExpr: legendLabel },
           },
           ...dim,

@@ -145,6 +145,7 @@ describe('the catalog chart', () => {
   test.each([
     ['wide, with brush', options],
     ['phone, tap only', { ...options, brush: false, height: 214, labels: 5, legendTop: true }],
+    ['narrowest phone', { ...options, brush: false, height: 214, labels: 5, legendTop: true, legendColumns: 2 }],
   ])('%s: compiles without warnings and draws every point', async (_name, o) => {
     const warnings: string[] = [];
     const logger = {

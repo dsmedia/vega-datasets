@@ -34,6 +34,16 @@ const CARDS = { wide: 9, phone: 4 };
 
 let teardown: (() => void) | null = null;
 
+/**
+ * What the reader set on the home page, kept while they visit a dataset so Back (or the
+ * Datasets link) returns to the same list. Only for this page view; the brush is not
+ * kept, since the chart is drawn afresh.
+ */
+const saved = {
+  filters: { ...NO_FILTERS, formats: new Set<FormatGroup>(), galleries: new Set<Gallery>() },
+  expanded: false,
+};
+
 /** Stop the home page's chart and listeners (before showing another page). */
 export function stopHome(): void {
   teardown?.();
@@ -94,7 +104,11 @@ function readmeBody(c: Catalog, heading: string): HTMLElement | null {
   return el;
 }
 
-export function renderHome(c: Catalog, root: HTMLElement): void {
+/**
+ * Render the home page. `returningFrom` names the dataset the reader just left: its card
+ * is scrolled into view and focused. Returns whether a card took focus.
+ */
+export function renderHome(c: Catalog, root: HTMLElement, returningFrom?: string): boolean {
   stopHome();
   const counts = homeCounts(c);
   const phone = matchMedia(PHONE);
@@ -166,10 +180,8 @@ export function renderHome(c: Catalog, root: HTMLElement): void {
   );
 
   // --- Datasets: chart, filters, cards ----------------------------------------------------------
-  const filters: Filters & { formats: Set<FormatGroup>; galleries: Set<Gallery> } = {
-    ...NO_FILTERS, formats: new Set(), galleries: new Set(),
-  };
-  let expanded = false;
+  const filters: Filters & { formats: Set<FormatGroup>; galleries: Set<Gallery> } = saved.filters;
+  filters.brush = null;
   const status = h("span", { class: "status mono", "aria-live": "polite" });
   const chartHost = h("div", { class: "catalog-chart" });
   const chartNote = h("span", { class: "hint" });
@@ -183,6 +195,8 @@ export function renderHome(c: Catalog, root: HTMLElement): void {
   const more = h("button", { class: "btn more", type: "button" });
   let chart: MountedChart | null = null;
 
+  search.value = filters.query;
+  sort.value = filters.sort;
   const formatChips = FORMAT_GROUPS.map((g) => chip(g, counts.formats[g], (on) => {
     if (on) filters.formats.add(g); else filters.formats.delete(g);
     refilter();
@@ -195,6 +209,9 @@ export function renderHome(c: Catalog, root: HTMLElement): void {
       refilter();
     },
   ));
+
+  formatChips.forEach((b, i) => b.setAttribute("aria-pressed", String(filters.formats.has(FORMAT_GROUPS[i]!))));
+  galleryChips.forEach((b, i) => b.setAttribute("aria-pressed", String(filters.galleries.has(GALLERIES[i]!))));
 
   const clearAll = () => {
     filters.query = "";
@@ -209,7 +226,7 @@ export function renderHome(c: Catalog, root: HTMLElement): void {
 
   /** A filter changed: show the first cards of the new list, then redraw. */
   function refilter(): void {
-    expanded = false;
+    saved.expanded = false;
     update();
   }
 
@@ -218,7 +235,7 @@ export function renderHome(c: Catalog, root: HTMLElement): void {
     const base = isFiltered({ ...filters, brush: null }) ? baseMatches(c, filters).map((d) => d.name) : null;
     chart?.setMatches(base);
     const limit = phone.matches ? CARDS.phone : CARDS.wide;
-    const shown = expanded ? list : list.slice(0, limit);
+    const shown = saved.expanded ? list : list.slice(0, limit);
     clear(status);
     if (isFiltered(filters)) {
       status.append(
@@ -230,7 +247,10 @@ export function renderHome(c: Catalog, root: HTMLElement): void {
     } else {
       status.append(SORT_NOTE[filters.sort]);
     }
+    // Re-rendering replaces the cards: keep focus on the same dataset's card if it still shows.
+    const focused = cards.contains(document.activeElement) ? document.activeElement?.getAttribute("href") : null;
     cards.replaceChildren(...shown.map((d) => card(c, d, max)));
+    if (focused) cards.querySelector<HTMLElement>(`a.card[href="${CSS.escape(focused)}"]`)?.focus({ preventScroll: true });
     if (!list.length) cards.append(h("p", { class: "cards-empty" }, "No dataset matches."));
     more.hidden = shown.length === list.length;
     more.textContent = `Show All ${formatCount(list.length)} Datasets`;
@@ -245,7 +265,7 @@ export function renderHome(c: Catalog, root: HTMLElement): void {
     update();
   });
   more.addEventListener("click", () => {
-    expanded = true;
+    saved.expanded = true;
     update();
   });
 
@@ -320,6 +340,11 @@ export function renderHome(c: Catalog, root: HTMLElement): void {
     strip, intro, browse, use, about,
   );
   update();
+  const back = returningFrom ? cards.querySelector<HTMLElement>(`a.card[href="#${CSS.escape(encodeURIComponent(returningFrom))}"]`) : null;
+  if (back) {
+    back.scrollIntoView({ block: "center" });
+    back.focus({ preventScroll: true });
+  }
 
   // --- The chart, and following the screen size -------------------------------------------------------
   let live = true;
@@ -335,6 +360,7 @@ export function renderHome(c: Catalog, root: HTMLElement): void {
     height: phone.matches ? 214 : 240,
     labels: phone.matches ? 5 : 9,
     legendTop: phone.matches,
+    legendColumns: chartHost.clientWidth < 340 ? 2 : 4,
     monoFont: token("--font-mono"),
   });
   mountCatalogChart(chartHost, rows, counts.formats, options, onBrush).then(
@@ -358,4 +384,5 @@ export function renderHome(c: Catalog, root: HTMLElement): void {
     phone.removeEventListener("change", onScreen);
     chart?.destroy();
   };
+  return back !== null;
 }
