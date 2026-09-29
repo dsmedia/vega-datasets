@@ -46,7 +46,8 @@ export function enhanceSparkline(wrap: HTMLElement): void {
     }
     const moves: Record<string, number> = { ArrowRight: active + 1, ArrowUp: active + 1, ArrowLeft: active - 1, ArrowDown: active - 1, Home: 0, End: bins.length - 1 };
     const next = moves[e.key];
-    if (next === undefined) return;
+    // A modified key is the browser's (Alt+Left is Back, Ctrl+Home the top of the page).
+    if (next === undefined || e.altKey || e.ctrlKey || e.metaKey) return;
     e.preventDefault();
     show(Math.min(bins.length - 1, Math.max(0, next)));
   });
