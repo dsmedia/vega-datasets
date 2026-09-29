@@ -425,6 +425,26 @@ def data_url(file: str, major: str, released: set[str]) -> str:
     return f"{PAGES_BASE}data/{file}"
 
 
+def geo_features(doc: dict[str, Any], fmt: str) -> dict[str, Any]:
+    """
+    How many shapes a geographic file holds, for the site's map rule (heavy maps open on a picture).
+
+    TopoJSON: the object names, and the features each one becomes (a GeometryCollection's
+    geometries, else one). GeoJSON: the FeatureCollection's features.
+    """
+    if fmt == "geojson":
+        features = doc.get("features")
+        return {"features": len(features) if isinstance(features, list) else 1}
+    objects: dict[str, Any] = doc.get("objects", {})
+    counts = {
+        name: len(obj.get("geometries", []))
+        if obj.get("type") == "GeometryCollection"
+        else 1
+        for name, obj in objects.items()
+    }
+    return {"objects": list(objects), "objectFeatures": counts}
+
+
 def build_dataset(
     resource: dict[str, Any], used_by: list[str], url: str, thumbs: Path
 ) -> dict[str, Any]:
@@ -445,8 +465,8 @@ def build_dataset(
         "rows": None,
         "preview": None,
     }
-    if fmt == "topojson":
-        entry["objects"] = list(json.loads(path.read_text("utf-8")).get("objects", {}))
+    if fmt in {"topojson", "geojson"}:
+        entry.update(geo_features(json.loads(path.read_text("utf-8")), fmt))
     if fmt == "png":
         name, _ = write_thumbnail(
             path.read_bytes(), ".png", thumbs / "data" / resource["name"]

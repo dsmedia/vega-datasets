@@ -15,6 +15,7 @@ from scripts.build_site_catalog import (
     data_url,
     editor_spec_url,
     example_slug,
+    geo_features,
     parse_dates,
     preview_rows,
     profile_field,
@@ -26,6 +27,26 @@ from scripts.build_site_catalog import (
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+def test_geo_features_counts_the_shapes_a_map_draws() -> None:
+    topo = {
+        "type": "Topology",
+        "objects": {
+            "counties": {
+                "type": "GeometryCollection",
+                "geometries": [{"type": "Polygon"}] * 3,
+            },
+            "land": {"type": "MultiPolygon"},
+        },
+    }
+    assert geo_features(topo, "topojson") == {
+        "objects": ["counties", "land"],
+        "objectFeatures": {"counties": 3, "land": 1},
+    }
+    geo = {"type": "FeatureCollection", "features": [{"type": "Feature"}] * 5}
+    assert geo_features(geo, "geojson") == {"features": 5}
+    assert geo_features({"type": "Feature"}, "geojson") == {"features": 1}
 
 
 def test_example_slug() -> None:
