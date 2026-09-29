@@ -15,6 +15,7 @@ import {
 } from "./dataset-model";
 import { h } from "./dom";
 import { exploreSection, stopExplore } from "./explore";
+import { siteDataUrl } from "./explore-model";
 import { formatBytes, formatCount, FORMAT_LABEL, plural } from "./format";
 import { renderMarkdown } from "./markdown";
 import { motionSection, stopMotion } from "./motion";
@@ -233,7 +234,8 @@ function rail(c: Catalog, d: Dataset): HTMLElement {
     h("div", { class: "rail-box rail-use" },
       h("h3", null, "Use This Dataset"),
       snippetTabs("use", "Snippet language", useSnippets(d)),
-      h("a", { class: "btn", href: d.url, download: fileName(d) }, `Download ${fileName(d)}`)),
+      // The site's own copy: browsers ignore `download` on other origins (jsDelivr) and open the file instead.
+      h("a", { class: "btn", href: siteDataUrl(d), download: fileName(d) }, `Download ${fileName(d)}`)),
     h("div", { class: "rail-box wide-only" },
       h("h3", null, "At a Glance"),
       h("dl", { class: "kv" },

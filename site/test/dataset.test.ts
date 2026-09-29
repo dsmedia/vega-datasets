@@ -1,7 +1,7 @@
 // The dataset page: how it tells you to load a file, what it says about each field,
 // and which live chart Explore draws — every scatter plot must compile and draw
 // points from the real file, with pickers and axis titles that follow each other.
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { csvParse } from 'd3-dsv';
 import LZString from 'lz-string';
@@ -113,6 +113,14 @@ describe('Explore', () => {
     const spec = starterChart(ds('cars'))!;
     expect((spec.data as { url: string }).url).toBe(ds('cars').url);
     expect((withDataUrl(spec, siteDataUrl(ds('cars'))).data as { url: string }).url).toBe('data/cars.json');
+  });
+
+  test('every file has a same-origin path (charts and the Download button, which needs one)', () => {
+    const page = 'https://vega.github.io/vega-datasets/';
+    for (const d of catalog.datasets) {
+      expect(new URL(siteDataUrl(d), page).origin, d.name).toBe(new URL(page).origin);
+      expect(existsSync(path.join(REPO, 'data', d.file)), d.name).toBe(true);
+    }
   });
 
   test('the caption counts rows only once they are read to draw (it never loads a file itself)', () => {
