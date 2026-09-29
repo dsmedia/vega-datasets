@@ -1,24 +1,42 @@
 /**
  * Vega, loaded on demand (the first chart a reader touches), and the options every
- * chart embeds with: expressions run through vega-interpreter, since the page's CSP
- * forbids compiling code, and tooltips take the page's look.
+ * chart embeds with. The page's CSP forbids compiling code and fetching from other
+ * origins, so the specs run as published with two documented Vega hooks (lib/vega-data.ts):
+ * expressions run through vega-interpreter, CSV and TSV go through readers registered
+ * with `vega.formats()`, and a loader fetches the public data URLs from the site's own
+ * `data/`. Tooltips take the page's look.
  */
+import type { Loader } from "vega";
 import type { EmbedOptions } from "vega-embed";
 import { chartConfig } from "../lib/vega-theme";
+import { readers, siteDataUri } from "../lib/vega-data";
+import { siteDataBase, siteText } from "./data";
 import { chartInk, token } from "./theme";
 
 export interface VegaModules {
   vegaEmbed: typeof import("vega-embed").default;
   expressionInterpreter: typeof import("vega-interpreter").expressionInterpreter;
+  loader: Loader;
 }
 
 let loading: Promise<VegaModules> | null = null;
 
 export function loadVega(): Promise<VegaModules> {
-  return (loading ??= Promise.all([import("vega-embed"), import("vega-interpreter")]).then(([embed, interp]) => ({
-    vegaEmbed: embed.default,
-    expressionInterpreter: interp.expressionInterpreter,
-  })));
+  return (loading ??= Promise.all([import("vega-embed"), import("vega-interpreter"), import("vega")]).then(([embed, interp, vega]) => {
+    // vega-loader's `formats` registry is exported by vega but missing from its type declarations.
+    const { formats } = vega as unknown as { formats(name: string, reader: unknown): void };
+    for (const [name, reader] of Object.entries(readers())) formats(name, reader);
+    // The site's own copy of a public data file, fetched once per page (the gapminder page
+    // draws two charts from one file); anything else goes through Vega's loader.
+    const loader = vega.loader();
+    const load = loader.load.bind(loader);
+    const local = siteDataBase();
+    loader.load = (uri: string, options?: unknown) => {
+      const url = siteDataUri(uri, local);
+      return url === uri ? load(uri, options as never) : siteText(url);
+    };
+    return { vegaEmbed: embed.default, expressionInterpreter: interp.expressionInterpreter, loader };
+  }));
 }
 
 /**
@@ -31,6 +49,7 @@ export function embedOptions(v: VegaModules, renderer: "svg" | "canvas", actions
     renderer,
     ast: true,
     expr: v.expressionInterpreter,
+    loader: v.loader,
     tooltip: { theme: "custom" },
     actions,
   };

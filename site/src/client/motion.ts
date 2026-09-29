@@ -6,6 +6,7 @@
  */
 import type { Result } from "vega-embed";
 import { type Colors, type Country, FIRST_YEAR, type GapminderRow, gapminderSpec, SEGMENT_MS, STEP_YEARS, toCountries, vegaEditorUrl } from "../lib/motion";
+import { siteDataBase, siteText } from "./data";
 import { $, h } from "./dom";
 import { embedOptions, loadVega } from "./embed";
 import { chartInk, onThemeChange, reducedMotion, token } from "./theme";
@@ -25,10 +26,9 @@ function colors(): Colors {
   };
 }
 
+/** The same fetch as Explore's scatter plot of gapminder.json, so the page loads the file once. */
 async function loadCountries(): Promise<Country[]> {
-  const res = await fetch(`${import.meta.env.BASE_URL}data/gapminder.json`);
-  if (!res.ok) throw new Error(`Could not load gapminder.json (HTTP ${res.status})`);
-  return toCountries((await res.json()) as GapminderRow[]);
+  return toCountries(JSON.parse(await siteText(`${siteDataBase()}gapminder.json`)) as GapminderRow[]);
 }
 
 async function start(section: HTMLElement): Promise<void> {
