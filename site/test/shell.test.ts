@@ -112,8 +112,33 @@ test('forced colors: data colors kept; chart text and rules, built or live, take
   const body = block.slice(0, block.indexOf('\n}\n'));
   expect(body).toMatch(/\.stack > span, \.gdot \{ forced-color-adjust: none; \}/);
   // The prerendered catalog chart sits in .catalog-chart, outside any .vega-embed.
-  expect(body).toMatch(/:is\(\.catalog-chart, \.explore-chart\) svg text \{ fill: CanvasText; \}/);
+  expect(body).toMatch(/:is\(\.catalog-chart, \.explore-chart\) svg text \{ fill: CanvasText !important; \}/);
   expect(body).not.toMatch(/\.vega-embed svg/);
+});
+
+test('forced colors override every color the stylesheet gives chart SVG (text, rules, brush)', () => {
+  // [element, property] pairs from rules; `important` keeps only !important declarations.
+  const pairs = (block: string, important: boolean) => {
+    const out = new Set<string>();
+    for (const [, selectors, decls] of block.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      if (!/catalog-chart/.test(selectors!) || !/\bsvg\b/.test(selectors!)) continue;
+      for (const [, prop, value] of decls!.matchAll(/(fill|stroke)\s*:\s*([^;]+);?/g)) {
+        if (important && !/!important/.test(value!)) continue;
+        for (const sel of selectors!.split(/,(?![^(]*\))/)) out.add(`${sel.trim().split(/\s+/).pop()} ${prop}`);
+      }
+    }
+    return out;
+  };
+  const bare = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const start = bare.indexOf('@media (forced-colors: active)');
+  const forcedBlock = bare.slice(start, bare.indexOf('\n}\n', start));
+  const outside = bare.replace(/@media[^{]+\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g, '');
+  const themed = pairs(outside, false);
+  const forced = pairs(forcedBlock, true);
+  expect(themed.size).toBeGreaterThan(2);
+  // A theming rule can be more specific than the forced one (.mark-text.role-mark text), so
+  // the forced declarations are !important for each element and property the theme colors.
+  expect([...themed].filter((p) => !forced.has(p))).toEqual([]);
 });
 
 test('snippets wrap long URLs at hyphens and spaces, not mid-word', () => {

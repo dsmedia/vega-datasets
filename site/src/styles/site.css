@@ -232,8 +232,7 @@ table.preview tr:last-child td { border-bottom: 0; }
    attributes alone. SVG charts here are also themed by the role-class rules above, which
    the mode leaves alone too and which outrank the config's attributes, and the catalog
    chart drawn when the site was built (.chart-static) has no config to redraw with: so
-   their text and rules take the system colors here as well. With :is(), these rules are
-   as specific as those and come after them, so they win. */
+   their text, rules and brush take the system colors here as well. */
 @media (forced-colors: active) {
   .stack > span, .gdot { forced-color-adjust: none; }
   .stack { outline: 1px solid CanvasText; }
@@ -241,9 +240,12 @@ table.preview tr:last-child td { border-bottom: 0; }
     outline: 2px solid Highlight; outline-offset: -2px;
   }
   .hist-bin.active .bar { fill: Highlight; }
-  :is(.catalog-chart, .explore-chart) svg text { fill: CanvasText; }
-  :is(.catalog-chart, .explore-chart) svg :is(.role-axis-domain, .role-axis-tick) line { stroke: CanvasText; }
-  :is(.catalog-chart, .explore-chart) svg .role-axis-grid line { stroke: GrayText; }
+  /* !important: the mode's colors must beat every theming rule above, however specific
+     (.mark-text.role-mark text, the dataset labels, outranks a plain "svg text"). */
+  :is(.catalog-chart, .explore-chart) svg text { fill: CanvasText !important; }
+  :is(.catalog-chart, .explore-chart) svg :is(.role-axis-domain, .role-axis-tick) line { stroke: CanvasText !important; }
+  :is(.catalog-chart, .explore-chart) svg .role-axis-grid line { stroke: GrayText !important; }
+  .catalog-chart svg [class*="brush_brush"] path { fill: Highlight !important; stroke: Highlight !important; }
 }
 
 /* --- Layout ------------------------------------------------------------------------ */
