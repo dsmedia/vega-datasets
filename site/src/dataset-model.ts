@@ -29,7 +29,7 @@ export function useSnippets(d: Dataset): Snippet[] {
   const parsed = d.format === "json" || d.format === "csv";
   if (isReleased(d)) {
     out.push({
-      name: "JS",
+      name: "JavaScript",
       code: `import data from 'vega-datasets';\n\n${parsed ? `const ${v} = await data['${d.file}']();` : `const url = data['${d.file}'].url;`}`,
     });
   }
@@ -41,7 +41,7 @@ export function useSnippets(d: Dataset): Snippet[] {
   }
   if (isReleased(d)) {
     out.push({
-      name: "Altair",
+      name: "Python",
       code: `from altair.datasets import data\n\n${d.kind === "table" ? `${v} = data.${d.name}()` : `url = data.${d.name}.url`}`,
     });
   }

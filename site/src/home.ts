@@ -121,8 +121,9 @@ export function renderHome(c: Catalog, root: HTMLElement): void {
   const intro = h("section", { class: "wrap intro", "aria-label": "Introduction" },
     h("div", { class: "intro-text" },
       h("p", { class: "lead" },
-        `${formatCount(counts.datasets)} datasets behind ${formatCount(counts.examplesWithData)} examples in the Vega, Vega-Lite and Altair galleries. `,
-        "Each one documents its fields, source and license, and links to every chart that uses it."),
+        "The example data behind the Vega, Vega-Lite and Altair galleries. ",
+        "Each dataset documents its fields, source and license, and links to every gallery example that uses it: ",
+        `${formatCount(counts.datasets)} datasets and ${formatCount(counts.examplesWithData)} examples in all.`),
       h("p", { class: "release mono" },
         `Release ${c.package.version}  ·  Data Package v2`, h("span", { class: "wide-only" }, "  ·  BSD-3-Clause code")),
       h("div", { class: "lead-buttons" },
@@ -138,7 +139,10 @@ export function renderHome(c: Catalog, root: HTMLElement): void {
     h("div", { class: "quickstart" },
       snippetTabs("qs", "Quick start", [
         { name: "URL", code: cdnUrl(c, "cars.json") },
-        { name: "npm", code: "npm install vega-datasets" },
+        {
+          name: "JavaScript",
+          code: "npm install vega-datasets\n\nimport data from 'vega-datasets';\nconst cars = await data['cars.json']();",
+        },
         {
           name: "Vega-Lite",
           code: [
@@ -154,8 +158,10 @@ export function renderHome(c: Catalog, root: HTMLElement): void {
         },
         { name: "Python", code: "from altair.datasets import data\n\ncars = data.cars()" },
       ]),
+      // A major-version URL floats; say so, and give the exact release for a fixed version.
       h("p", { class: "note" },
-        "Pin ", h("code", null, `@${c.package.version.split(".")[0]}`), " to get fixes without breaking changes. ",
+        "The ", h("code", null, `@${c.package.version.split(".")[0]}`), ` URL tracks ${c.package.version.split(".")[0]}.x releases, so it gets fixes without breaking changes. To lock a version, use `,
+        h("code", null, `@${c.package.version}`), ". ",
         h("button", { class: "link", type: "button", onclick: openVersioning }, "Versioning"))),
   );
 

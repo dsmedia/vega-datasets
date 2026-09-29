@@ -15,7 +15,7 @@ function renderFooter(d: Dataset | undefined): void {
     ? ["Spot an error? ", link(`${REPO}/blob/main/_data/datapackage_additions.toml`, "Edit this dataset's metadata"), " on GitHub."]
     : [
         "Documented in ", link(`${REPO}/blob/main/datapackage.json`, "datapackage.json"),
-        " · Code BSD-3-Clause · ", link(`${REPO}/blob/main/README.md`, "Edit this page"),
+        " · Code BSD-3-Clause",
       ]));
 }
 
