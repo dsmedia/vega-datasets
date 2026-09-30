@@ -322,3 +322,37 @@ export function namedAxes(measures: Field[]): { x: Field; y: Field } | null {
 export function totalsOf(d: Dataset, f: Field, m: Field): string[] {
   return d.totalValues?.[f.name]?.[m.name] ?? [];
 }
+
+// --- Phone legends ---------------------------------------------------------------------------
+
+/** Encoding channels that draw a legend. */
+const LEGEND_CHANNELS = ["color", "strokeDash", "shape", "size"] as const;
+
+/**
+ * A spec with its legends above the plot, in columns, for a phone's narrow column: on the
+ * right a legend takes half of 358 px. `labels` (the legend's values, when known) set the
+ * columns: four short labels to a row, two long ones. Each legend keeps its own properties
+ * (labels, formats); channels sharing a field get the same placement, so Vega-Lite still
+ * merges them into one legend. Layers and small multiples' inner specs alike. `offset`
+ * (px above the plot) clears anything drawn there (the scatter plot's y title).
+ */
+export function legendsOnTop(spec: Record<string, unknown>, labels: string[] = [], offset = 6): Record<string, unknown> {
+  const longest = Math.max(0, ...labels.map((l) => l.length));
+  const columns = longest <= 8 ? 4 : longest <= 14 ? 3 : 2;
+  const top = { orient: "top", direction: "horizontal", columns, columnPadding: 10, offset };
+  const unit = (u: Record<string, unknown>): Record<string, unknown> => {
+    const encoding = u.encoding as Record<string, Record<string, unknown>> | undefined;
+    if (!encoding) return u;
+    const moved = Object.fromEntries(
+      Object.entries(encoding).map(([channel, e]) => {
+        if (!(LEGEND_CHANNELS as readonly string[]).includes(channel) || !e?.field || e.legend === null) return [channel, e];
+        return [channel, { ...e, legend: { ...((e.legend as Record<string, unknown> | undefined) ?? {}), ...top } }];
+      }),
+    );
+    return { ...u, encoding: moved };
+  };
+  const layers = spec.layer as Record<string, unknown>[] | undefined;
+  if (layers) return { ...spec, layer: layers.map(unit) };
+  if (spec.spec) return { ...spec, spec: unit(spec.spec as Record<string, unknown>) };
+  return unit(spec);
+}

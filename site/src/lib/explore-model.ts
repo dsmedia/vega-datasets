@@ -5,7 +5,7 @@
  * Multiples" when it is one panel per group.
  */
 import { type Dataset, documentedRange, effectiveMissing, type Field, fieldTitle } from "./catalog";
-import { correlation, distinctValues, PALETTE_SIZE, sampled, type ScaleType, scaleFor, scaleType, summable, withScale } from "./chart-rules";
+import { correlation, distinctValues, legendsOnTop, PALETTE_SIZE, sampled, type ScaleType, scaleFor, scaleType, summable, withScale } from "./chart-rules";
 import { BAND_POLICY, rowBand } from "./large-data";
 import { formatCount } from "./format";
 import { category, categoryAsText, colorable, defaultPair, fieldRef, isMeasure, isYear, markerForms, missingFilter, PANEL_SIZE, starterSpec, tag, tagged, timeField, timeKeyOf, timeYear, titled, TOP, untag } from "./starter";
@@ -90,6 +90,8 @@ export interface ScatterOptions {
   /** Scroll to zoom and drag to pan (not on phones, where it would trap page scrolling). */
   zoom: boolean;
   height: number;
+  /** A phone's narrow column: the legend goes above the plot. */
+  phone?: boolean;
 }
 
 /** The measures to start with (starter.ts `defaultPair`: named axes, no near-duplicates, a log axis on x). */
@@ -148,6 +150,19 @@ function measureLookups(d: Dataset, measures: Field[]) {
  * are text marks that read those params (an axis title can't).
  */
 export function scatterSpec(d: Dataset, f: ScatterFields, o: ScatterOptions): Spec {
+  const spec = scatterBase(d, f, o);
+  // Above the y title, which the scatter plot draws just over the plot (a text mark).
+  return o.phone && f.color ? legendsOnTop(spec, legendLabels(f.color), 26) : spec;
+}
+
+/** A category's legend labels, as far as the profile knows them (its values, else its most common). */
+export function legendLabels(f: Field): string[] {
+  const p = f.profile;
+  if (p.kind !== "nominal") return [];
+  return p.values ?? p.top.map(([v]) => v);
+}
+
+function scatterBase(d: Dataset, f: ScatterFields, o: ScatterOptions): Spec {
   const options = f.measures.map((m) => m.name);
   const meta = measureLookups(d, f.measures);
   const prepare = [meta.missing, f.color ? missingFilter(d, [f.color]) : null, f.color ? categoryAsText(f.color) : null].filter((t) => t !== null);
@@ -243,10 +258,23 @@ export function starterChart(d: Dataset, phone = false): Spec | null {
   if (!spec) return null;
   if (spec.facet) {
     const size = phone ? PANEL_SIZE.phone : PANEL_SIZE.wide;
-    return { ...spec, spec: { ...(spec.spec as Spec), width: size, height: size } };
+    const panels = { ...spec, spec: { ...(spec.spec as Spec), width: size, height: size } };
+    return phone ? legendsOnTop(panels, colorLabels(d, panels)) : panels;
   }
   const height = discreteHeight(d, spec);
-  return { ...spec, width: "container", ...(height ? { height } : {}), autosize: { type: "fit-x", contains: "padding" } };
+  const sized = { ...spec, width: "container", ...(height ? { height } : {}), autosize: { type: "fit-x", contains: "padding" } };
+  return phone ? legendsOnTop(sized, colorLabels(d, sized)) : sized;
+}
+
+/** The labels of a spec's color legend, from its field's profile (or the domain it sets). */
+function colorLabels(d: Dataset, spec: Spec): string[] {
+  const unit = ((spec.spec as Spec | undefined) ?? (spec.layer as Spec[] | undefined)?.at(-1) ?? spec) as { encoding?: Record<string, Spec> };
+  const color = unit.encoding?.color;
+  const domain = (color?.scale as { domain?: unknown } | undefined)?.domain;
+  if (Array.isArray(domain)) return domain.map(String);
+  const name = String(color?.field ?? "").replace(/\\(.)/g, "$1");
+  const f = d.fields.find((x) => x.name === name);
+  return f ? legendLabels(f) : [];
 }
 
 /** Vega-Lite's default step (px) per value of a discrete axis. */

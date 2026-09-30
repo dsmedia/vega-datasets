@@ -71,7 +71,7 @@ const band = gate && !starterSpec(d)?.projection ? gate.band : null;
 const policy = band ? BAND_POLICY[band] : null;
 const zoomable = !policy || policy.zoom !== "never";
 const specFor = (mode: string, phone: boolean) =>
-  mode === "scatter" && sf && axes ? scatterSpec(d, sf, { ...axes, zoom: !phone && zoomable, height: phone ? 300 : 380 }) : (starterChart(d, phone) ?? starterSpec(d)!);
+  mode === "scatter" && sf && axes ? scatterSpec(d, sf, { ...axes, zoom: !phone && zoomable, height: phone ? 300 : 380, phone }) : (starterChart(d, phone) ?? starterSpec(d)!);
 const wideSpec = first ? specFor(first, false) : null;
 const phoneSpec = first ? specFor(first, true) : null;
 // The overview (a long table with a scatter plot) takes the button's place.
@@ -87,7 +87,7 @@ const mapPic = hasMapPreview(d) ? await mapPreview(d) : null;
 const reserve = wideSpec && phoneSpec && !mapPic
   ? {
       wide: await drawnChart(density ? densityPageSpec(d, density.grid, 380) : wideSpec, EXPLORE_WIDTH.wide),
-      phone: await drawnChart(density ? densityPageSpec(d, density.grid, 300) : phoneSpec, EXPLORE_WIDTH.phone),
+      phone: await drawnChart(density ? densityPageSpec(d, density.grid, 300, true) : phoneSpec, EXPLORE_WIDTH.phone),
     }
   : null;
 // The scatter caption's count for the default fields, so the caption doesn't grow when the chart draws.

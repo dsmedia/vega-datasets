@@ -16,6 +16,7 @@
  */
 import { type Dataset, fieldTitle } from "./catalog";
 import { formatBytes, formatCount } from "./format";
+import { legendsOnTop } from "./chart-rules";
 import { fieldRef, starterSpec } from "./starter";
 
 type Spec = Record<string, unknown>;
@@ -315,7 +316,13 @@ export function groupDigits(v: number): string {
   return int.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + (frac === undefined ? "" : `.${frac}`);
 }
 
-export function densityPageSpec(d: Dataset, g: DensityGrid, height: number): Spec {
+export function densityPageSpec(d: Dataset, g: DensityGrid, height: number, phone = false): Spec {
+  const spec = densityBase(d, g, height);
+  // On a phone the ramp goes above the plot, as every Explore legend does.
+  return phone ? legendsOnTop(spec) : spec;
+}
+
+function densityBase(d: Dataset, g: DensityGrid, height: number): Spec {
   // The tooltip's text is written here, once per bin, rather than by Vega expressions: under
   // the CSP they run interpreted, per bin, on the main thread as the page opens.
   const num = groupDigits;

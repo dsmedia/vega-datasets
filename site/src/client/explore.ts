@@ -86,13 +86,13 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
   const overviews = new Map<number, Spec>();
   const overview = (g: DensityGrid, h: number): Spec => {
     let spec = overviews.get(h);
-    if (!spec) overviews.set(h, (spec = densityPageSpec(d, g, h)));
+    if (!spec) overviews.set(h, (spec = densityPageSpec(d, g, h, phone.matches)));
     return spec;
   };
   /** The spec the page draws, exactly as the Editor opens it (the overview's Editor spec bins the public file). */
   const currentSpec = (): Spec => {
     if (density) return overview(density, height());
-    if (state.mode === "scatter" && fields) return scatterSpec(d, fields, { x: state.x, y: state.y, zoom: zoom(), height: height() });
+    if (state.mode === "scatter" && fields) return scatterSpec(d, fields, { x: state.x, y: state.y, zoom: zoom(), height: height(), phone: phone.matches });
     return starterChart(d, phone.matches) ?? starterSpec(d)!;
   };
 
