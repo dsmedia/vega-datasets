@@ -174,7 +174,10 @@ code, .mono { font-family: var(--font-mono); font-size: 0.85em; }
 :where(.catalog-chart, .explore-chart) svg .role-axis-domain line,
 :where(.catalog-chart, .explore-chart) svg .role-axis-tick line { stroke: var(--rule); }
 :where(.catalog-chart, .explore-chart) svg .role-axis-grid line { stroke: var(--rule-faint); }
-.catalog-chart svg [class*="brush_brush"] path { fill: var(--ink); stroke: var(--ink-muted); }
+/* An interval brush is a faint fill (brush_brush_bg) under a transparent frame (brush_brush):
+   only the fill takes the ink, or the frame covers the points it selects. */
+.catalog-chart svg [class*="brush_brush_bg"] path { fill: var(--ink); }
+.catalog-chart svg [class*="brush_brush"]:not([class*="brush_brush_bg"]) path { stroke: var(--ink-muted); }
 
 /* vega-embed actions menu */
 .vega-embed { width: 100%; }
@@ -249,7 +252,8 @@ table.preview tr:last-child td { border-bottom: 0; }
   :is(.catalog-chart, .explore-chart) svg text { fill: CanvasText !important; }
   :is(.catalog-chart, .explore-chart) svg :is(.role-axis-domain, .role-axis-tick) line { stroke: CanvasText !important; }
   :is(.catalog-chart, .explore-chart) svg .role-axis-grid line { stroke: GrayText !important; }
-  .catalog-chart svg [class*="brush_brush"] path { fill: Highlight !important; stroke: Highlight !important; }
+  .catalog-chart svg [class*="brush_brush_bg"] path { fill: Highlight !important; }
+  .catalog-chart svg [class*="brush_brush"]:not([class*="brush_brush_bg"]) path { stroke: Highlight !important; }
 }
 
 /* --- Layout ------------------------------------------------------------------------ */
