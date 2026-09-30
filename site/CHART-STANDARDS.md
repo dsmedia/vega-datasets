@@ -180,14 +180,16 @@ note, and no point but an outlier outside the frame, from the data files),
 
 No two axis labels overlap (`labelOverlap`, with room between them), no label is turned on
 its side when it fits upright, date labels match the span (`dateFormat`), an integer's
-histogram bins step and are labeled by whole numbers (4, not 4.0), and a log or symlog
-color legend labels its decades, not only its two ends.
+histogram bins step and are labeled by whole numbers (4, not 4.0), a log or symlog
+color legend labels its decades inside the data (or its 1-2-5 steps, when fewer than three
+decades are), not only its two ends, and no legend's title sits on its labels (a vertical
+gradient's end labels reach half a line past its ends; the title keeps clear of them).
 
 Why: a label that overlaps another, or has to be read sideways, is a label the reader
 skips. Knaflic's advice for axes is that they be easy to read at a glance.
 
-Tests: `browser/labels.mjs` (the rendered label boxes of every dataset's Explore chart in
-every mode, at 1360 and 390 px), `chart-standards.test.ts` (integer bins, legend decades).
+Tests: `browser/labels.mjs` (the rendered label and legend-title boxes of every dataset's
+Explore chart in every mode, at 1360 and 390 px), `chart-standards.test.ts` (integer bins, legend decades).
 
 ## S11. A time axis ends at the data
 

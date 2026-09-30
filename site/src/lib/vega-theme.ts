@@ -112,7 +112,9 @@ export function chartConfig(c: ChartInk, font: string): Config {
     // Room between labels (S10): Vega-Lite drops a label that comes closer to its neighbor than this.
     axis: { ...guide, domainColor: c.rule, tickColor: c.rule, gridColor: c.grid, gridWidth: 1, labelSeparation: 4 },
     // The base colors draw a legend's symbols when no color scale does (size, shape).
-    legend: { ...guide, symbolBaseStrokeColor: c.rule },
+    // A vertical gradient's end labels are centered on its ends, half a line past them: the
+    // title keeps a line's clearance above (S10; Vega's default 5 px let "10M" run into it).
+    legend: { ...guide, symbolBaseStrokeColor: c.rule, titlePadding: 12 },
     // Small multiples' panel names and their field: as legible as axis titles.
     header: { labelColor: c.ink, titleColor: c.ink, labelFontSize: 12, titleFontSize: 12, labelFontWeight: "bold", titleFontWeight: "normal" },
     title: { color: c.strong, subtitleColor: c.ink },

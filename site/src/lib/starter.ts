@@ -692,8 +692,14 @@ function timeSeries(d: Dataset, base: Spec, t: Field, m: Field, fields: Field[],
         color: (() => {
           const c = measure(hue, aggregate ? { aggregate: hue === m ? aggregate : "mean" } : {});
           // S10: a log color's legend labels its decades, not only its ends.
-          const decades = s.scale.type ? ((s.axis.values as number[] | undefined) ?? []).filter((v) => v === 0 || Number.isInteger(Math.log10(Math.abs(v)))) : [];
-          const legend = decades.length >= 3 ? { legend: { values: decades, labelExpr: POWER_LABEL, gradientLength: 200, labelOverlap: "greedy", titlePadding: 10 } } : {};
+          // Only decades inside the data: a value past the scale's end is drawn past the gradient's, onto the title.
+          const q = hue.profile as { min?: number; max?: number };
+          const inside = (v: number) => (q.min === undefined || v >= q.min) && (q.max === undefined || v <= q.max);
+          const ticks = s.scale.type ? ((s.axis.values as number[] | undefined) ?? []).filter(inside) : [];
+          const decades = ticks.filter((v) => v === 0 || Number.isInteger(Math.log10(Math.abs(v))));
+          // The decades, or with fewer than three inside the data (prices of 6 to 800), the axis's 1-2-5 steps.
+          const values = decades.length >= 3 ? decades : ticks;
+          const legend = values.length >= 3 ? { legend: { values, labelExpr: POWER_LABEL, gradientLength: 200, labelOverlap: "greedy" } } : {};
           return { ...c, scale: { ...(c.scale as Enc | undefined), ...(s.scale.type ? { type: s.scale.type } : {}), ...(s.scale.type === "symlog" ? { constant: s.scale.constant } : {}), scheme: "blues" }, ...legend };
         })(),
       },

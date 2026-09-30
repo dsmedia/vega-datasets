@@ -1,5 +1,5 @@
 // Chart labels read: on every dataset's Explore chart, in every mode, at 1360 and 390 px,
-// no two axis labels overlap, no label is turned on its side when it fits upright, and a
+// no two axis labels overlap, no legend title sits on its labels, no label is turned on its side when it fits upright, and a
 // gradient legend (a color scale) labels more than its two ends (CHART-STANDARDS.md S10).
 // Measured on the rendered SVG: the boxes Chrome lays out, not estimates.
 // Not part of `npm run site:test` (it needs Chrome and a built site).
@@ -68,6 +68,16 @@ function labelProblems() {
       const centers = turned.map(({ r }) => (r.left + r.right) / 2).sort((x, y) => x - y);
       const gap = Math.min(...centers.slice(1).map((c, i) => c - centers[i]));
       if (Math.max(...widths) + 4 <= (Number.isFinite(gap) ? gap : Infinity)) problems.push(`labels turned though they fit upright ("${turned[0].t.textContent}")`);
+    }
+  }
+  // A legend's title clear of its labels (a vertical gradient's top label sits at its top edge, under the title).
+  for (const legend of svg.querySelectorAll('g.role-legend')) {
+    const title = boxes([...legend.querySelectorAll('g.role-legend-title text')])[0];
+    if (!title) continue;
+    for (const { t, r } of boxes([...legend.querySelectorAll('g.role-legend-label text')])) {
+      const w = Math.min(title.r.right, r.right) - Math.max(title.r.left, r.left);
+      const h = Math.min(title.r.bottom, r.bottom) - Math.max(title.r.top, r.top);
+      if (w > 1 && h > -2) problems.push(`legend title "${title.t.textContent}" on its label "${t.textContent}"`);
     }
   }
   // A gradient legend labels more than its ends (a log scale's decades).
