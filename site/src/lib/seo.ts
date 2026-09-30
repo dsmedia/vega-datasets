@@ -27,6 +27,27 @@ export function noindex(env: Record<string, string | undefined>): boolean {
   return env.SITE_NOINDEX === "1" || (repo !== undefined && repo !== "vega/vega-datasets");
 }
 
+/** The repository a build links its edit links to when `SITE_REPO` doesn't name one. */
+export const DEFAULT_SITE_REPO = "vega/vega-datasets";
+
+/**
+ * The repository that built the site, for its edit links ("Add", "Edit this dataset's
+ * metadata"): `SITE_REPO` (`owner/name`; site.yml sets it from `github.repository`), else
+ * vega/vega-datasets. Project links ("View on GitHub", Contributing) stay on {@link REPO}.
+ */
+export function siteRepo(env: Record<string, string | undefined>): string {
+  const repo = env.SITE_REPO?.trim();
+  return `https://github.com/${repo && /^[\w.-]+\/[\w.-]+$/.test(repo) ? repo : DEFAULT_SITE_REPO}`;
+}
+
+/** The metadata status page: its path relative to the home page, and its title. */
+export const STATUS_PATH = "metadata/";
+export const STATUS_TITLE = "Metadata Status";
+
+export function statusUrl(): string {
+  return HOME_URL + STATUS_PATH;
+}
+
 /** A dataset page's path, relative to the home page. */
 export function datasetPath(name: string): string {
   return `datasets/${encodeURIComponent(name)}/`;
