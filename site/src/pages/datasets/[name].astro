@@ -16,7 +16,7 @@ import Base from "../../layouts/Base.astro";
 import { type Dataset, type Gallery, GALLERIES, GALLERY_LABEL, licenseFamily } from "../../lib/catalog";
 import { fileName, formatDescription, interleave, isReleased, linkText, sizeDescription, useSnippets } from "../../lib/dataset-model";
 import { bothValuesNote, chartFeatures, defaultAxes, exploreModes, hasDensity, mapNote, MODE_LABEL, scatterFields, scatterSpec, starterChart } from "../../lib/explore-model";
-import { BAND_POLICY, densityCaption, densityPageSpec, densitySpec, drawPointsLabel, hasMapPreview, tableBand } from "../../lib/large-data";
+import { BAND_POLICY, densityCaption, densityPageSpec, densitySpec, drawPointsLabel, hasMapPreview, loadGate } from "../../lib/large-data";
 import { densityOf } from "../../prerender/density";
 import { mapPreview } from "../../prerender/map-preview";
 import { drawnChart } from "../../prerender/chart-svg";
@@ -68,14 +68,16 @@ const first = modes[0];
 // hint until the client knows the device).
 // By the table's size, whichever chart opens first (a bar chart of 12,000 rows loads the same file);
 // a map follows the map rule instead.
-const band = modes.length && !starterSpec(d)?.projection ? tableBand(d) : null;
+const gate = modes.length && d.rows !== null ? loadGate(d.rows, !!starterSpec(d)?.projection) : null;
+const band = gate && !starterSpec(d)?.projection ? gate.band : null;
 const policy = band ? BAND_POLICY[band] : null;
 const zoomable = !policy || policy.zoom !== "never";
 const specFor = (mode: string, phone: boolean) =>
   mode === "scatter" && sf && axes ? scatterSpec(d, sf, { ...axes, zoom: !phone && zoomable, height: phone ? 300 : 380 }) : (starterChart(d, phone) ?? starterSpec(d)!);
 const wideSpec = first ? specFor(first, false) : null;
 const phoneSpec = first ? specFor(first, true) : null;
-const pointsButton = band === "canvas" || band === "on-request";
+// The overview (a long table with a scatter plot) takes the button's place.
+const pointsButton = !!gate?.button && !hasDensity(d);
 const bigFile = !band && (d.bytes ?? 0) > AUTO_LOAD_BYTES;
 // Long tables open on a density overview binned now; heavy maps on a picture drawn now.
 const grid = hasDensity(d) && axes ? densityOf(d, axes) : null;
@@ -190,7 +192,7 @@ const title = datasetTitle(d);
           <div class="explore-chart" style={reserve ? `--chart-h: ${reserve.wide.height}px; --chart-h-phone: ${reserve.phone.height}px` : undefined}>
             {mapPic && <img class="chart-preview" src={`${base}previews/${d.name}.webp`} width={mapPic.width} height={mapPic.height} alt={`The ${d.name} map, as the starter chart draws it`}>}
             {mapPic && <button class="btn draw" type="button">Draw the Live Map ({formatBytes(d.bytes)})</button>}
-            {pointsButton && !mapPic && <button class="btn draw" type="button" data-auto-draw={policy?.autoDraw}>{first === "scatter" ? drawPointsLabel(d) : `Draw Chart (${formatBytes(d.bytes)})`}</button>}
+            {pointsButton && !mapPic && <button class="btn draw" type="button" data-auto-draw={gate?.autoDraw === "desktop" ? "desktop" : undefined}>{first === "scatter" ? drawPointsLabel(d) : `Draw Chart (${formatBytes(d.bytes)})`}</button>}
             {bigFile && !density && !mapPic && <button class="btn draw" type="button">Draw Chart ({formatBytes(d.bytes)})</button>}
           </div>
           <div class="chart-foot">

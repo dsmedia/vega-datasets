@@ -458,7 +458,15 @@ def profile_field(
         }
         if span > 0:
             profile["bins"] = _bins((valid - lo).dt.total_seconds(), span)
-        return {**profile, **_spacing(valid)}
+        # ISO dates without a time (or with a zone) are read as UTC by browsers, so the
+        # site buckets them in UTC; other forms are read as local wall-clock time.
+        iso = s.dtype == pl.String and bool(
+            s.drop_nulls()
+            .str.strip_chars()
+            .str.contains(r"^\d{4}-\d{2}-\d{2}(T[\d:.]+(Z|[+-]\d{2}:?\d{2}))?$")
+            .all()
+        )
+        return {**profile, **_spacing(valid), **({"utc": True} if iso else {})}
     text = s.cast(pl.String, strict=False).drop_nulls()
     if markers is None:
         text = text.filter(text.str.len_chars() > 0)
@@ -671,7 +679,8 @@ def structure(
         "points": coordinates(numbers, fields),
         "timeKeys": keys,
         "timeKeyBuckets": time_key_buckets(df, fields, numbers, keys),
-        "totalValues": total_values(df, fields),
+        "totalValues": total_values(df, fields, numbers, keys),
+        "presentCategories": present_categories(df, fields, schema),
     }
     return {k: v for k, v in found.items() if v}
 
@@ -776,58 +785,107 @@ def parsed_values(
     return pl.DataFrame({f["name"]: parsed(f) for f in fields})
 
 
-# Values that stand for all the others in a grouping column: the whole value, never a
-# prefix ("All other causes" is a remainder, a series of its own). "All" followed by a
-# plural noun of up to three words ("All natural disasters", "All industries") is a
-# total too, unless it names what is left over; titles ("All About Eve") are not. The one place these names are kept; the site reads the
-# values found (`totalValues`).
-TOTAL_NAMES: Final = frozenset({
-    "all",
-    "total",
-    "totals",
-    "grand total",
-    "overall",
-    "world",
-    "sum",
-    "all categories",
-    "all countries",
-    "all regions",
-})
-_ALL_NOUN: Final = re.compile(
-    r"^all\s+(?!(other|others|else|remaining|rest|the|a|an|about|of|in|at|on|for|to|my|your|our|we|you|i)\b)"
-    r"[a-z-]+(\s[a-z-]+){0,2}s$"
-)
-_REMAINDER: Final = re.compile(r"\b(other|others|else|remaining|rest)\b")
-
-
-def is_total(value: str) -> bool:
-    """Whether a category's value names the total of the others ("Total", "World", "All industries")."""
-    v = " ".join(value.lower().split())
-    if v in TOTAL_NAMES:
-        return True
-    return bool(_ALL_NOUN.match(v)) and not _REMAINDER.search(v)
+# A value is a total when, for (nearly) every time and series it appears in, it equals the
+# sum of the other values of its column: decided by the data, not by its name, so "All
+# natural disasters" is a total if it adds up, and "All other causes" never is.
+TOTAL_MIN_KEYS: Final = 3
+TOTAL_SHARE: Final = 0.9
+TOTAL_TOLERANCE: Final = 0.01
+TOTAL_MAX_VALUES: Final = 300
 
 
 def total_values(
-    df: pl.DataFrame, fields: list[dict[str, Any]]
+    df: pl.DataFrame,
+    fields: list[dict[str, Any]],
+    numbers: dict[str, pl.Series],
+    keys: dict[str, list[str]],
 ) -> dict[str, list[str]]:
     """
-    The values of each grouping column that stand for all the others (`is_total`).
+    Per grouping column, its values that are the sum of the column's other values.
 
-    Every value of the column is read (a total among sixty regions is still found).
-    Only columns whose values repeat are groupings; names and titles ("All About Eve")
-    are not.
+    A column counts when it keys a time with the time (``timeKeys``). For each of its
+    values and each number field, the value's row is compared with the sum of the other
+    rows of the same time and series: within 1% in at least 90% of at least three such
+    groups, the value is a total, and the site leaves it out wherever it adds rows up.
     """
+    fields = [f for f in fields if f["name"] in df.columns]
+    values = parsed_values(df, fields, numbers)
     out: dict[str, list[str]] = {}
-    for f in fields:
-        if f.get("type", "string") != "string" or f["name"] not in df.columns:
+    for t, key in keys.items():
+        for g in key:
+            if values[g].dtype != pl.String or g in out:
+                continue
+            context = [t, *(k for k in key if k != g)]
+            measures = [m for m in numbers if m not in context and m != g]
+            distinct = values[g].drop_nulls().unique().sort().to_list()
+            if len(distinct) > TOTAL_MAX_VALUES:
+                continue
+            if hits := [
+                v for v in distinct if _adds_up(values, g, v, context, measures)
+            ]:
+                out[g] = hits
+    return out
+
+
+def _adds_up(
+    values: pl.DataFrame, g: str, v: str, context: list[str], measures: list[str]
+) -> bool:
+    """Whether value ``v`` of ``g`` is the sum of the others for some measure, group by group."""
+    mine = values.filter(pl.col(g) == v)
+    rest = values.filter(pl.col(g) != v)
+    for m in measures:
+        others = rest.group_by(context).agg(
+            pl.col(m).sum().alias("others"), pl.len().alias("n")
+        )
+        pairs = (
+            mine.select([*context, m])
+            .join(others, on=context, how="inner")
+            .drop_nulls()
+        )
+        pairs = pairs.filter(pl.col("n") >= 2)
+        if pairs.height < TOTAL_MIN_KEYS:
             continue
-        values = df[f["name"]].cast(pl.String).drop_nulls()
-        distinct = values.unique().sort().to_list()
-        if len(distinct) > values.len() / 2:
+        close = (pl.col(m) - pl.col("others")).abs() <= TOTAL_TOLERANCE * pl.col(
+            "others"
+        ).abs() + 1e-9
+        if pairs.select(close.mean()).item() >= TOTAL_SHARE:
+            return True
+    return False
+
+
+def present_categories(
+    df: pl.DataFrame, fields: list[dict[str, Any]], schema: dict[str, Any]
+) -> dict[str, dict[str, int]]:
+    """
+    How many of a category's values keep a row once a number field's markers are left out.
+
+    Per category column and number field with missing-value markers. A chart of that field by that category leaves out those rows, and with them any value
+    that has none left; its axis has this many values. Only where it differs from the
+    column's own count.
+    """
+    fields = [f for f in fields if f["name"] in df.columns]
+    out: dict[str, dict[str, int]] = {}
+    for c in fields:
+        if c.get("type", "string") != "string":
             continue
-        if hits := [v for v in distinct if is_total(v)]:
-            out[f["name"]] = hits
+        column = df[c["name"]].cast(pl.String)
+        total = column.drop_nulls().n_unique()
+        if total > TOTAL_MAX_VALUES:
+            continue
+        for m in fields:
+            if m.get("type") not in {"integer", "number"}:
+                continue
+            markers = missing_values(
+                m.get("missingValues", schema.get("missingValues"))
+            )
+            if not markers:
+                continue
+            kept = column.filter(
+                ~df[m["name"]].cast(pl.String).is_in(markers).fill_null(value=False)
+            )
+            n = kept.drop_nulls().n_unique()
+            if n < total:
+                out.setdefault(c["name"], {})[m["name"]] = n
     return out
 
 

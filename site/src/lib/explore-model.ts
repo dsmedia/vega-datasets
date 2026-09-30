@@ -160,7 +160,7 @@ export function scatterSpec(d: Dataset, f: ScatterFields, o: ScatterOptions): Sp
   const { opacity } = BAND_POLICY[rowBand(d.rows ?? 0)];
   const params: Spec[] = [];
   if (o.zoom) params.push({ name: "zoom", select: "interval", bind: "scales" });
-  if (f.color) params.push({ name: "pick", select: { type: "point", fields: [f.color.name] }, bind: "legend" });
+  if (f.color) params.push({ name: "pick", select: { type: "point", fields: [fieldRef(f.color.name)] }, bind: "legend" });
   // The plotted values need names no field of the file has: a calculate `as: "x"` would overwrite a
   // field called x (platformer_terrain) before the next calculate reads it.
   const taken = new Set(d.fields.map((m) => m.name));
@@ -264,10 +264,17 @@ export function discreteHeight(d: Dataset, spec: Spec): number | null {
   if (!y || spec.height !== undefined || (y.type !== "nominal" && y.type !== "ordinal")) return null;
   const name = String(y.field ?? "").replace(/\\(.)/g, "$1");
   const f = d.fields.find((x) => x.name === name);
-  const all = f ? distinctValues(f) : null;
-  if (!f || all === null) return null;
+  const counted = f ? distinctValues(f) : null;
+  if (!f || counted === null) return null;
+  // Rows with a missing value of the measure are left out, and categories with them.
+  const x = (spec.encoding as Record<string, Spec>).x;
+  const transforms = (spec.transform as Spec[] | undefined) ?? [];
+  const summed = transforms.flatMap((t) => ((t.aggregate as Spec[] | undefined) ?? []).map((a) => String(a.field)));
+  const measures = [String(x?.field ?? ""), ...summed].map((n) => n.replace(/\\(.)/g, "$1"));
+  const present = measures.map((m) => d.presentCategories?.[f.name]?.[m]).find((n) => n !== undefined);
+  const all = present ?? counted;
   // The top twenty leave out totals, then keep twenty at most.
-  const top = ((spec.transform as Spec[] | undefined) ?? []).some((t) => t.window);
+  const top = transforms.some((t) => t.window);
   const shown = top ? Math.min(TOP, all - totalsOf(d, f).length) : all;
   return shown > 0 ? shown * STEP : null;
 }

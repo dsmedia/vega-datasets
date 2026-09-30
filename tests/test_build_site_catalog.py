@@ -23,6 +23,7 @@ from scripts.build_site_catalog import (
     missing_values,
     numeric_values,
     parse_dates,
+    present_categories,
     preview_rows,
     profile_field,
     read_table,
@@ -703,37 +704,26 @@ def test_time_keys_compare_parsed_values() -> None:
     assert time_keys(df, fields, numbers) == {"year": ["cohort"]}
 
 
-def test_total_values_read_every_value_of_a_category() -> None:
-    regions = [f"r{i:02}" for i in range(12)]
-    df = pl.DataFrame({
-        "region": [*regions, "Total"] * 2,
-        "title": ["All About Eve", *regions] * 2,
-    })
-    fields = [{"name": "region", "type": "string"}, {"name": "title", "type": "string"}]
-    # "All About Eve" is a name, not a total: only whole names and "All <noun>" count.
-    assert total_values(df, fields) == {"region": ["Total"]}
-    titles = pl.DataFrame({"title": ["All Industries", *[f"t{i}" for i in range(70)]]})
-    # Values that don't repeat are names, not groups.
-    assert total_values(titles, [{"name": "title", "type": "string"}]) == {}
-
-
 # Codex round 2
 
 
-def test_total_values_scan_every_group_and_match_whole_values() -> None:
+def test_totals_among_more_than_sixty_groups() -> None:
     regions = [f"Region{i:02}" for i in range(60)]
-    df = pl.DataFrame({"region": [*regions, "Total"] * 2})
-    assert total_values(df, [{"name": "region", "type": "string"}]) == {
-        "region": ["Total"]
-    }
-    causes = pl.DataFrame({
-        "cause": ["Cancer", "Heart disease", "All other causes"] * 3
+    rows = [(y, r, 10) for y in ("2000", "2001", "2002") for r in regions]
+    rows += [(y, "Total", 600) for y in ("2000", "2001", "2002")]
+    df = pl.DataFrame({
+        "year": [r[0] for r in rows],
+        "region": [r[1] for r in rows],
+        "count": [str(r[2]) for r in rows],
     })
-    assert total_values(causes, [{"name": "cause", "type": "string"}]) == {}
-    world = pl.DataFrame({"area": ["World", "Asia", "Europe"] * 2})
-    assert total_values(world, [{"name": "area", "type": "string"}]) == {
-        "area": ["World"]
-    }
+    fields = [
+        {"name": "year", "type": "integer"},
+        {"name": "region", "type": "string"},
+        {"name": "count", "type": "number"},
+    ]
+    numbers = {n: numeric_values(df[n]) for n in ("year", "count")}
+    keys = time_keys(df, fields, numbers)
+    assert total_values(df, fields, numbers, keys) == {"region": ["Total"]}
 
 
 def test_time_key_buckets_notice_an_entity_repeating_within_a_month() -> None:
@@ -762,3 +752,59 @@ def test_coordinates_count_rows_outside_the_fitted_box() -> None:
     points = coordinates({"lat": lat, "lon": lon}, fields)
     assert points is not None
     assert points["outsideBox"] >= 1
+
+
+# Codex round 3
+
+
+def test_totals_are_decided_by_the_data() -> None:
+    years = ["2000", "2001", "2002"]
+    causes = {"Cancer": 10, "Heart disease": 20, "All unspecified causes": 5}
+    rows = [(y, c, v) for y in years for c, v in causes.items()]
+    df = pl.DataFrame({
+        "year": [r[0] for r in rows],
+        "cause": [r[1] for r in rows],
+        "deaths": [str(r[2]) for r in rows],
+    })
+    fields = [
+        {"name": "year", "type": "integer"},
+        {"name": "cause", "type": "string"},
+        {"name": "deaths", "type": "number"},
+    ]
+    numbers = {n: numeric_values(df[n]) for n in ("year", "deaths")}
+    keys = time_keys(df, fields, numbers)
+    assert total_values(df, fields, numbers, keys) == {}
+    # A value that is the sum of the others in every year is a total, whatever its name.
+    summed = [*rows, *((y, "All natural disasters", 35) for y in years)]
+    df2 = pl.DataFrame({
+        "year": [r[0] for r in summed],
+        "cause": [r[1] for r in summed],
+        "deaths": [str(r[2]) for r in summed],
+    })
+    numbers2 = {n: numeric_values(df2[n]) for n in ("year", "deaths")}
+    assert total_values(df2, fields, numbers2, time_keys(df2, fields, numbers2)) == {
+        "cause": ["All natural disasters"]
+    }
+
+
+def test_present_categories_leave_out_rows_with_missing_measures() -> None:
+    cats = [f"c{i:02}" for i in range(60)]
+    df = pl.DataFrame({
+        "cat": cats * 2,
+        "m": ["10" if c == "c00" else "-99" for c in cats] * 2,
+    })
+    fields = [
+        {"name": "cat", "type": "string"},
+        {"name": "m", "type": "number", "missingValues": ["-99"]},
+    ]
+    assert present_categories(df, fields, {}) == {"cat": {"m": 1}}
+
+
+def test_utc_dates_are_marked() -> None:
+    assert (
+        profile_field(pl.Series("d", ["2019-01-31", "2019-02-01"]), "date")["utc"]
+        is True
+    )
+    assert "utc" not in profile_field(
+        pl.Series("d", ["2019/01/31", "2019/02/01"]), "date"
+    )

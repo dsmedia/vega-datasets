@@ -36,6 +36,8 @@ export interface TemporalProfile {
   bins?: number[];
   distinct?: number;
   evenlySpaced?: true;
+  /** ISO dates (a date alone, or with a zone): browsers read them as UTC, so charts bucket them in UTC. */
+  utc?: true;
 }
 
 export interface NominalProfile {
@@ -126,6 +128,8 @@ export interface Dataset {
   timeKeys?: Record<string, string[]>;
   /** Per date field with a time key, the time units whose buckets still hold one row per key (a sum there counts nothing twice). */
   timeKeyBuckets?: Record<string, string[]>;
+  /** Per category and number field with missing-value markers: the category's values left once those rows go (only where fewer). */
+  presentCategories?: Record<string, Record<string, number>>;
   /** Per text field, its values that stand for all the others ("Total"), found among every value. */
   totalValues?: Record<string, string[]>;
   /** Pairs of number fields that move together (|r| ≥ 0.9), as `[a, b, r]`. */

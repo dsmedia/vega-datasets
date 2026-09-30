@@ -245,7 +245,8 @@ export function sampled(t: Field): boolean {
 
 // --- Summing where totals are meant ---------------------------------------------------------
 
-const COUNT_NAME = /(^|[_\s])(count|counts|people|population|pop|deaths|cases|number|total|votes|visitors|passengers|jobs)($|[_\s])/i;
+/** Name parts of a count of things (read with `nameTokens`, like the rate parts). */
+const COUNT_TOKEN = /^(count|counts|people|population|pop|deaths|cases|number|total|votes|visitors|passengers|jobs)$/i;
 const COUNT_DESC = /^(the )?(total )?(number|count) of\b/i;
 /** Name parts that make a measure a rate or a summary (`deaths_per100k`, `avgPrice`, `pct`, `%`), whatever else the name says. */
 const RATE_TOKEN = /^(per|rate|rates|ratio|ratios|pct|percent|percentage|share|shares|avg|average|mean|median|index|perc|proportion|density|%)$/i;
@@ -257,8 +258,6 @@ export function nameTokens(name: string): string[] {
     .split(/[_\-\s.]+/)
     .flatMap((part) => part.match(/[A-Za-z]+|\d+|[^A-Za-z\d]+/g) ?? []);
 }
-/** Words that make a count a rate or an average, which don't add up ("number of children per woman"). */
-const NOT_A_TOTAL = /\b(per|rate|ratio|average|mean|median|share|percent|percentage)\b|%/i;
 
 /**
  * Is a measure a count of things (people, deaths, jobs), so that rows for separate groups
@@ -268,11 +267,10 @@ const NOT_A_TOTAL = /\b(per|rate|ratio|average|mean|median|share|percent|percent
 export function summable(f: Field): boolean {
   const p = f.profile;
   if (p.kind !== "quantitative" || p.min < 0) return false;
-  const words = [f.title ?? "", f.description ?? ""];
-  if (words.some((w) => NOT_A_TOTAL.test(w))) return false;
-  if (nameTokens(f.name).some((t) => RATE_TOKEN.test(t))) return false;
+  // One reading for name, title and description: "Deaths per100k" in any of them is a rate.
+  if ([f.name, f.title ?? "", f.description ?? ""].some((text) => nameTokens(text).some((t) => RATE_TOKEN.test(t)))) return false;
   if (f.description && COUNT_DESC.test(f.description.trim())) return true;
-  return COUNT_NAME.test(f.name) || COUNT_NAME.test(f.title ?? "");
+  return [f.name, f.title ?? ""].some((text) => nameTokens(text).some((t) => COUNT_TOKEN.test(t)));
 }
 
 // --- G-7: obvious axes -----------------------------------------------------------------------

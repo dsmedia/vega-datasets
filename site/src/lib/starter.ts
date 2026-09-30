@@ -160,7 +160,7 @@ export function missingFilter(d: Dataset, fields: Field[]): Enc | null {
  * (`parse: null`) and parsed after the filter (`toDate`, as Vega-Lite's own parse does).
  * These go before the chart's own transforms. Without such metadata the spec is unchanged.
  */
-/** The source fields a spec's transforms read (aggregate and window fields, groupings, sorts), not the ones they compute. */
+/** The source fields a spec's transforms read (aggregate and window fields, groupings, sorts), as field references, not the ones they compute. */
 function transformFields(spec: Spec): string[] {
   const computed = new Set<string>();
   const read: string[] = [];
@@ -183,7 +183,7 @@ function withMetadata(d: Dataset, spec: Spec | null): Spec | null {
   const encoding = ((spec.spec as Spec | undefined)?.encoding ?? spec.encoding) as Record<string, Enc> | undefined;
   if (!encoding) return spec;
   // Fields the encodings show, the facet splits by, and the chart's own transforms read (a sum per group).
-  const used = new Set([...Object.values(encoding).map((e) => e.field), (spec.facet as Enc | undefined)?.field, ...transformFields(spec).map(fieldRef)]);
+  const used = new Set([...Object.values(encoding).map((e) => e.field), (spec.facet as Enc | undefined)?.field, ...transformFields(spec)]);
   const fields = d.fields.filter((f) => used.has(fieldRef(f.name)));
   const dates = fields.filter((f) => f.profile.kind === "temporal" && effectiveMissing(d, f)?.length);
   const transform = [
@@ -519,7 +519,7 @@ function timeSeries(d: Dataset, base: Spec, t: Field, m: Field, fields: Field[])
     mark: date ? { type: "line", interpolate: "monotone", tooltip: true } : { type: "line", point: rows <= 60, tooltip: true },
     encoding: {
       x: date
-        ? { field: fieldRef(along.name), type: "temporal", ...(unit ? { timeUnit: unit } : {}), axis: { ...TIME_AXIS, format: dateFormat(along) }, ...titled(along) }
+        ? { field: fieldRef(along.name), type: "temporal", ...(unit ? { timeUnit: along.profile.kind === "temporal" && along.profile.utc ? `utc${unit}` : unit } : {}), axis: { ...TIME_AXIS, format: dateFormat(along) }, ...titled(along) }
         : measure(along, { scale: { zero: false }, axis: { format: "d", ...TIME_AXIS } }),
       y: measure(m, aggregate ? { aggregate, ...(band ? { scale: { zero: false } } : {}) } : scaled(m, band ? { zero: false } : {})),
       ...(series ? { color: category(series) } : {}),
@@ -673,7 +673,7 @@ function starterRule(d: Dataset): Spec | null {
       width: 480,
       transform: [
         ...(totalsOf(d, many).length ? [{ filter: `indexof(${tagged(totalsOf(d, many))}, ${tag(`datum[${JSON.stringify(many.name)}]`)}) < 0` }] : []),
-        { aggregate: [{ op: "sum", field: m1.name, as: total }], groupby: [many.name] },
+        { aggregate: [{ op: "sum", field: fieldRef(m1.name), as: total }], groupby: [fieldRef(many.name)] },
         { window: [{ op: "row_number", as: rank }], sort: [{ field: total, order: "descending" }] },
         { filter: `datum[${JSON.stringify(rank)}] <= ${TOP}` },
       ],

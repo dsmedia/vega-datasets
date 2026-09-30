@@ -82,7 +82,7 @@ exports[`starter chart choices 1`] = `
 annual_precip: none
 anscombe: point x=X y=Y facet=Series
 barley: point x=mean(yield) y=site color=year
-birdstrikes: line x=yearmonth(Flight Date) y=mean(Cost Other)
+birdstrikes: line x=utcyearmonth(Flight Date) y=mean(Cost Other)
 budget: bar x=count() y=Source category name
 budgets: line x=forecastYear y=value color=budgetYear detail=budgetYear
 burtin: point x=log(Penicillin) y=log(Streptomycin) color=Gram_Staining
@@ -132,21 +132,21 @@ platformer_terrain: point x=x y=y color=name
 political_contributions: line x=Coverage_End_Date y=sum(Total_Receipts)
 population: line x=year y=sum(people)
 population_engineers_hurricanes: point x=population y=engineers
-seattle_weather: line x=yearmonth(date) y=mean(precipitation)
+seattle_weather: line x=utcyearmonth(date) y=mean(precipitation)
 seattle_weather_hourly_normals: line x=yearmonthdate(date) y=mean(pressure)
 sp500: line x=date y=price
-sp500_2000: line x=yearmonth(date) y=mean(open)
+sp500_2000: line x=utcyearmonth(date) y=mean(open)
 species: bar x=mean(habitat_yearround_pct) y=common_name
 stocks: line x=date y=log(price) color=symbol
 udistrict: none
 unemployment: bar x=rate y=count()
-unemployment_across_industries: line x=yearmonth(date) y=sum(count)
+unemployment_across_industries: line x=utcyearmonth(date) y=sum(count)
 uniform_2d: point x=u y=v
 us_10m: geoshape albersUsa
 us_employment: line x=month y=nonfarm
 us_state_capitals: circle latitude=lat longitude=lon over basemap albersUsa transformed
 volcano: none
-weather: line x=yearmonth(date) y=mean(precipitation) color=location
+weather: line x=utcyearmonth(date) y=mean(precipitation) color=location
 weekly_weather: none
 wheat: line x=year y=wheat
 windvectors: point latitude=latitude longitude=longitude color=speed angle=dir over basemap equalEarth fitted

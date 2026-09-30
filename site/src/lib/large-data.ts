@@ -68,6 +68,19 @@ export function tableBand(d: Dataset): Band | null {
   return d.rows === null ? null : rowBand(d.rows);
 }
 
+/**
+ * Whether a table's Explore chart waits for a button, whatever chart opens first (points,
+ * a time series, bars) and whatever modes it has: past the SVG band a file is big enough
+ * that a phone loads it only when asked (a desktop-class device draws the canvas band by
+ * itself). A long table with a scatter plot opens on its density overview, which holds the
+ * place of the button. Maps follow the map rule (a picture) instead.
+ */
+export function loadGate(rows: number, map: boolean): { band: Band; button: boolean; autoDraw: When } {
+  const band = rowBand(rows);
+  if (map) return { band, button: false, autoDraw: "always" };
+  return { band, button: band !== "svg", autoDraw: BAND_POLICY[band].autoDraw };
+}
+
 /** The label of the button that draws the points of a table that doesn't draw by itself. */
 export function drawPointsLabel(d: Dataset): string {
   const all = rowBand(d.rows ?? 0) === "density" ? "All " : "";

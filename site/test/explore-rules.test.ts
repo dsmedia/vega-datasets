@@ -8,7 +8,10 @@ import { describe, expect, test } from 'vitest';
 import type { Dataset, Field } from '../src/lib/catalog';
 import { idName, informative, logTicks, nameTokens, namedAxes, nearDuplicate, scaleFor, scaleType, summable } from '../src/lib/chart-rules';
 import { chartConfig, tokenInk } from '../src/lib/vega-theme';
-import { chartFeatures, defaultAxes, exploreModes, mapNote, pickScale, scatterFields, scatterSpec, starterChart } from '../src/lib/explore-model';
+import { chartFeatures, defaultAxes, discreteHeight, exploreModes, mapNote, pickScale, scatterFields, scatterSpec, starterChart } from '../src/lib/explore-model';
+import * as largeData from '../src/lib/large-data';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { basemapUrl, starterSpec } from '../src/lib/starter';
 import { draw, rowsWith } from './draw';
 import { described, strip } from './fixtures';
@@ -542,5 +545,103 @@ describe('Codex round 2', () => {
     });
     expect((starterSpec(d)!.projection as Record<string, unknown>).fit).toBeDefined();
     expect(mapNote(d)).toBe('The map frames the middle 98% of the points; 1 of 100 rows lies outside the frame.');
+  });
+});
+
+// Codex round 3: each test on Codex's input, shown failing on 42276a9 before the fix.
+describe('Codex round 3', () => {
+  const regions = (n: number, prefix = 'r') => Array.from({ length: n }, (_, i) => [`${prefix}${String(i).padStart(2, '0')}`, 3] as [string, number]);
+  const year = quant('year', 2000, 2002, { type: 'integer' }, { distinct: 3, evenlySpaced: true });
+  const many = (name: string, distinct: number, top: [string, number][]) => ({ ...nominal(name, top), profile: { kind: 'nominal' as const, distinct, top, missing: 0 } });
+
+  test('#1 a rate in the title (or description) is never summed', () => {
+    expect(summable(quant('deaths', 0, 100, { title: 'Deaths per100k' }))).toBe(false);
+    expect(summable(quant('deaths', 0, 100, { description: 'Deaths per100k people.' }))).toBe(false);
+    const d = table([year, many('country', 13, regions(6)), quant('deaths', 100, 100, { title: 'Deaths per100k' })], 39, { timeKeys: { year: ['country'] }, totalValues: {} });
+    expect(enc(starterSpec(d)).y).toMatchObject({ aggregate: 'mean' });
+  });
+
+  test('#2 the chart buckets date-only values in UTC, as the builder checks them (New York and Tokyo)', () => {
+    // ISO dates: the builder marks them utc (tested in test_build_site_catalog.py).
+    const days: Field = { name: 'date', type: 'date', description: null, profile: { kind: 'temporal', min: '2019-01-31T00:00:00Z', max: '2021-02-01T00:00:00Z', missing: 0, distinct: 3, utc: true } };
+    const d = table([days, many('region', 400, regions(6)), quant('population', 100, 100)], 1200, {
+      timeKeys: { date: ['region'] }, timeKeyBuckets: { date: ['yearmonthdate', 'yearmonth'] }, totalValues: {},
+    });
+    const spec = starterSpec(d)!;
+    const rows = ['2019-01-31', '2019-02-01', '2021-02-01'].flatMap((date) => Array.from({ length: 400 }, (_, i) => ({ date, region: `r${i}`, population: 100 })));
+    const script = fileURLToPath(new URL('./tz-sums.mjs', import.meta.url));
+    for (const tz of ['America/New_York', 'Asia/Tokyo', 'UTC']) {
+      const out = execFileSync(process.execPath, [script], { input: JSON.stringify({ spec, rows }), env: { ...process.env, TZ: tz } }).toString();
+      // Each month holds one date: 400 regions of 100.
+      expect(JSON.parse(out)).toEqual([40000, 40000, 40000]);
+    }
+  });
+
+  test('#3 the height counts only the categories the missing-value filter leaves', () => {
+    const cat = many('cat', 60, regions(6));
+    const m = quant('m', 1, 10, { missingValues: ['-99'] });
+    const d = table([cat, m], 120, { presentCategories: { cat: { m: 1 } } });
+    expect(discreteHeight(d, starterSpec(d)!)).toBe(20);
+  });
+
+  test('#4 a bracketed source field still draws the top twenty', async () => {
+    const origin = many('origin', 61, regions(6));
+    const count = quant('count[0]', 1, 10);
+    const d = table([origin, many('destination', 61, regions(6)), count], 122, { totalValues: {} });
+    const rows = Array.from({ length: 61 }, (_, i) => [{ origin: `o${i}`, 'count[0]': 10 }, { origin: `o${i}`, 'count[0]': 5 }]).flat();
+    const view = await draw(starterSpec(d)!, rows);
+    try {
+      expect(new Set(rowsWith(view, 'total').map((r) => r.total))).toEqual(new Set([15]));
+    } finally {
+      view.finalize();
+    }
+  });
+
+  test('#5 a big table on a phone never loads without a button, whatever its modes', () => {
+    const gate = (largeData as unknown as { loadGate?: (rows: number, map: boolean) => { button: boolean; autoDraw: string } }).loadGate;
+    expect(gate).toBeTypeOf('function');
+    for (const rows of [100, 6000, 30000, 50001, 200000]) {
+      const g = gate!(rows, false);
+      const band = largeData.rowBand(rows);
+      // Anything past the SVG band waits for a button on a phone (canvas: on desktop it draws itself).
+      expect(g.button).toBe(band !== 'svg');
+      expect(g.autoDraw).toBe(band === 'svg' ? 'always' : band === 'canvas' ? 'desktop' : 'never');
+    }
+    expect(gate!(200000, true).button).toBe(false);
+  });
+});
+
+describe('field names with dots, brackets and backslashes draw in every chart kind (Codex round 3, #4)', () => {
+  const odd = { cat: 'g.roup', m: 'm[0]', m2: 'w\\v', t: 'd.ate' };
+  const cats = ['a', 'b', 'c', 'd'];
+  const cat = nominal(odd.cat, cats.map((c) => [c, 6] as [string, number]));
+  const kinds: [string, Dataset, Record<string, unknown>[]][] = [
+    ['bars', table([cat, quant(odd.m, 1, 9)], 24), cats.flatMap((c) => [1, 2].map((v) => ({ [odd.cat]: c, [odd.m]: v })))],
+    ['histogram', table([quant(odd.m, 1, 9)], 24), [1, 2, 3, 5, 8].map((v) => ({ [odd.m]: v }))],
+    ['scatter', table([quant(odd.m, 1, 9), quant(odd.m2, 1, 9), cat], 24), cats.flatMap((c, i) => [{ [odd.m]: i + 1, [odd.m2]: 9 - i, [odd.cat]: c }])],
+    ['time series', table([dates(odd.t, 3), quant(odd.m, 1, 9)], 3, { timeKeys: { [odd.t]: [] } }), ['2000-01-01', '2000-02-01', '2000-03-01'].map((t, i) => ({ [odd.t]: t, [odd.m]: i + 1 }))],
+    ['top twenty', table([{ ...nominal(odd.cat, cats.map((c) => [c, 3] as [string, number])), profile: { kind: 'nominal', distinct: 61, top: cats.map((c) => [c, 3] as [string, number]), missing: 0 } }, quant('count.all', 1, 9)], 122, { totalValues: {} }), Array.from({ length: 61 }, (_, i) => ({ [odd.cat]: `c${i}`, 'count.all': i + 1 }))],
+  ];
+  test.each(kinds)('%s', async (_kind, d, rows) => {
+    const view = await draw(starterSpec(d)!, rows);
+    try {
+      const svg = await view.toSVG();
+      expect((svg.match(/<(path|rect|circle|line)\b/g) ?? []).length).toBeGreaterThanOrEqual(3);
+      expect(svg).not.toMatch(/NaN|undefined/);
+    } finally {
+      view.finalize();
+    }
+  });
+  test('the Explore scatter plot', async () => {
+    const d = table([quant(odd.m, 1, 9), quant(odd.m2, 1, 9), cat], 24);
+    const f = scatterFields(d)!;
+    const rows = cats.map((c, i) => ({ [odd.m]: i + 1, [odd.m2]: 9 - i, [odd.cat]: c }));
+    const view = await draw(scatterSpec(d, f, { ...defaultAxes(d, f), zoom: true, height: 300 }), rows);
+    try {
+      expect(rowsWith(view, odd.m).length).toBeGreaterThanOrEqual(4);
+      expect(await view.toSVG()).not.toMatch(/NaN/);
+    } finally {
+      view.finalize();
+    }
   });
 });
