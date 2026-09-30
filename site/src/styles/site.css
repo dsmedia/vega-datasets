@@ -459,6 +459,12 @@ table.status tbody tr:target > * { background: var(--selected-bg); }
 }
 .snippet code { font: inherit; }
 .snippets .snippet { border-top: 0; padding-right: 72px; min-height: 48px; }
+/* The panels share one grid cell, so the box is as tall as its tallest panel and switching
+   tabs never moves the page; a hidden panel keeps its space but isn't shown or reachable. */
+.snippets { display: grid; grid-template-columns: minmax(0, 1fr); }
+.snippets > .snippet { grid-row: 2; grid-column: 1; }
+/* !important: beats the global [hidden] rule, which would drop the panel's space. */
+.snippets > .snippet[hidden] { display: block !important; visibility: hidden; }
 /* Long URLs wrap rather than scroll (how far they reach depends on the monospace font). */
 .quickstart .snippet { white-space: pre-wrap; overflow-wrap: anywhere; }
 .copy-btn {
