@@ -16,7 +16,7 @@ import { catalogSpec } from "../lib/catalog-chart";
 import { formatBytes, formatCount } from "../lib/format";
 import { chartRows, FORMAT_GROUPS, homeCounts, listDatasets, NO_FILTERS, readmeSection, showcase, SORT_LABEL, SORT_NOTE, type Sort } from "../lib/home-model";
 import { markdownToHtml } from "../lib/markdown";
-import { catalogJsonLd, HOME_DESCRIPTION, HOME_TITLE, REPO, STATUS_PATH, STATUS_TITLE } from "../lib/seo";
+import { catalogJsonLd, datasetPath, HOME_DESCRIPTION, HOME_TITLE, REPO, STATUS_PATH, STATUS_TITLE } from "../lib/seo";
 
 const counts = homeCounts(c);
 const max = Math.max(...c.datasets.map((d) => d.usedBy.length), 1);
@@ -48,7 +48,7 @@ const about = readmeItems.flatMap(([id, title, hint, heading]) => {
 <Base title={HOME_TITLE} description={HOME_DESCRIPTION} path="" section="home" jsonLd={catalogJsonLd(c)}>
   <div class="wrap"><h1 class="home-title"><b>Vega Datasets</b> – The Data Behind the Examples</h1></div>
   <div class="showcase" aria-hidden="true">
-    {showcase(c, 8).map((e) => <a href={e.url} target="_blank" rel="noopener" tabindex="-1"><Thumb example={e} eager /></a>)}
+    {showcase(c, 8).map((p) => <a href={`${import.meta.env.BASE_URL}${datasetPath(p.dataset)}`} tabindex="-1"><Thumb example={p.example} eager /><span class="showcase-name mono">{p.dataset}</span></a>)}
   </div>
 
   <section class="wrap intro" aria-label="Introduction">
