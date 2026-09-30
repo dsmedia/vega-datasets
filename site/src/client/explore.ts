@@ -12,13 +12,15 @@
  */
 import type { Dataset } from "../lib/catalog";
 import { deviceSignals, isDesktopClass } from "../lib/device";
-import { bothValuesNote, chartFeatures, defaultAxes, exploreModes, type Mode, pickScale, scatterFields, scatterSpec, starterChart } from "../lib/explore-model";
+import { bothValuesNote, chartFeatures, defaultAxes, exploreModes, type Mode, modeChart, pickScale, scatterFields, scatterSpec } from "../lib/explore-model";
 import { scaleFor } from "../lib/chart-rules";
 import { allowed, BAND_POLICY, type DensityGrid, densityPageSpec, tableBand } from "../lib/large-data";
 import { editorUrl, starterSpec } from "../lib/starter";
 import { pointSource } from "../lib/vega-data";
 import { $, h, readJson } from "./dom";
+import { serial } from "../lib/serial";
 import { ChartCodeError, embedOptions, labelActions, loadVega } from "./embed";
+import { ENTRY, legendKeys, selectionStores } from "./legend-keys";
 import { onThemeChange } from "./theme";
 
 type Spec = Record<string, unknown>;
@@ -93,7 +95,7 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
   const currentSpec = (): Spec => {
     if (density) return overview(density, height());
     if (state.mode === "scatter" && fields) return scatterSpec(d, fields, { x: state.x, y: state.y, zoom: zoom(), height: height(), phone: phone.matches });
-    return starterChart(d, phone.matches) ?? starterSpec(d)!;
+    return modeChart(d, state.mode, phone.matches) ?? starterSpec(d)!;
   };
 
   const describe = () => {
@@ -112,15 +114,64 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
   };
 
   let result: import("vega-embed").Result | undefined;
+  let drawnSpec: Spec | null = null;
+  let drawnMode: Mode = state.mode;
+  let disposeKeys = () => {};
   /** The picker (0 x, 1 y) to focus once the next draw has put new ones in place. */
   let refocus: number | null = null;
-  let queue: Promise<void> = Promise.resolve();
+  /** The legend entry (by its label) to focus once the next draw is in place. */
+  let refocusEntry: string | null = null;
+  /**
+   * What the reader set on each mode's chart, kept across redraws: the selection stores
+   * (legend isolation, zoom) by name. A redraw for a new screen size or theme puts them back;
+   * a store the new chart lacks (no zoom on a phone) waits for a chart that has it.
+   */
+  const kept = new Map<Mode, Map<string, unknown[]>>();
+  /** The fields a zoom is on: the drawn chart's, and the kept one's (put back only on the same fields). */
+  const axes = () => JSON.stringify([state.x, state.y]);
+  let zoomedAxes = axes();
+  let keptZoomAxes = "";
+  /** Keep the stores and the focus of the chart about to go. */
+  const keep = () => {
+    if (!result || !drawnSpec) return;
+    const stores = kept.get(drawnMode) ?? new Map<string, unknown[]>();
+    for (const name of selectionStores(drawnSpec)) {
+      try {
+        stores.set(name, [...(result.view.data(name) as unknown[])]);
+        if (name === "zoom_store") keptZoomAxes = zoomedAxes;
+      } catch {
+        // Not in this view: keep what was kept.
+      }
+    }
+    kept.set(drawnMode, stores);
+    const active = document.activeElement;
+    if (active && host.contains(active)) refocusEntry = active.closest(ENTRY)?.getAttribute("aria-label") ?? null;
+    const pickers = [...binds.querySelectorAll("select")];
+    if (active && pickers.includes(active as HTMLSelectElement)) refocus = pickers.indexOf(active as HTMLSelectElement);
+  };
+  /** Put the kept stores back into a new chart of the same mode (those it has). */
+  const restore = async (view: import("vega").View, spec: Spec) => {
+    const stores = kept.get(state.mode);
+    if (!stores) return;
+    let changed = false;
+    for (const name of selectionStores(spec)) {
+      const values = stores.get(name);
+      // A zoom on other fields than the ones now picked would hide them.
+      if (!values?.length || (name === "zoom_store" && keptZoomAxes !== axes())) continue;
+      view.data(name, values);
+      changed = true;
+    }
+    if (changed) await view.runAsync();
+  };
   const draw = async () => {
     const v = await loadVega();
     // The box keeps its height while the old chart goes and the new one draws (nothing below
     // moves), then fits the new chart.
     host.style.minHeight = `${host.offsetHeight}px`;
+    keep();
+    disposeKeys();
     result?.finalize();
+    drawnSpec = null;
     binds.replaceChildren();
     plotted = null;
     const spec = currentSpec();
@@ -137,7 +188,19 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
     section.dataset.draws = String(Number(section.dataset.draws ?? 0) + 1);
     // Vega draws an empty chart when its file doesn't load: say so instead, and count nothing.
     if (failed.length) throw new LoadError(failed[0]!.split("/").pop()!);
+    drawnSpec = spec;
+    drawnMode = state.mode;
+    zoomedAxes = axes();
     labelActions(host);
+    // What the reader had set on this chart before the redraw: isolation, zoom.
+    await restore(result.view, spec);
+    // Legend entries isolate from the keyboard too (SVG charts; a canvas legend has no elements).
+    disposeKeys = legendKeys(host, result.view, selectionStores(spec, "legend"));
+    if (refocusEntry !== null) {
+      const label = refocusEntry;
+      [...host.querySelectorAll<SVGGElement>(ENTRY)].find((g) => g.getAttribute("aria-label") === label)?.focus();
+    }
+    refocusEntry = null;
     // A select narrowed to fit its row clips a long field name: its tooltip gives it in full.
     binds.querySelectorAll("select").forEach((select) => {
       const name = () => (select.title = select.value);
@@ -167,6 +230,7 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
         }
         // A zoom on the old fields would hide the new ones: clear it (the scale domains read this store).
         if (zoom()) void view.change("zoom_store", view.changeset().remove(() => true)).runAsync();
+        zoomedAxes = axes();
         void view.runAsync().then(recount);
       };
       view.addSignalListener("xField", follow("x"));
@@ -176,9 +240,10 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
   let requested = false;
   // A Retry after the chart code failed to load is under way.
   let retryingCode = false;
-  const render = () => {
-    requested = true;
-    return (queue = queue.then(draw).catch((err: unknown) => {
+  // One draw at a time; requests during a draw (a window dragged across the breakpoint) join
+  // the next one instead of queuing one each.
+  const queued = serial(() =>
+    draw().catch((err: unknown) => {
       // Chrome keeps a failed dynamic import in its module map, so importing again fails at
       // once even when the connection is back (other browsers fetch again). When a Retry of
       // the chart code fails while online, reload the page, as Vite advises: a new document
@@ -188,7 +253,10 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
         return;
       }
       retryingCode = false;
+      disposeKeys();
+      disposeKeys = () => {};
       result?.finalize();
+      drawnSpec = null;
       result = undefined;
       binds.replaceChildren();
       plotted = null;
@@ -203,7 +271,11 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
         : err instanceof ChartCodeError ? err.message
         : `The chart didn't load: ${err instanceof Error ? err.message : String(err)}`;
       host.replaceChildren(h("p", { class: "muted load-error" }, message, " ", retry));
-    }));
+    }),
+  );
+  const render = () => {
+    requested = true;
+    return queued();
   };
 
   // Redraw for a new screen size once a chart is asked for (a large file waits for its

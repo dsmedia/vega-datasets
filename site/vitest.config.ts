@@ -11,7 +11,9 @@ export default getViteConfig(
     root,
     test: {
       projects: [
-        { extends: true, test: { name: 'unit', include: ['test/*.test.ts'] } },
+        // Tests that draw real files take 1-3 s alone and passed 5 s (Vitest's default) on a
+        // loaded machine; 30 s still stops a test that hangs.
+        { extends: true, test: { name: 'unit', include: ['test/*.test.ts'], testTimeout: 30_000 } },
         { extends: true, test: { name: 'links', include: ['test/network/*.test.ts'], testTimeout: 600_000 } },
       ],
     },
