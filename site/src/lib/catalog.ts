@@ -21,6 +21,11 @@ export interface QuantProfile {
   mean: number;
   missing: number;
   bins: number[];
+  /** How many distinct values, and whether they step evenly (a sampled series, not event times). */
+  distinct?: number;
+  evenlySpaced?: true;
+  /** With zero or less in the field, its smallest value above zero. */
+  minPositive?: number;
 }
 
 export interface TemporalProfile {
@@ -29,6 +34,8 @@ export interface TemporalProfile {
   max: string;
   missing: number;
   bins?: number[];
+  distinct?: number;
+  evenlySpaced?: true;
 }
 
 export interface NominalProfile {
@@ -110,8 +117,15 @@ export interface Dataset {
   /** TopoJSON: the objects, and how many features each one becomes. */
   objects?: string[];
   objectFeatures?: Record<string, number>;
-  /** GeoJSON: how many features the file holds. */
+  /** TopoJSON: each object's geometry types (Point, LineString, Polygon, …). */
+  objectGeometryTypes?: Record<string, string[]>;
+  /** GeoJSON: how many features the file holds, and their geometry types. */
   features?: number;
+  geometryTypes?: string[];
+  /** Pairs of number fields that move together (|r| ≥ 0.9), as `[a, b, r]`. */
+  correlated?: [string, string, number][];
+  /** A table with latitude and longitude columns: the box holding the middle 98% of each, and the share of points in the US. */
+  points?: { latitude: string; longitude: string; box: { longitude: [number, number]; latitude: [number, number] }; us: number };
   image?: string;
   /** The table schema's keys and missing-value markers, when the metadata has them. */
   primaryKey?: string | string[];

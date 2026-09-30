@@ -13,11 +13,15 @@ from PIL import Image
 from scripts.build_site_catalog import (
     HIST_BINS,
     build_dataset,
+    coordinates,
+    correlations,
     data_url,
     editor_spec_url,
+    evenly_spaced,
     example_slug,
     geo_features,
     missing_values,
+    numeric_values,
     parse_dates,
     preview_rows,
     profile_field,
@@ -45,9 +49,10 @@ def test_geo_features_counts_the_shapes_a_map_draws() -> None:
     assert geo_features(topo, "topojson") == {
         "objects": ["counties", "land"],
         "objectFeatures": {"counties": 3, "land": 1},
+        "objectGeometryTypes": {"counties": ["Polygon"], "land": ["MultiPolygon"]},
     }
     geo = {"type": "FeatureCollection", "features": [{"type": "Feature"}] * 5}
-    assert geo_features(geo, "geojson") == {"features": 5}
+    assert geo_features(geo, "geojson") == {"features": 5, "geometryTypes": []}
     assert geo_features({"type": "Feature"}, "geojson") == {"features": 1}
 
 
@@ -510,3 +515,107 @@ def test_build_dataset_marks_fields_read_from_the_data(tmp_path: Path) -> None:
         tmp_path,
     )
     assert "fieldsInferred" not in declared
+
+
+# ---------------------------------------------------------------------------
+# What the Explore rules read: spacing, correlations, coordinates, geometry types
+# ---------------------------------------------------------------------------
+
+
+def test_evenly_spaced_series_and_event_times() -> None:
+    months = pl.Series([
+        "2020-01-01",
+        "2020-02-01",
+        "2020-03-01",
+        "2020-04-01",
+        "2020-05-01",
+    ])
+    assert evenly_spaced(months.str.to_datetime("%Y-%m-%d"))
+    assert evenly_spaced(pl.Series([1565, 1570, 1575, 1580]))
+    # Trading days: weekends make one gap in five three days long.
+    days = pl.date_range(datetime(2020, 1, 6), datetime(2020, 3, 27), eager=True)
+    assert evenly_spaced(days.filter(days.dt.weekday() <= 5))
+    # Arrival times: irregular gaps.
+    assert not evenly_spaced(pl.Series([0, 1, 5, 6, 20, 21, 50, 90]))
+    assert not evenly_spaced(pl.Series([1931, 1932]))
+
+
+def test_profile_counts_distinct_values_and_spacing() -> None:
+    p = profile_field(pl.Series("y", ["2000", "2001", "2002", "2002"]), "integer")
+    assert (p["distinct"], p["evenlySpaced"]) == (3, True)
+    q = profile_field(pl.Series("v", ["1", "2", "9", "40"]), "number")
+    assert q["distinct"] == 4
+    assert "evenlySpaced" not in q
+    assert "minPositive" not in q
+    d = profile_field(
+        pl.Series("d", ["2020-01-01", "2020-01-02", "2020-01-03"]), "date"
+    )
+    assert (d["distinct"], d["evenlySpaced"]) == (3, True)
+
+
+def test_profile_min_positive_only_with_zeros_or_less() -> None:
+    p = profile_field(pl.Series("cost", ["0", "0", "0.5", "1200"]), "number")
+    assert p["minPositive"] == 0.5
+
+
+def test_correlations_record_pairs_that_move_together() -> None:
+    a = pl.Series([1.0, 2, 3, 4, 5, 6])
+    numbers = {
+        "a": a,
+        "b": a * 2 + 1,
+        "c": pl.Series([3.0, 1, 4, 1, 5, 9]),
+        "k": pl.Series([1.0] * 6),
+    }
+    assert correlations(numbers) == [["a", "b", 1.0]]
+    # Too few rows with both values: nothing to say.
+    short = {
+        "a": pl.Series([1.0, 2, None, None, None, None]),
+        "b": pl.Series([2.0, 4, 6, 8, 10, 12]),
+    }
+    assert correlations(short) == []
+
+
+def test_numeric_values_drop_markers_and_text() -> None:
+    s = numeric_values(pl.Series(["1", "-99", "x", "inf"]), ["-99"])
+    assert s.to_list() == [1.0, None, None, None]
+
+
+def test_coordinates_box_and_us_share() -> None:
+    lat = pl.Series([40.7, 34.0, 41.9, 47.6, 13.4] + [39.0] * 95)
+    lon = pl.Series([-74.0, -118.2, -87.6, -122.3, 144.8] + [-95.0] * 95)
+    fields = [
+        {"name": "latitude", "type": "number"},
+        {"name": "longitude", "type": "number"},
+    ]
+    points = coordinates({"latitude": lat, "longitude": lon}, fields)
+    assert points is not None
+    assert points["us"] == 0.99
+    assert points["box"]["longitude"][0] < -118
+    assert points["box"]["longitude"][1] < 0  # the 1% beyond the box doesn't stretch it
+    # Found by title too; none without both columns.
+    titled = [
+        {"name": "cy", "type": "number", "title": "Latitude"},
+        {"name": "cx", "type": "number", "title": "Longitude"},
+    ]
+    assert coordinates({"cy": lat, "cx": lon}, titled)["latitude"] == "cy"  # type: ignore[index]
+    assert coordinates({"latitude": lat}, fields[:1]) is None
+
+
+def test_geo_features_record_geometry_types() -> None:
+    lines = {
+        "type": "GeometryCollection",
+        "geometries": [
+            {"type": "LineString", "id": "Victoria"},
+            {"type": "MultiLineString"},
+        ],
+    }
+    topo = geo_features({"type": "Topology", "objects": {"line": lines}}, "topojson")
+    assert topo["objectGeometryTypes"] == {"line": ["LineString", "MultiLineString"]}
+    geo = geo_features(
+        {
+            "type": "FeatureCollection",
+            "features": [{"type": "Feature", "geometry": {"type": "Point"}}],
+        },
+        "geojson",
+    )
+    assert geo == {"features": 1, "geometryTypes": ["Point"]}

@@ -40,7 +40,7 @@ import polars as pl
 from PIL import Image
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterable
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +55,22 @@ THUMB_WIDTH: Final = 480
 PREVIEW_ROWS: Final = 6
 HIST_BINS: Final = 24
 TOP_VALUES: Final = 6
+# Pairs of number fields at least this correlated are recorded (the site never opens
+# a scatter plot on a near-duplicate pair), over at least this many rows.
+CORRELATED: Final = 0.9
+CORRELATION_ROWS: Final = 5
+# The names (or titles) the site's map rule reads as coordinates (site/src/lib/starter.ts).
+LAT_NAME: Final = re.compile(r"^(lat|latitude)$", re.IGNORECASE)
+LON_NAME: Final = re.compile(r"^(lon|lng|long|longitude)$", re.IGNORECASE)
+# The United States as boxes of (west, east, south, north): the lower 48, Alaska
+# (and the Aleutians past 180°) and Hawaii. Border strips of Canada and Mexico fall
+# inside; for choosing a projection that is close enough.
+US_BOXES: Final = (
+    (-125.0, -66.5, 24.3, 49.5),
+    (-180.0, -129.9, 51.0, 71.5),
+    (172.0, 180.0, 51.0, 53.5),
+    (-161.0, -154.5, 18.8, 22.4),
+)
 MAX_CELL: Final = 48
 
 # jsDelivr edges emit 403 spuriously under bursts; see generate_gallery_examples.py.
@@ -342,6 +358,46 @@ def without_missing(s: pl.Series, values: list[str]) -> pl.Series:
     return s.zip_with(~mask, pl.Series(s.name, [None] * s.len(), dtype=s.dtype))
 
 
+def evenly_spaced(values: pl.Series) -> bool:
+    """
+    Whether the distinct values step evenly, as a time series is sampled.
+
+    Three in four gaps between neighbouring values lie within about 10% of the
+    median gap: calendar months (28 to 31 days), years and trading days (with their
+    weekends) count, and arrival times (flights, strikes, quakes) don't.
+    """
+    distinct = values.unique().sort()
+    if distinct.len() < 3:
+        return False
+    gaps = distinct.diff().drop_nulls()
+    gaps = gaps.dt.total_seconds() if gaps.dtype == pl.Duration else gaps
+    gaps = gaps.cast(pl.Float64)
+    median = cast("float", gaps.median())
+    if median <= 0:
+        return False
+    near = ((gaps >= 0.9 * median) & (gaps <= 1.12 * median)).sum()
+    return near >= 0.75 * gaps.len()
+
+
+def _spacing(values: pl.Series) -> dict[str, Any]:
+    """How many distinct values a number or date field has, and whether they step evenly."""
+    out: dict[str, Any] = {"distinct": values.n_unique()}
+    if evenly_spaced(values):
+        out["evenlySpaced"] = True
+    return out
+
+
+def numeric_values(s: pl.Series, markers: list[str] | None = None) -> pl.Series:
+    """A number column's finite values as floats, missing ones (and markers) null."""
+    if markers:
+        s = without_missing(s, markers)
+    num = s.cast(pl.Float64, strict=False)
+    return num.zip_with(
+        num.is_finite().fill_null(value=False),
+        pl.Series(s.name, [None] * s.len(), dtype=pl.Float64),
+    )
+
+
 def profile_field(
     s: pl.Series, field_type: str, markers: list[str] | None = None
 ) -> dict[str, Any]:
@@ -371,6 +427,14 @@ def profile_field(
             "mean": _nice(cast("float", num.mean())),
             "missing": missing,
             "bins": _bins(num - lo, hi - lo) if hi > lo else [num.len()],
+            **_spacing(num),
+            # With zero or less in the field, its smallest value above zero: how many
+            # decades the positive values span, for choosing a symlog scale.
+            **(
+                {"minPositive": _nice(cast("float", num.filter(num > 0).min()))}
+                if lo <= 0 < hi
+                else {}
+            ),
         }
     if field_type in {"date", "datetime"}:
         if s.dtype == pl.Date or isinstance(s.dtype, pl.Datetime):
@@ -391,7 +455,7 @@ def profile_field(
         }
         if span > 0:
             profile["bins"] = _bins((valid - lo).dt.total_seconds(), span)
-        return profile
+        return {**profile, **_spacing(valid)}
     text = s.cast(pl.String, strict=False).drop_nulls()
     if markers is None:
         text = text.filter(text.str.len_chars() > 0)
@@ -465,15 +529,37 @@ def geo_features(doc: dict[str, Any], fmt: str) -> dict[str, Any]:
     """
     if fmt == "geojson":
         features = doc.get("features")
-        return {"features": len(features) if isinstance(features, list) else 1}
+        if not isinstance(features, list):
+            return {"features": 1}
+        return {
+            "features": len(features),
+            "geometryTypes": _geometry_types(f.get("geometry") for f in features),
+        }
     objects: dict[str, Any] = doc.get("objects", {})
-    counts = {
-        name: len(obj.get("geometries", []))
-        if obj.get("type") == "GeometryCollection"
-        else 1
-        for name, obj in objects.items()
+
+    def members(obj: dict[str, Any]) -> list[dict[str, Any]]:
+        return (
+            obj.get("geometries", [])
+            if obj.get("type") == "GeometryCollection"
+            else [obj]
+        )
+
+    return {
+        "objects": list(objects),
+        "objectFeatures": {name: len(members(obj)) for name, obj in objects.items()},
+        "objectGeometryTypes": {
+            name: _geometry_types(members(obj)) for name, obj in objects.items()
+        },
     }
-    return {"objects": list(objects), "objectFeatures": counts}
+
+
+def _geometry_types(geometries: Iterable[Any]) -> list[str]:
+    """The distinct geometry types (Point, LineString, Polygon, …), for drawing lines unfilled."""
+    return sorted({
+        g["type"]
+        for g in geometries
+        if isinstance(g, dict) and isinstance(g.get("type"), str)
+    })
 
 
 # Standard Data Package and Table Schema properties the site shows when they are
@@ -556,10 +642,93 @@ def build_dataset(
             ),
         })
     entry.update(_present(schema, SCHEMA_PROPERTIES))
+    numbers = {
+        f["name"]: numeric_values(
+            df[f["name"]],
+            missing_values(f.get("missingValues", schema.get("missingValues"))),
+        )
+        for f in fields
+        if f["name"] in df.columns and f.get("type") in {"integer", "number"}
+    }
+    if correlated := correlations(numbers):
+        entry["correlated"] = correlated
+    if points := coordinates(numbers, fields):
+        entry["points"] = points
     columns = [f["name"] for f in entry["fields"]]
     entry["rows"] = df.height
     entry["preview"] = {"columns": columns, "rows": preview_rows(df, columns)}
     return entry
+
+
+def correlations(numbers: dict[str, pl.Series]) -> list[list[Any]]:
+    """
+    Pairs of number fields that move together, as ``[a, b, r]`` in field order.
+
+    Pearson's r over the rows where both have values, kept when at least
+    ``CORRELATED`` in size.
+    """
+    names = list(numbers)
+    out: list[list[Any]] = []
+    for i, a in enumerate(names):
+        for b in names[i + 1 :]:
+            both = pl.DataFrame({"a": numbers[a], "b": numbers[b]}).drop_nulls()
+            if both.height < CORRELATION_ROWS:
+                continue
+            if both["a"].std() == 0 or both["b"].std() == 0:
+                continue
+            r = cast("float", both.select(pl.corr("a", "b")).item())
+            if r is not None and math.isfinite(r) and abs(r) >= CORRELATED:
+                out.append([a, b, round(r, 3)])
+    return out
+
+
+def coordinates(
+    numbers: dict[str, pl.Series], fields: list[dict[str, Any]]
+) -> dict[str, Any] | None:
+    """
+    Where a table's points lie, when it has latitude and longitude columns.
+
+    The columns are found by name or title. The box holds the middle 98% of each
+    coordinate, and ``us`` is the share of points in the United States (``US_BOXES``).
+    The site fits its map to the box and picks the Albers USA projection when nearly
+    every point is in the US.
+    """
+
+    def find(pattern: re.Pattern[str]) -> str | None:
+        return next(
+            (
+                f["name"]
+                for f in fields
+                if f["name"] in numbers
+                and (pattern.match(f["name"]) or pattern.match(str(f.get("title", ""))))
+            ),
+            None,
+        )
+
+    lat, lon = find(LAT_NAME), find(LON_NAME)
+    if lat is None or lon is None:
+        return None
+    both = pl.DataFrame({"lat": numbers[lat], "lon": numbers[lon]}).drop_nulls()
+    if both.height == 0:
+        return None
+    inside = pl.lit(value=False)
+    for west, east, south, north in US_BOXES:
+        inside |= pl.col("lon").is_between(west, east) & pl.col("lat").is_between(
+            south, north
+        )
+    us = cast("int", both.select(inside.sum()).item())
+
+    def box(c: str) -> list[float]:
+        return [
+            _nice(cast("float", both[c].quantile(q, "linear"))) for q in (0.01, 0.99)
+        ]
+
+    return {
+        "latitude": lat,
+        "longitude": lon,
+        "box": {"longitude": box("lon"), "latitude": box("lat")},
+        "us": round(us / both.height, 3),
+    }
 
 
 # ---------------------------------------------------------------------------
