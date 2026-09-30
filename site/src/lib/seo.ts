@@ -44,6 +44,11 @@ export function siteRepo(env: Record<string, string | undefined>): string {
 export const STATUS_PATH = "metadata/";
 export const STATUS_TITLE = "Metadata Status";
 
+/** A dataset's row on the status page: namespaced, so no dataset name can collide with the layout's ids (main#page). */
+export function statusRowId(name: string): string {
+  return `ds-${name}`;
+}
+
 export function statusUrl(): string {
   return HOME_URL + STATUS_PATH;
 }

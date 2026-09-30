@@ -2,13 +2,13 @@
 /**
  * Every dataset against the metadata checklist (lib/completeness.ts), most gaps first:
  * each row links to the dataset's page and to its entry in the metadata file, and has the
- * dataset's name as its id (the dataset page's footer links to it). Properties that apply
+ * id `ds-<name>` (the dataset page's footer links to it). Properties that apply
  * only where they fit are listed as documented, never as gaps.
  */
 import type { Dataset } from "../lib/catalog";
 import { byGaps, CHECK_LABEL, CHECKS, completeness, sourcesUnlinked } from "../lib/completeness";
 import { formatCount } from "../lib/format";
-import { datasetPath } from "../lib/seo";
+import { datasetPath, statusRowId } from "../lib/seo";
 
 interface Props {
   datasets: Dataset[];
@@ -33,7 +33,7 @@ const rows = byGaps(datasets.map((dataset) => ({ dataset, status: completeness(d
     </thead>
     <tbody>
       {rows.map(({ dataset: d, status: s }) => (
-        <tr id={d.name}>
+        <tr id={statusRowId(d.name)}>
           <th scope="row"><a href={`${base}${datasetPath(d.name)}`}>{d.name}</a></th>
           <td class="st-num">{formatCount(s.gaps)}</td>
           {CHECKS.map((c) => (

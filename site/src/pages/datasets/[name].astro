@@ -24,7 +24,7 @@ import { FORMAT_LABEL, formatBytes, formatCount, plural } from "../../lib/format
 import { markdownToHtml } from "../../lib/markdown";
 import { hasMotion } from "../../lib/motion";
 import { editorUrl, starterSpec } from "../../lib/starter";
-import { breadcrumbJsonLd, datasetJsonLd, datasetMetaDescription, datasetPath, datasetTitle, jsonForScript, REPO, STATUS_PATH } from "../../lib/seo";
+import { breadcrumbJsonLd, datasetJsonLd, datasetMetaDescription, datasetPath, datasetTitle, jsonForScript, REPO, STATUS_PATH, statusRowId } from "../../lib/seo";
 import { completeness } from "../../lib/completeness";
 
 export const getStaticPaths = (() => c.datasets.map((d) => ({ params: { name: d.name }, props: { d } }))) satisfies GetStaticPaths;
@@ -321,7 +321,7 @@ const title = datasetTitle(d);
   <script type="application/json" id="dataset-data" set:html={jsonForScript(clientData)} />
   {density && <script type="application/json" id="density-data" set:html={jsonForScript(density.grid)} />}
 
-  <Fragment slot="footer">Spot an error? <a href={METADATA}>Edit this dataset's metadata</a> on GitHub.{gaps > 0 && <span class="footer-gaps">This dataset has <a href={`${base}${STATUS_PATH}#${d.name}`}>{plural(gaps, "metadata gap")}</a>.</span>}</Fragment>
+  <Fragment slot="footer">Spot an error? <a href={METADATA}>Edit this dataset's metadata</a> on GitHub.{gaps > 0 && <span class="footer-gaps">This dataset has <a href={`${base}${STATUS_PATH}#${statusRowId(d.name)}`}>{plural(gaps, "metadata gap")}</a>.</span>}</Fragment>
 </Base>
 
 <script>

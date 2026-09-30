@@ -29,17 +29,18 @@ async function render(): Promise<Document> {
   return new JSDOM(`<!doctype html><body>${html}</body>`).window.document;
 }
 
-test('rows, most gaps first, each with the dataset name as its id', async () => {
+test('rows, most gaps first, each with a namespaced id (ds-<name>)', async () => {
   const doc = await render();
   const rows = [...doc.querySelectorAll('tbody tr')];
   // fixture: 6 undescribed fields; image: title, source, license; complete: none.
-  expect(rows.map((r) => r.id)).toEqual(['fixture', 'image', 'complete']);
+  // Namespaced (Codex round 2, #5): a dataset named "page" must not share the layout's main#page.
+  expect(rows.map((r) => r.id)).toEqual(['ds-fixture', 'ds-image', 'ds-complete']);
   expect(rows.map((r) => text(r.querySelector('.st-num')))).toEqual(['6', '3', '0']);
 });
 
 test('each item reads as present or missing, in words a screen reader says', async () => {
   const doc = await render();
-  const cells = (id: string) => [...doc.getElementById(id)!.querySelectorAll('td')].map(text);
+  const cells = (id: string) => [...doc.getElementById(`ds-${id}`)!.querySelectorAll('td')].map(text);
   expect([...doc.querySelectorAll('thead th')].map(text)).toEqual(['Dataset', 'Gaps', 'Title', 'Description', 'Source', 'License', 'Field Descriptions', 'Also Documented', 'Metadata entry']);
   expect(cells('image')).toEqual(['3', 'Missing', '✓Yes', 'Missing', 'Not specified', '–No fields', '–None', 'Edit the image entry']);
   expect(cells('fixture')).toEqual([
@@ -54,7 +55,7 @@ test('each item reads as present or missing, in words a screen reader says', asy
 
 test('each row links to its dataset page and its metadata entry; the table scrolls in a focusable region', async () => {
   const doc = await render();
-  const row = doc.getElementById('fixture')!;
+  const row = doc.getElementById('ds-fixture')!;
   expect(row.querySelector('th[scope="row"] a')!.getAttribute('href')).toMatch(/datasets\/fixture\/$/);
   expect(row.querySelector('td:last-child a')!.getAttribute('href')).toBe('https://github.com/o/r/blob/main/x.toml#L7');
   const region = doc.querySelector('.table-scroll')!;
