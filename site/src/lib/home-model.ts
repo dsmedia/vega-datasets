@@ -189,23 +189,32 @@ function landscape(e: Example): boolean {
   return e.thumb !== null && e.thumbSize !== null && e.thumbSize[0] >= LANDSCAPE * e.thumbSize[1];
 }
 
+/** A thumbnail in the strip under the title and the dataset it stands for. */
+export interface ShowcasePick {
+  example: Example;
+  dataset: string;
+}
+
 /**
  * Thumbnails for the strip under the title: the most used datasets' landscape
- * examples, taking the galleries in turn so all three show, one per dataset per pass.
+ * examples, taking the galleries in turn so all three show. Each stands for a
+ * different dataset, which it links to.
  */
-export function showcase(c: Catalog, n: number): Example[] {
+export function showcase(c: Catalog, n: number): ShowcasePick[] {
   const queues = GALLERIES.map((g) =>
     [...c.datasets]
       .sort((a, b) => b.usedBy.length - a.usedBy.length)
-      .flatMap((d) => c.examplesFor(d).filter((e) => e.gallery === g && landscape(e)).slice(0, 1)));
-  const seen = new Set<string>();
-  const out: Example[] = [];
+      .flatMap((d) => c.examplesFor(d).filter((e) => e.gallery === g && landscape(e)).slice(0, 1).map((example) => ({ example, dataset: d.name }))));
+  const examples = new Set<string>();
+  const datasets = new Set<string>();
+  const out: ShowcasePick[] = [];
   for (let i = 0; out.length < n && queues.some((q) => i < q.length); i++) {
     for (const q of queues) {
-      const e = q[i];
-      if (e && !seen.has(e.id) && out.length < n) {
-        seen.add(e.id);
-        out.push(e);
+      const p = q[i];
+      if (p && !examples.has(p.example.id) && !datasets.has(p.dataset) && out.length < n) {
+        examples.add(p.example.id);
+        datasets.add(p.dataset);
+        out.push(p);
       }
     }
   }
