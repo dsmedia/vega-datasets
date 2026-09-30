@@ -15,7 +15,7 @@ import MotionSection from "../../components/MotionSection.astro";
 import Base from "../../layouts/Base.astro";
 import { type Dataset, type Gallery, GALLERIES, GALLERY_LABEL, licenseFamily } from "../../lib/catalog";
 import { fileName, formatDescription, interleave, isReleased, linkText, sizeDescription, useSnippets } from "../../lib/dataset-model";
-import { bothValuesNote, chartFeatures, defaultAxes, exploreModes, hasDensity, mapNote, MODE_LABEL, scatterFields, scatterSpec, starterChart } from "../../lib/explore-model";
+import { bothValuesNote, chartFeatures, defaultAxes, exploreModes, hasDensity, mapNote, type Mode, MODE_LABEL, modeChart, scatterFields, scatterSpec } from "../../lib/explore-model";
 import { AUTO_LOAD_BYTES, BAND_POLICY, densityCaption, densityPageSpec, densitySpec, drawPointsLabel, hasMapPreview, loadGate } from "../../lib/large-data";
 import { densityOf } from "../../prerender/density";
 import { mapPreview } from "../../prerender/map-preview";
@@ -71,7 +71,7 @@ const band = gate && !starterSpec(d)?.projection ? gate.band : null;
 const policy = band ? BAND_POLICY[band] : null;
 const zoomable = !policy || policy.zoom !== "never";
 const specFor = (mode: string, phone: boolean) =>
-  mode === "scatter" && sf && axes ? scatterSpec(d, sf, { ...axes, zoom: !phone && zoomable, height: phone ? 300 : 380, phone }) : (starterChart(d, phone) ?? starterSpec(d)!);
+  mode === "scatter" && sf && axes ? scatterSpec(d, sf, { ...axes, zoom: !phone && zoomable, height: phone ? 300 : 380, phone }) : (modeChart(d, mode as Mode, phone) ?? starterSpec(d)!);
 const wideSpec = first ? specFor(first, false) : null;
 const phoneSpec = first ? specFor(first, true) : null;
 // The overview (a long table with a scatter plot) takes the button's place.

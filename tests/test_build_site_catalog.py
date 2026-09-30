@@ -20,6 +20,7 @@ from scripts.build_site_catalog import (
     evenly_spaced,
     example_slug,
     geo_features,
+    line_shapes,
     missing_values,
     numeric_values,
     parse_dates,
@@ -32,6 +33,7 @@ from scripts.build_site_catalog import (
     thumbnail_urls,
     time_key_buckets,
     time_keys,
+    time_unit,
     total_values,
     us_land,
     write_thumbnail,
@@ -892,3 +894,48 @@ def test_utc_dates_judged_on_non_empty_cells() -> None:
     # An empty cell (kept as text when another field declares missing values) is no date form.
     p = profile_field(pl.Series("d", ["2019-01-31", "", "2019-02-01"]), "date")
     assert p["utc"] is True
+
+
+def test_utc_dates_judged_on_cells_that_read_as_dates() -> None:
+    # Codex round 5, #1: "N/A" is a missing value, not a date form that vetoes UTC.
+    p = profile_field(pl.Series("d", ["2019-01-31", "N/A", "2019-02-01"]), "date")
+    assert p["utc"] is True
+
+
+def test_time_unit_buckets_long_date_series_by_span() -> None:
+    days = pl.Series("d", [datetime(2019, 1, 1), datetime(2019, 6, 1)])
+    assert time_unit(days, 1000) == "none"
+    assert time_unit(days, 1001) == "yearmonthdate"
+    assert (
+        time_unit(pl.Series("d", [datetime(2000, 1, 1), datetime(2030, 1, 1)]), 5000)
+        == "yearmonth"
+    )
+    assert (
+        time_unit(pl.Series("d", [datetime(1900, 1, 1), datetime(2000, 1, 1)]), 5000)
+        == "year"
+    )
+    # A year is a number: drawn as it is.
+    assert time_unit(pl.Series("y", [1900, 2000]), 5000) == "none"
+
+
+def test_line_shapes_find_gaps_and_jaggedness_per_way_of_splitting() -> None:
+    years = [2000, 2001, 2002, 2003, 2010, 2011, 2012]
+    values = pl.DataFrame({
+        "year": years * 2,
+        "region": ["a"] * 7 + ["b"] * 7,
+        "smooth": [float(i) for i in range(7)] + [float(i) for i in range(7)],
+        "jumpy": [0.0, 10.0, 0.0, 10.0, 0.0, 10.0, 0.0] * 2,
+    })
+    numbers = {c: values[c] for c in ("year", "smooth", "jumpy")}
+    steps, shapes = line_shapes(numbers, {"year": ["region"]}, values)
+    # Most steps are a year; the seven-year jump is wider than 1.5 times the 90th percentile.
+    assert steps["year"]["step"] == 1
+    assert steps["year"]["unit"] == "none"
+    by_region = shapes["year"]["smooth"][""]
+    assert by_region["gaps"] is True
+    assert by_region["jag"] < 0.2
+    assert shapes["year"]["jumpy"]["region"]["jag"] == 1.0
+    # One line of all rows: the regions' mean at each year.
+    assert {"*", "", "region"} <= set(shapes["year"]["smooth"])
+    # Nothing positive throughout: no log jaggedness.
+    assert "jagLog" not in by_region

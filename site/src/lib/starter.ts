@@ -9,7 +9,7 @@
  */
 import LZString from "lz-string";
 import { categoryLabels, categoryValues, type Dataset, documentedRange, effectiveMissing, type Field, fieldTitle, orderedCategories } from "./catalog";
-import { balanced, distinctValues, idName, informative, inUs, namedAxes, nearDuplicate, PALETTE_SIZE, scaleFor, scaleType, summable, TABLEAU10, timeKey, TOTAL_COLOR, totalsOf, unique, withScale } from "./chart-rules";
+import { balanced, distinctValues, idName, informative, inUs, JAGGED, namedAxes, nearDuplicate, PALETTE_SIZE, scaleFor, scaleType, SERIES_LIMIT, summable, timeKey, totalsOf, unique, withScale } from "./chart-rules";
 
 type Spec = Record<string, unknown>;
 type Enc = Record<string, unknown>;
@@ -270,48 +270,9 @@ export function nominal(f: Field, max: number, fields: Field[] = [f]): boolean {
 
 /** A category worth a color: at most `max` values, and informative (G-5: not a helper, not nearly all one value). */
 export function colorable(f: Field, max: number, fields: Field[], rows: number): boolean {
-  return nominal(f, max, fields) && informative(f, rows);
-}
-
-/** A category whose values, besides its detected totals, fit the palette, with every value known. */
-function withTotal(d: Dataset, f: Field, m: Field, fields: Field[], rows: number): boolean {
-  const totals = totalsOf(d, f, m);
-  const p = f.profile;
-  if (!totals.length || p.kind !== "nominal" || !p.values || p.missing) return false;
-  return nominal(f, PALETTE_SIZE + totals.length, fields) && informative(f, rows) && p.values.length - totals.length <= PALETTE_SIZE;
-}
-
-/**
- * A series' color. With a detected total among its values, the parts take tableau10 in
- * their order and the total a neutral gray, last in the legend: every line keeps its own
- * color, and the total reads as the sum it is. Otherwise the category's own encoding.
- */
-function seriesColor(d: Dataset, f: Field, m: Field): Enc {
-  const totals = totalsOf(d, f, m);
-  const p = f.profile;
-  // Every value must be known for the domain: with empty cells (a value of their own) keep the plain encoding.
-  if (!totals.length || p.kind !== "nominal" || !p.values || p.missing) return category(f);
-  const parts = p.values.filter((v) => !totals.includes(v));
-  if (parts.length > PALETTE_SIZE) return category(f);
-  return { ...category(f), scale: { domain: [...parts, ...totals], range: [...TABLEAU10.slice(0, parts.length), ...totals.map(() => TOTAL_COLOR)] } };
-}
-
-/**
- * A series' line encodings: its color, a dash that sets a detected total apart from the
- * parts (tableau10's last color is a gray too; the legend shows the dash beside the name),
- * and legend isolation: click a series to bring it forward, the others fade.
- */
-function seriesLines(d: Dataset, f: Field, m: Field): { encoding: Enc; params: Spec[] } {
-  const color = seriesColor(d, f, m);
-  const domain = (color.scale as { domain?: string[] } | undefined)?.domain;
-  const totals = totalsOf(d, f, m);
-  const dash = domain
-    ? { strokeDash: { field: fieldRef(f.name), type: "nominal", ...titled(f), scale: { domain, range: domain.map((v) => (totals.includes(v) ? [6, 3] : [1, 0])) } } }
-    : {};
-  return {
-    params: [{ name: "series", select: { type: "point", fields: [fieldRef(f.name)] }, bind: "legend" }],
-    encoding: { color, ...dash, opacity: { condition: { param: "series", empty: true, value: 1 }, value: 0.15 } },
-  };
+  // Empty cells reach the color domain as a value of their own (Codex round 5, #3).
+  const empty = f.profile.kind === "nominal" && f.profile.missing > 0 ? 1 : 0;
+  return nominal(f, max - empty, fields) && informative(f, rows);
 }
 
 /** Fields that can group a table's rows: categories (not one value per row) and integers that aren't measures. */
@@ -339,10 +300,10 @@ function spanYears(f: Field): number {
   return (new Date(p.max).getTime() - new Date(p.min).getTime()) / (365.25 * 864e5);
 }
 
-/** The unit a long daily or hourly series is averaged into: days for up to two years, months up to forty, else years. */
-function timeUnit(t: Field): string {
-  const span = spanYears(t);
-  return span <= 2 ? "yearmonthdate" : span <= 40 ? "yearmonth" : "year";
+/** The unit a long daily or hourly series is averaged into (the builder's `timeSteps` unit): days, months or years by its span; none for a smaller table. */
+function timeUnit(d: Dataset, t: Field): string | undefined {
+  const unit = d.timeSteps?.[t.name]?.unit;
+  return unit && unit !== "none" ? unit : undefined;
 }
 
 /** A measure's scale and axis for a position channel (G-2), as encoding properties. */
@@ -375,8 +336,8 @@ export function defaultPair(d: Dataset, measures: Field[], first: "x" | "y" = "y
 
 /** Up to this many rows a table is small enough for small multiples of its points. */
 const SMALL_TABLE = 200;
-/** A small multiple's size (px): two columns fit a phone's Explore column (358 px). */
-export const PANEL_SIZE = { wide: 180, phone: 130 };
+/** A small multiple's size (px): two columns fit the narrowest phone's Explore column (288 px at 320). */
+export const PANEL_SIZE = { wide: 180, phone: 100 };
 
 /** The small multiples' category: a small table's category of two to four equal groups (Anscombe's four series). */
 export function panelsBy(d: Dataset, fields: Field[]): Field | undefined {
@@ -511,57 +472,218 @@ function pointMap(d: Dataset, base: Spec, lat: Field, lon: Field, color: Field |
   return { ...rest, layer: [basemap(d, us), { data, ...points }] };
 }
 
-export function starterSpec(d: Dataset): Spec | null {
-  return withMetadata(d, starterRule(d));
+/** The starter chart; `phone` for a phone's narrow column (fewer series per chart, S1). */
+export function starterSpec(d: Dataset, phone = false): Spec | null {
+  return withMetadata(d, starterRule(d, phone));
+}
+
+/** The "Total" mode's chart: a detected total's own line (CHART-STANDARDS.md S2); null without one. */
+export function totalSpec(d: Dataset, phone = false): Spec | null {
+  const fields = d.fields.filter((f) => f.type !== "array");
+  const t = timeField(fields);
+  const m = fields.find((f) => isMeasure(f, fields));
+  if (!t || !m || !totalOf(d)) return null;
+  const base: Spec = { $schema: SCHEMA, description: `The total of ${d.name} over time, from vega-datasets. Edit freely.`, data: { url: d.url } };
+  return withMetadata(d, timeSeries(d, base, t, m, fields, phone, "total"));
+}
+
+/** The series a time chart splits by, and what to do with them (CHART-STANDARDS.md S1, S2). */
+interface Split {
+  series: Field | undefined;
+  /** The series' values that are totals of the others for the measure: drawn in their own "Total" mode, never with the parts. */
+  totals: string[];
+  /** More parts than lines can tell apart: a heatmap of time by series. */
+  heatmap: boolean;
+}
+
+/** Series values a heatmap can still label down its y axis. */
+const HEATMAP_MAX = 40;
+
+function splitOf(d: Dataset, t: Field, m: Field, fields: Field[], phone: boolean): Split {
+  const rows = d.rows ?? 0;
+  const key = timeKeyOf(d, t);
+  const limit = phone ? SERIES_LIMIT.phone : SERIES_LIMIT.wide;
+  // Empty cells are a value of their own on a chart (a line, a row of a heatmap).
+  const parts = (f: Field) => (distinctValues(f) ?? 0) + (f.profile.kind === "nominal" && f.profile.missing ? 1 : 0) - totalsOf(d, f, m).length;
+  // A key's category the palette (or a heatmap) can show part by part.
+  const inKey = key?.find((f) => nominal(f, HEATMAP_MAX + totalsOf(d, f, m).length, fields) && informative(f, rows) && parts(f) >= 2);
+  const series = inKey ?? fields.find((f) => colorable(f, limit, fields, rows) && SERIES.test(f.name));
+  if (!series) return { series: undefined, totals: [], heatmap: false };
+  const totals = totalsOf(d, series, m);
+  const heatmap = parts(series) > limit;
+  // Beyond the palette with no heatmap to go to (a named series outside the key): no color.
+  if (!inKey && heatmap) return { series: undefined, totals: [], heatmap: false };
+  return { series, totals, heatmap };
+}
+
+/** Rows without a series' totals: the parts, which a chart shows without their sum. */
+function withoutTotals(f: Field, totals: string[]): Spec[] {
+  return totals.length ? [{ filter: `indexof(${tagged(totals)}, ${tag(`datum[${JSON.stringify(f.name)}]`)}) < 0` }] : [];
+}
+
+/** Only a series' totals: the "Total" mode's line. */
+function onlyTotals(f: Field, totals: string[]): Spec[] {
+  return [{ filter: `indexof(${tagged(totals)}, ${tag(`datum[${JSON.stringify(f.name)}]`)}) >= 0` }];
 }
 
 /**
- * A line over time (G-1, G-4). The line never joins rows of different series: when each
- * time holds one row per series, the series colors the line (up to 12 of them); two year
- * fields that index the rows together make one line per vintage (budgets: each budget
- * year's forecasts). Rows it can't keep apart are aggregated: counts summed (the total is
- * what they mean), other measures averaged. A series value that is the total of the others
- * is left out, and an unaggregated heavy-tailed measure gets a log axis (G-2).
+ * The detected total a time series shows in a mode of its own (disasters' "All natural
+ * disasters"), or null when its series has none.
  */
-function timeSeries(d: Dataset, base: Spec, t: Field, m: Field, fields: Field[]): Spec {
+export function totalOf(d: Dataset): { series: Field; totals: string[] } | null {
+  const fields = d.fields.filter((f) => f.type !== "array");
+  const t = timeField(fields);
+  const m = fields.find((f) => isMeasure(f, fields));
+  if (!t || !m || d.kind !== "table" || d.format === "parquet" || d.format === "arrow") return null;
+  if (fields.some((f) => isLat(f)) && fields.some((f) => isLon(f))) return null;
+  const { series, totals } = splitOf(d, t, m, fields, false);
+  return series && totals.length ? { series, totals } : null;
+}
+
+/**
+ * Where a line would cross a gap in its times (CHART-STANDARDS.md S3): a segment number per
+ * run of times without a gap, per series, for `detail`, so the line breaks there. Built from
+ * the builder's widest regular gap (1.5 times the 90th percentile); null when there is none.
+ */
+function segments(d: Dataset, t: Field, series: Field | undefined, fields: Field[]): { transform: Spec[]; field: string } | null {
+  const steps = d.timeSteps?.[t.name];
+  if (!steps) return null;
+  const taken = new Set(fields.map((f) => f.name));
+  const free = (name: string): string => (taken.has(name) ? free(`_${name}`) : name);
+  const [prev, jump, run] = [free("previous"), free("gap"), free("segment")];
+  // Times as numbers: years as they are, dates in milliseconds (the builder's step is in seconds).
+  const ms = t.profile.kind === "temporal" ? 1000 : 1;
+  const limit = steps.breakAt * ms;
+  const value = (expr: string) => `toNumber(${expr})`;
+  const groupby = series ? [fieldRef(series.name)] : [];
+  return {
+    field: run,
+    transform: [
+      { window: [{ op: "lag", field: fieldRef(t.name), as: prev }], sort: [{ field: fieldRef(t.name) }], groupby },
+      { calculate: `isValid(datum[${JSON.stringify(prev)}]) && ${value(`datum[${JSON.stringify(t.name)}]`)} - ${value(`datum[${JSON.stringify(prev)}]`)} > ${limit} ? 1 : 0`, as: jump },
+      { window: [{ op: "sum", field: jump, as: run }], sort: [{ field: fieldRef(t.name) }], groupby },
+    ],
+  };
+}
+
+/**
+ * How the builder saw a line drawn this way, bucketed by the time's unit: its jaggedness
+ * and gaps. Its lines are split by the series ("series"), by the time's key, one row each
+ * (""), or not at all, one line of all rows, a mean or sum over the key ("*").
+ */
+function shapeOf(d: Dataset, t: Field, m: Field, series: Field | undefined, exactKey: boolean) {
+  const shapes = d.lineShapes?.[t.name]?.[m.name];
+  return shapes?.[series ? series.name : exactKey ? "" : "*"] ?? shapes?.[""];
+}
+
+/** Is a measure too jagged along the time for lines (CHART-STANDARDS.md S5), on the scale it's drawn with? */
+function jagged(d: Dataset, t: Field, m: Field, series: Field | undefined, exactKey: boolean): boolean {
+  const shape = shapeOf(d, t, m, series, exactKey);
+  const j = scaleType(m) === "log" && shape?.jagLog !== undefined ? shape.jagLog : shape?.jag;
+  return j !== undefined && j > JAGGED;
+}
+
+/**
+ * A line over time (G-1, G-4) under the chart standards. The line never joins rows of
+ * different series: when each time holds one row per series, the series colors the line
+ * (up to SERIES_LIMIT of them: six, four on a phone, S1); with more, a heatmap of time by
+ * series. Two year fields that index the rows together make one line per vintage (budgets).
+ * A series value that is the total of the others is left out, into a "Total" mode of its
+ * own (S2). Rows it can't keep apart are aggregated: counts summed, other measures averaged.
+ * Unaggregated lines break at gaps in the times (S3) and give way to points when the
+ * measure jumps too much from one time to the next (S5); a heavy tail gets a log axis (S4).
+ */
+function timeSeries(d: Dataset, base: Spec, t: Field, m: Field, fields: Field[], phone: boolean, mode: "chart" | "total" = "chart"): Spec {
   const rows = d.rows ?? 0;
   const date = t.profile.kind === "temporal";
   const key = timeKeyOf(d, t);
-  const unit = date && rows > 1000 ? timeUnit(t) : undefined;
-  // A series the palette can color; a detected total among its values takes a neutral color
-  // of its own (disasters: ten kinds in tableau10, "All natural disasters" in gray).
-  const series =
-    key?.find((f) => colorable(f, PALETTE_SIZE, fields, rows) || withTotal(d, f, m, fields, rows)) ??
-    fields.find((f) => colorable(f, PALETTE_SIZE, fields, rows) && SERIES.test(f.name));
-  const vintage = !series && key?.length === 1 && timeYear(key[0]!) ? key[0] : undefined;
-  const exact = key !== null && key.every((f) => f === series || f === vintage);
+  const unit = timeUnit(d, t);
+  const split = splitOf(d, t, m, fields, phone);
+  const total = mode === "total" && split.series && split.totals.length;
+  // The Total mode draws one line per total; the chart's series never holds its totals.
+  const series = total ? undefined : split.series;
+  const vintage = !split.series && key?.length === 1 && timeYear(key[0]!) ? key[0] : undefined;
+  const splitBy = total ? split.series : series;
+  const exact = key !== null && key.every((f) => f === splitBy || f === vintage);
   // Sum only across the separate groups of one time (people of each age in a year), never
-  // across times merged into one bucket (a daily population is not a monthly one); totals
-  // among the groups are left out, or they'd count everything twice.
+  // across times merged into one bucket (a daily population is not a monthly one).
   const merges = !!unit && !(d.timeKeyBuckets?.[t.name] ?? []).includes(unit);
   // Never across a category where a value looks like the total of the others (it would count
-  // everything twice): average there. A colored series with a total just draws its line.
-  const addsTotal = key?.some((g) => g !== series && g !== vintage && totalsOf(d, g, m).length > 0) ?? false;
+  // everything twice): average there.
+  const addsTotal = key?.some((g) => g !== splitBy && g !== vintage && totalsOf(d, g, m).length > 0) ?? false;
   const sums = !exact && key !== null && !merges && !addsTotal && summable(m);
   const aggregate = unit || !exact ? (sums ? "sum" : "mean") : undefined;
-  // Two year fields: the one with more years runs along x, and the other draws a line each.
   const [along, lines] = vintage && (distinctValues(vintage) ?? 0) > (distinctValues(t) ?? 0) ? [vintage, t] : [t, vintage];
-  // Values in a narrow band far from zero (CO2 in ppm, air pressure) leave zero off the axis, or the line is flat.
-  const lined = series ? seriesLines(d, series, m) : null;
+  const unitName = unit ? (along.profile.kind === "temporal" && along.profile.utc ? `utc${unit}` : unit) : undefined;
   const q = m.profile;
+  // Values in a narrow band far from zero (CO2 in ppm, air pressure) leave zero off the axis, or the line is flat.
   const band = aggregate !== "sum" && q.kind === "quantitative" && q.min > 0 && q.min >= q.max / 2;
+  const keep = split.series && split.totals.length ? (total ? onlyTotals(split.series, split.totals) : withoutTotals(split.series, split.totals)) : [];
+  const x = date
+    ? { field: fieldRef(along.name), type: "temporal", ...(unitName ? { timeUnit: unitName } : {}), axis: { ...TIME_AXIS, format: dateFormat(along) }, ...titled(along) }
+    : measure(along, { scale: { zero: false }, axis: { format: "d", ...TIME_AXIS } });
+
+  if (!total && series && split.heatmap) {
+    // S1: more series than lines can tell apart. Time across, series down, the measure as a
+    // sequential color (log when it spans three decades or more, S4).
+    const s = scaleFor(m);
+    const heatX = date
+      ? unitName || !heatUnit(along).endsWith("yearmonthdate")
+        ? // Buckets of a unit across the span: a time axis (a cell as wide as its bucket), ticks and labels as the line chart's, not one per column.
+          { field: fieldRef(along.name), type: "temporal", timeUnit: unitName ?? heatUnit(along), axis: { ...TIME_AXIS, format: dateFormat(along) }, ...titled(along) }
+        : // A few dates, irregular: a column each (on a time axis a day's cell would be a sliver).
+          { field: fieldRef(along.name), type: "ordinal", timeUnit: heatUnit(along), axis: { labelOverlap: "greedy", format: "%b %d, %Y", ...titled(along) }, ...titled(along) }
+      : { field: fieldRef(along.name), type: "ordinal", axis: { labelOverlap: "greedy", labelAngle: 0 }, ...titled(along) };
+    const parts = (distinctValues(series) ?? 0) - split.totals.length;
+    return {
+      ...base,
+      width: 640,
+      height: parts * 20,
+      usermeta: { chart: "time" },
+      ...(keep.length ? { transform: keep } : {}),
+      mark: { type: "rect", tooltip: true },
+      encoding: {
+        x: heatX,
+        y: (() => {
+          const y = category(series, {}, "axis");
+          return phone ? { ...y, axis: { ...(y.axis as Enc | undefined), labelLimit: PHONE_ROW_LABELS } } : y;
+        })(),
+        color: (() => {
+          const c = measure(m, aggregate ? { aggregate } : {});
+          return { ...c, scale: { ...(c.scale as Enc | undefined), ...(s.scale.type ? { type: s.scale.type } : {}), ...(s.scale.type === "symlog" ? { constant: s.scale.constant } : {}), scheme: "blues" } };
+        })(),
+      },
+    };
+  }
+
+  const lined = series ? seriesLines(series) : null;
+  // S3, S5: a line breaks at gaps in its times, and gives way to points when it's too jagged.
+  // (Rows aggregated per time, without a time unit, share their time's segment, so the sum or
+  // mean is unchanged. Buckets of a time unit that skip one draw as points instead.)
+  const skips = shapeOf(d, along, m, series, exact)?.gaps ?? false;
+  const gaps = !unit && !lines && skips ? segments(d, along, splitBy, fields) : null;
+  const points = (!!unit && skips) || jagged(d, along, m, series, exact);
+  const mark = points
+    ? { type: "point", filled: true, size: 24, tooltip: true }
+    : date
+      ? { type: "line", interpolate: "monotone", tooltip: true, ...(gaps ? { point: { size: 12 } } : {}) }
+      : { type: "line", point: rows <= 60 || !!gaps, tooltip: true };
+  const transform = [...keep, ...(gaps && !points ? gaps.transform : [])];
   return {
     ...base,
     width: 640,
     height: 300,
+    usermeta: { chart: total ? "total" : "time" },
+    ...(transform.length ? { transform } : {}),
     ...(lined ? { params: lined.params } : {}),
-    mark: date ? { type: "line", interpolate: "monotone", tooltip: true } : { type: "line", point: rows <= 60, tooltip: true },
+    mark,
     encoding: {
-      x: date
-        ? { field: fieldRef(along.name), type: "temporal", ...(unit ? { timeUnit: along.profile.kind === "temporal" && along.profile.utc ? `utc${unit}` : unit } : {}), axis: { ...TIME_AXIS, format: dateFormat(along) }, ...titled(along) }
-        : measure(along, { scale: { zero: false }, axis: { format: "d", ...TIME_AXIS } }),
-      y: measure(m, aggregate ? { aggregate, ...(band ? { scale: { zero: false } } : {}) } : scaled(m, band ? { zero: false } : {})),
+      x,
+      // A mean stays within the measure's values, so it keeps the measure's scale (S4: a heavy
+      // tail's mean is still heavy-tailed); a sum's range is not the measure's.
+      y: measure(m, aggregate === "sum" ? { aggregate, ...(band ? { scale: { zero: false } } : {}) } : { ...(aggregate ? { aggregate } : {}), ...scaled(m, band ? { zero: false } : {}) }),
       ...(lined ? lined.encoding : {}),
+      ...(gaps && !points ? { detail: { field: gaps.field, type: "nominal" } } : {}),
       ...(lines
         ? {
             color: { field: fieldRef(lines.name), type: "quantitative", legend: { format: "d" }, ...titled(lines) },
@@ -569,6 +691,14 @@ function timeSeries(d: Dataset, base: Spec, t: Field, m: Field, fields: Field[])
           }
         : {}),
     },
+  };
+}
+
+/** A series' lines: colored by it, with legend isolation (click a series; the others fade). */
+function seriesLines(f: Field): { encoding: Enc; params: Spec[] } {
+  return {
+    params: [{ name: "series", select: { type: "point", fields: [fieldRef(f.name)] }, bind: "legend" }],
+    encoding: { color: category(f), opacity: { condition: { param: "series", empty: true, value: 1 }, value: 0.15 } },
   };
 }
 
@@ -584,10 +714,26 @@ function dateFormat(t: Field): string {
   return span > 4 ? "%Y" : span > 1.5 ? "%b %Y" : "%b %d";
 }
 
+/** A heatmap's columns, most: a date drawn as it is (no time unit) gets a column per day up to this many distinct dates. */
+const HEATMAP_COLUMNS = 80;
+
+/**
+ * The columns of a heatmap along a date the line chart would draw as it is: a column per
+ * day while the dates are few (a year of twenty report dates keeps its twenty), else per
+ * year (a column per date would be slivers). In UTC when the dates are.
+ */
+function heatUnit(t: Field): string {
+  const unit = (distinctValues(t) ?? Infinity) <= HEATMAP_COLUMNS ? "yearmonthdate" : "year";
+  return t.profile.kind === "temporal" && t.profile.utc ? `utc${unit}` : unit;
+}
+
+/** A phone heatmap's row labels (px, then cut with an ellipsis): about a third of the narrowest column (288 px), so the cells and the legend above keep the rest. */
+const PHONE_ROW_LABELS = 100;
+
 /** Bars for the largest groups of a category with many values. */
 export const TOP = 20;
 
-function starterRule(d: Dataset): Spec | null {
+function starterRule(d: Dataset, phone = false): Spec | null {
   const base: Spec = {
     $schema: SCHEMA,
     description: `Starter chart for ${d.name} from vega-datasets. Edit freely.`,
@@ -632,7 +778,7 @@ function starterRule(d: Dataset): Spec | null {
 
   // 3. Dates, or three or more years, with a measure → a time series.
   const t = timeField(fields);
-  if (t && m1) return timeSeries(d, base, t, m1, fields);
+  if (t && m1) return timeSeries(d, base, t, m1, fields, phone);
 
   // 4. A small table of equal groups with two measures → small multiples, a panel per group (G-7).
   const pair = defaultPair(d, measures, "x");

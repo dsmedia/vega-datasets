@@ -37,6 +37,8 @@ function serve() {
 }
 
 const PHONE = { width: 390, height: 844, deviceScaleFactor: 1, isMobile: true, hasTouch: true };
+// The narrowest phones in use (an iPhone SE's 320 px): the Explore column is 288 px there.
+const SMALL = { width: 320, height: 640, deviceScaleFactor: 1, isMobile: true, hasTouch: true };
 const DESKTOP = { width: 1360, height: 900, deviceScaleFactor: 1, isMobile: false, hasTouch: false };
 
 const dist = path.join(repo, 'site', 'dist', 'datasets');
@@ -53,13 +55,20 @@ function measure() {
   };
 }
 
+/** How far the drawn Explore chart reaches past its column (0 when it fits, or isn't drawn). */
+function chartOverflow() {
+  const host = document.querySelector('#explore .explore-chart');
+  const svg = host?.querySelector('svg.marks, canvas.marks');
+  return host && svg ? Math.round(svg.getBoundingClientRect().right - host.getBoundingClientRect().right) : 0;
+}
+
 const puppeteer = await loadPuppeteer();
 const server = await serve();
 const browser = await puppeteer.launch({ executablePath: chrome, headless: true });
 const failures = [];
 let checks = 0;
 try {
-  for (const [label, viewport] of [['phone', PHONE], ['desktop', DESKTOP]]) {
+  for (const [label, viewport] of [['small phone', SMALL], ['phone', PHONE], ['desktop', DESKTOP]]) {
     const page = await browser.newPage();
     await page.setViewport(viewport);
     for (const p of pages) {
@@ -67,6 +76,14 @@ try {
       const m = await page.evaluate(measure);
       checks++;
       if (m.scroll > 0 || m.table > 1) failures.push({ label, page: p || 'home', ...m });
+      // On phones, the Explore chart once drawn stays inside its column (small multiples, legends).
+      if (viewport.isMobile && p.startsWith('datasets/')) {
+        await page.evaluate(() => document.querySelector('#explore')?.scrollIntoView());
+        await page.waitForSelector('#explore .explore-chart svg.marks, #explore .explore-chart canvas.marks, #explore .explore-chart img, #explore button.draw', { timeout: 8000 }).catch(() => null);
+        const chart = await page.evaluate(chartOverflow);
+        checks++;
+        if (chart > 1) failures.push({ label, page: p, scroll: 0, table: 0, chart });
+      }
     }
     await page.close();
   }
@@ -74,6 +91,6 @@ try {
   await browser.close();
   server.kill();
 }
-for (const f of failures) console.log(`FAIL  ${f.label} ${f.page}: page scrolls ${f.scroll}px, fields table ${f.table}px past its column`);
+for (const f of failures) console.log(`FAIL  ${f.label} ${f.page}: page scrolls ${f.scroll}px, fields table ${f.table}px past its column${f.chart ? `, Explore chart ${f.chart}px past its column` : ''}`);
 console.log(`\n${checks - failures.length} of ${checks} checks passed.`);
 process.exitCode = failures.length ? 1 : 0;

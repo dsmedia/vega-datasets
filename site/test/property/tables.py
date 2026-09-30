@@ -76,20 +76,25 @@ def times_of(rng: random.Random) -> tuple[str, list[str]]:
     return kind, time_values(rng, kind, rng.randint(3, 8)) if kind != "none" else []
 
 
-def cell(rng: random.Random, marker: str | None) -> str:
-    """A measure's cell: zeros, duplicates, negatives, decimals, sometimes a missing marker."""
-    v = rng.choice([
-        0,
-        0,
-        1,
-        5,
-        5,
-        10,
-        20,
-        -3,
-        rng.randint(-50, 500),
-        round(rng.uniform(-1, 1000), 2),
-    ])
+def cell(rng: random.Random, marker: str | None, counts: bool = False) -> str:
+    """A measure's cell: zeros, duplicates, negatives, decimals, sometimes a missing marker; ``counts`` has no negatives."""
+    choices = (
+        [0, 0, 1, 5, 5, 10, 20, rng.randint(0, 500)]
+        if counts
+        else [
+            0,
+            0,
+            1,
+            5,
+            5,
+            10,
+            20,
+            -3,
+            rng.randint(-50, 500),
+            round(rng.uniform(-1, 1000), 2),
+        ]
+    )
+    v = rng.choice(choices)
     return marker if marker and rng.random() < 0.1 else str(v)
 
 
@@ -118,8 +123,14 @@ def table(rng: random.Random) -> tuple[list[dict], list[dict[str, str]]]:
     cats = rng.sample(CATEGORY_NAMES, rng.randint(1, 2))
     measures = rng.sample(MEASURE_NAMES, rng.randint(1, 3))
     integer_cat = rng.random() < 0.3
-    # Sometimes more series than the palette has colors (eleven to thirteen).
-    width = rng.choice([rng.randint(2, 5), rng.randint(2, 5), rng.randint(11, 13)])
+    # Sometimes near the palette's ten colors (eight to ten: with empty cells, one more), or
+    # more than it has (eleven to thirteen).
+    width = rng.choice([
+        rng.randint(2, 5),
+        rng.randint(2, 5),
+        rng.randint(8, 10),
+        rng.randint(11, 13),
+    ])
     series = (
         [str(i) for i in range(1, width + 1)]
         if integer_cat
@@ -128,6 +139,10 @@ def table(rng: random.Random) -> tuple[list[dict], list[dict[str, str]]]:
     with_total = rng.random() < 0.3
     marker = "-99" if rng.random() < 0.3 else None
     panel = bool(times) and rng.random() < 0.7
+    # A panel keyed by two categories (a count per series and group): charts sum over the group.
+    crossed = panel and len(cats) > 1 and rng.random() < 0.6
+    if crossed and not any(m in {"count", "people", "population"} for m in measures):
+        measures[0] = rng.choice(["count", "people", "population"])
     points = (
         [(t, s) for t in times for s in series]
         if panel
@@ -138,16 +153,17 @@ def table(rng: random.Random) -> tuple[list[dict], list[dict[str, str]]]:
     )
     rows: list[dict[str, str]] = []
     for t, s in points:
-        row = (
-            {"when": "" if kind == "date" and rng.random() < 0.05 else t}
-            if times
-            else {}
-        )
-        row[cats[0]] = "" if rng.random() < 0.05 else s
-        if len(cats) > 1:
-            row[cats[1]] = rng.choice(["a", "b", "c"])
-        row.update({m: cell(rng, marker) for m in measures})
-        rows.append(row)
+        for group in ["a", "b", "c"] if crossed else [None]:
+            # Dates sometimes empty, sometimes text that is no date at all ("N/A").
+            when = (
+                rng.choice(["", "N/A"]) if kind == "date" and rng.random() < 0.05 else t
+            )
+            row = {"when": when} if times else {}
+            row[cats[0]] = "" if rng.random() < 0.05 and not crossed else s
+            if len(cats) > 1:
+                row[cats[1]] = group or rng.choice(["a", "b", "c"])
+            row.update({m: cell(rng, marker, counts=crossed) for m in measures})
+            rows.append(row)
     if with_total and panel:
         rows += totals(
             rows, times, cats, measures, "99" if integer_cat else "Total", marker

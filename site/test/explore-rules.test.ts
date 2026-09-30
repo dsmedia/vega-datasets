@@ -12,7 +12,7 @@ import { chartFeatures, defaultAxes, discreteHeight, exploreModes, mapNote, pick
 import * as largeData from '../src/lib/large-data';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { basemapUrl, starterSpec } from '../src/lib/starter';
+import { basemapUrl, starterSpec, totalSpec } from '../src/lib/starter';
 import { draw, rowsWith } from './draw';
 import { described, strip } from './fixtures';
 
@@ -33,6 +33,8 @@ const dates = (name: string, distinct: number, evenlySpaced = true): Field => ({
 /** A bare table of these fields and rows (no dataset-level metadata). */
 const table = (fields: Field[], rows: number, extra: Partial<Dataset> = {}): Dataset => ({ ...strip(described()), fields, rows, ...extra });
 const enc = (spec: Spec | null) => ((spec?.spec ?? (spec?.layer as Spec[] | undefined)?.at(-1) ?? spec) as { encoding: Enc }).encoding;
+/** The channel that carries the measure: y on a line, color on a heatmap of time by series (S1). */
+const value = (spec: Spec | null) => ((spec?.mark as { type?: string } | undefined)?.type === 'rect' ? enc(spec).color : enc(spec).y)!;
 
 /** Compile without warnings (the interpreter-safe settings the page uses). */
 function compiles(spec: Spec): void {
@@ -177,12 +179,17 @@ describe('G-4: series stay apart', () => {
     expect(e.y).not.toHaveProperty('aggregate');
   });
 
-  test('a series value that totals the others is its own line: no row is removed (round 4)', () => {
-    const entity = nominal('Entity', [['All natural disasters', 10], ['Drought', 10], ['Flood', 10]]);
+  test('a series value that totals the others: the parts on the chart, the total in its own mode (S2)', () => {
+    const entity = { ...nominal('Entity', [['All natural disasters', 10], ['Drought', 10], ['Flood', 10]]), profile: { kind: 'nominal' as const, distinct: 3, top: [['All natural disasters', 10], ['Drought', 10], ['Flood', 10]] as [string, number][], missing: 0 } };
     const d = table([quant('Year', 1900, 1909, { type: 'integer' }, { distinct: 10, evenlySpaced: true }), entity, quant('Deaths', 1, 3.7e6, { type: 'integer' })], 30, { timeKeys: { Year: ['Entity'] }, totalValues: { Entity: { Deaths: ['All natural disasters'] } } });
-    const spec = starterSpec(d)!;
-    expect(spec.transform).toBeUndefined();
-    expect(enc(spec).color).toMatchObject({ field: 'Entity' });
+    const parts = starterSpec(d)!;
+    const filters = (parts.transform as { filter: string }[]).map((t) => t.filter);
+    expect(filters.some((f) => f.includes('v:All natural disasters') && f.endsWith('< 0'))).toBe(true);
+    expect(enc(parts).color).toMatchObject({ field: 'Entity' });
+    expect(exploreModes(d)).toEqual(['time', 'total']);
+    const total = totalSpec(d)!;
+    expect(JSON.stringify(total.transform)).toContain('>= 0');
+    expect(enc(total).color).toBeUndefined();
   });
 });
 
@@ -355,9 +362,10 @@ describe('Codex round 1', () => {
   test('#2 a sum is not bounded by the range documented for its rows', () => {
     const count = quant('count', 80, 80, { constraints: { minimum: 0, maximum: 100 } });
     const d = table([year, nominal('region', regions(13)), count, quant('other', 1, 9)], 39, { timeKeys: { year: ['region'] }, totalValues: {} });
-    const y = enc(starterSpec(d)).y;
-    expect(y).toMatchObject({ aggregate: 'sum' });
-    expect(y.scale ?? {}).not.toHaveProperty('domainMax');
+    // Thirteen regions: a heatmap (S1) of each region's count, nothing summed; a sum would carry no row bound.
+    const y = value(starterSpec(d));
+    expect(y.aggregate).not.toBe('mean');
+    if (y.aggregate === 'sum') expect((y.scale as Record<string, unknown> | undefined)?.domainMax).toBeUndefined();
   });
 
   test('#3 a rate named for what it counts is not summed', () => {
@@ -370,7 +378,8 @@ describe('Codex round 1', () => {
 
   test('#4 times merged into one bucket are averaged, never summed', () => {
     const days: Field = { name: 'date', type: 'date', description: null, profile: { kind: 'temporal', min: '2019-01-01T00:00:00Z', max: '2021-12-31T00:00:00Z', missing: 0, distinct: 1096, evenlySpaced: true } };
-    const d = table([days, quant('population', 100, 100)], 1096, { timeKeys: { date: [] } });
+    // The builder buckets a date in a table of over a thousand rows (three years: by month).
+    const d = table([days, quant('population', 100, 100)], 1096, { timeKeys: { date: [] }, timeSteps: { date: { step: 86400, breakAt: 129600, unit: 'yearmonth' } } });
     expect(enc(starterSpec(d)).y).toMatchObject({ aggregate: 'mean' });
   });
 
@@ -378,13 +387,15 @@ describe('Codex round 1', () => {
     const region = { ...nominal('region', regions(6)), profile: { kind: 'nominal' as const, distinct: 13, top: regions(6), missing: 0 } };
     const d = table([year, region, quant('count', 10, 120)], 39, { timeKeys: { year: ['region'] }, totalValues: { region: { count: ['Total'] } } });
     const spec = starterSpec(d)!;
-    expect(enc(spec).y).toMatchObject({ aggregate: 'mean' });
-    expect(spec.transform).toBeUndefined();
+    // A heatmap of the parts (S1): the total left out into its own mode (S2), nothing summed.
+    expect(value(spec).aggregate).not.toBe('sum');
+    expect(exploreModes(d)).toContain('total');
     const rows = [2000, 2001, 2002].flatMap((y) => [...regions(12).map(([r]) => ({ year: y, region: r, count: 10 })), { year: y, region: 'Total', count: 120 }]);
     const view = await draw(spec, rows);
     try {
-      // The mean of twelve tens and one 120 (every row counted once).
-      expect(new Set(rowsWith(view, 'mean_count').map((r) => Math.round((r.mean_count as number) * 1000) / 1000))).toEqual(new Set([Math.round((240 / 13) * 1000) / 1000]));
+      // Each part's own count, every row once; the total's rows are the Total mode's.
+      expect(rowsWith(view, 'count').filter((r) => r.region !== 'Total').length).toBeGreaterThanOrEqual(36);
+      expect(rowsWith(view, 'count').some((r) => r.region === 'Total' && 'x' in r)).toBe(false);
     } finally {
       view.finalize();
     }
@@ -449,7 +460,7 @@ describe('Codex round 2', () => {
     expect(summable(quant('deaths_%', 0, 100))).toBe(false);
     expect(summable(quant('deathsPer1000', 0, 100))).toBe(false);
     const d = table([year, many('country', 13, regions(6)), quant('deaths_per100k', 100, 100)], 39, { timeKeys: { year: ['country'] }, totalValues: {} });
-    expect(enc(starterSpec(d)).y).toMatchObject({ aggregate: 'mean' });
+    expect(value(starterSpec(d)).aggregate).not.toBe('sum');
   });
 
   test('#2 a bucket where an entity repeats is averaged, not summed', () => {
@@ -457,8 +468,9 @@ describe('Codex round 2', () => {
     const region = many('region', 400, regions(6));
     const rows = 1200;
     // The builder records the buckets in which (bucket, key) still names one row: none here (Jan 2019 holds two dates).
-    const d = table([days, region, quant('population', 100, 100)], rows, { timeKeys: { date: ['region'] }, timeKeyBuckets: { date: [] }, totalValues: {} });
-    // 1,200 rows keep the time unit on: the monthly bucket merges the 2nd and 3rd of January.
+    const steps = { date: { step: 86400, breakAt: 4.7e7, unit: 'yearmonth' } };
+    const d = table([days, region, quant('population', 100, 100)], rows, { timeKeys: { date: ['region'] }, timeKeyBuckets: { date: [] }, totalValues: {}, timeSteps: steps });
+    // 1,200 rows keep the time unit on (the builder's, by month): it merges the 2nd and 3rd of January.
     expect(enc(starterSpec(d)).y).toMatchObject({ aggregate: 'mean' });
     // Where every bucket holds one row per region, the sum stands.
     const once = { ...d, timeKeyBuckets: { date: ['yearmonthdate', 'yearmonth', 'year'] } };
@@ -563,7 +575,7 @@ describe('Codex round 3', () => {
     expect(summable(quant('deaths', 0, 100, { title: 'Deaths per100k' }))).toBe(false);
     expect(summable(quant('deaths', 0, 100, { description: 'Deaths per100k people.' }))).toBe(false);
     const d = table([year, many('country', 13, regions(6)), quant('deaths', 100, 100, { title: 'Deaths per100k' })], 39, { timeKeys: { year: ['country'] }, totalValues: {} });
-    expect(enc(starterSpec(d)).y).toMatchObject({ aggregate: 'mean' });
+    expect(value(starterSpec(d)).aggregate).not.toBe('sum');
   });
 
   test('#2 the chart buckets date-only values in UTC, as the builder checks them (New York and Tokyo)', () => {
@@ -667,19 +679,60 @@ describe('series colors (TABLEAU10, one palette for every limit)', () => {
     expect(tokens).toEqual([...TABLEAU10]);
   });
 
-  test('ten parts and a detected total: the parts in tableau10, the total in gray, last', () => {
+  test('ten parts and a detected total: a heatmap of the parts (more than six lines, S1), the total its own mode (S2)', () => {
     const kinds = ['Drought', 'Earthquake', 'Epidemic', 'Extreme temperature', 'Extreme weather', 'Flood', 'Landslide', 'Mass movement (dry)', 'Volcanic activity', 'Wildfire'];
     const all = ['All natural disasters', ...kinds];
     const entity = { ...nominal('Entity', all.slice(0, 6).map((v) => [v, 10] as [string, number])), profile: { kind: 'nominal' as const, distinct: 11, top: all.slice(0, 6).map((v) => [v, 10] as [string, number]), missing: 0, values: all } };
     const d = table([quant('Year', 1900, 1909, { type: 'integer' }, { distinct: 10, evenlySpaced: true }), entity, quant('Deaths', 1, 3.7e6, { type: 'integer' })], 110, {
       timeKeys: { Year: ['Entity'] }, totalValues: { Entity: { Deaths: ['All natural disasters'] } },
     });
-    const color = enc(starterSpec(d)).color as { field: string; scale: { domain: string[]; range: string[] } };
-    expect(color.field).toBe('Entity');
-    expect(color.scale.domain).toEqual([...kinds, 'All natural disasters']);
-    expect(color.scale.range).toEqual([...TABLEAU10, TOTAL_COLOR]);
-    // Without the total, eleven kinds are more than the palette: no color at all.
-    const eleven = { ...d, totalValues: {} };
-    expect(enc(starterSpec(eleven)).color).toBeUndefined();
+    const spec = starterSpec(d)!;
+    expect(spec.mark).toMatchObject({ type: 'rect' });
+    expect(enc(spec).y).toMatchObject({ field: 'Entity' });
+    expect(enc(spec).color).toMatchObject({ field: 'Deaths', scale: { type: 'log' } });
+    expect(spec.height).toBe(200);
+    // Four or fewer parts on a phone: the six-line limit is four there.
+    const five = { ...d, fields: d.fields.map((f) => (f.name === 'Entity' ? { ...f, profile: { ...(f.profile as object), distinct: 6, values: all.slice(0, 6) } as Field['profile'] } : f)) };
+    expect(starterSpec(five)!.mark).toMatchObject({ type: 'line' });
+    expect(starterSpec(five, true)!.mark).toMatchObject({ type: 'rect' });
+  });
+});
+
+describe('Codex round 5', () => {
+  test('#3 empty cells count toward the color limit: ten causes and an empty one are eleven colors, too many', () => {
+    const causes = Array.from({ length: 10 }, (_, i) => [`r${i}`, 20] as [string, number]);
+    const cause = (missing: number): Field => ({ ...nominal('cause', causes), profile: { kind: 'nominal', distinct: 10, top: causes, missing, values: causes.map(([v]) => v) } });
+    const d = (missing: number) => table([quant('x', 1, 90), quant('y', 5, 70), cause(missing)], 210);
+    // Ten causes fill the palette's ten colors.
+    expect(scatterFields(d(0))!.color?.name).toBe('cause');
+    // With empty cells as an eleventh value, two values would share a color: no color.
+    expect(scatterFields(d(10))!.color).toBeUndefined();
+  });
+});
+
+describe('Visual standards review (site/CHART-STANDARDS.md)', () => {
+  const states = Array.from({ length: 12 }, (_, i) => [`S${String(i).padStart(2, '0')}`, 5] as [string, number]);
+  const state = { ...nominal('state', states), profile: { kind: 'nominal' as const, distinct: 12, top: states, missing: 0, values: states.map(([v]) => v) } };
+  const date = (distinct: number): Field => ({ name: 'date', type: 'date', description: null, profile: { kind: 'temporal', min: '2015-01-01T00:00:00Z', max: '2015-12-31T00:00:00Z', missing: 0, distinct, utc: true } as Field['profile'] });
+
+  test('S7: a few report dates keep a column each (not one year column)', () => {
+    const d = table([date(20), state, quant('receipts', 1, 900)], 60, { timeKeys: { date: ['state'] }, timeSteps: { date: { step: 86400, breakAt: 2e6, unit: 'none' } } });
+    const spec = starterSpec(d)!;
+    expect(spec.mark).toMatchObject({ type: 'rect' });
+    expect(enc(spec).x).toMatchObject({ type: 'ordinal', timeUnit: 'utcyearmonthdate' });
+  });
+
+  test('S7: buckets of a unit sit on a time axis, labeled as a line chart’s', () => {
+    const d = table([date(3000), state, quant('count', 1, 900)], 3000, { timeKeys: { date: ['state'] }, timeSteps: { date: { step: 86400, breakAt: 2e6, unit: 'yearmonthdate' } } });
+    const x = enc(starterSpec(d)).x as { type: string; timeUnit: string; axis: { format: string } };
+    expect(x).toMatchObject({ type: 'temporal', timeUnit: 'utcyearmonthdate' });
+    expect(x.axis.format).toBe('%b %d');
+  });
+
+  test('S4: a heavy-tailed measure’s monthly mean keeps its log axis', () => {
+    const d = table([date(3000), quant('cost', 1, 5e6, {}, { bins: bins(20, 1) })], 3000, { timeKeys: { date: [] }, timeSteps: { date: { step: 86400, breakAt: 2e6, unit: 'yearmonth' } } });
+    const y = enc(starterSpec(d)).y as { aggregate?: string; scale?: { type?: string } };
+    expect(y.aggregate).toBe('mean');
+    expect(y.scale?.type).toBe('log');
   });
 });

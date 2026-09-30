@@ -452,6 +452,9 @@ exports[`time series colored by a series > starter and Explore specs match the c
   },
   "width": 640,
   "height": 300,
+  "usermeta": {
+   "chart": "time"
+  },
   "params": [
    {
     "name": "series",
@@ -484,7 +487,8 @@ exports[`time series colored by a series > starter and Explore specs match the c
    "y": {
     "field": "hp",
     "type": "quantitative",
-    "aggregate": "mean"
+    "aggregate": "mean",
+    "scale": {}
    },
    "color": {
     "field": "origin",
@@ -508,6 +512,9 @@ exports[`time series colored by a series > starter and Explore specs match the c
   },
   "width": "container",
   "height": 300,
+  "usermeta": {
+   "chart": "time"
+  },
   "params": [
    {
     "name": "series",
@@ -540,7 +547,8 @@ exports[`time series colored by a series > starter and Explore specs match the c
    "y": {
     "field": "hp",
     "type": "quantitative",
-    "aggregate": "mean"
+    "aggregate": "mean",
+    "scale": {}
    },
    "color": {
     "field": "origin",

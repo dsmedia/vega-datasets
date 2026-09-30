@@ -32,7 +32,7 @@ import subprocess
 import time
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, Literal, cast
@@ -462,9 +462,13 @@ def profile_field(
             profile["bins"] = _bins((valid - lo).dt.total_seconds(), span)
         # ISO dates without a time (or with a zone) are read as UTC by browsers, so the
         # site buckets them in UTC; other forms are read as local wall-clock time.
-        # Judged on the non-empty cells: one empty cell doesn't change how the rest are read.
-        cells = s.drop_nulls().str.strip_chars() if s.dtype == pl.String else None
-        cells = cells.filter(cells.str.len_chars() > 0) if cells is not None else None
+        # Judged on the cells that read as dates: an empty or unreadable one ("N/A") is a
+        # missing value, and doesn't change how the rest are read.
+        cells = (
+            s.cast(pl.String).str.strip_chars().filter(dt.is_not_null())
+            if s.dtype == pl.String
+            else None
+        )
         iso = (
             cells is not None
             and cells.len() > 0
@@ -690,12 +694,16 @@ def structure(
     # Parsed once for the three checks that compare values as the chart reads them.
     values = parsed_values(df, fields, numbers)
     keys = time_keys(df, fields, numbers, values)
+    times = time_fields(fields, numbers, keys)
+    steps, shapes = line_shapes(numbers, times, values)
     found = {
         "correlated": correlations(numbers),
         "points": coordinates(numbers, fields),
         "timeKeys": keys,
         "timeKeyBuckets": time_key_buckets(df, fields, numbers, keys, values),
         "totalValues": total_values(df, fields, numbers, keys, values),
+        "timeSteps": steps,
+        "lineShapes": shapes,
         "presentCategories": present_categories(df, fields, schema),
     }
     return {k: v for k, v in found.items() if v}
@@ -896,6 +904,230 @@ def _totals_by(values: pl.DataFrame, g: str, m: str, context: list[str]) -> list
         str(int(v)) if isinstance(v, float) and v.is_integer() else str(v)
         for v in found[g].to_list()
     )
+
+
+UNITS: Final = {"yearmonthdate": "1d", "yearmonth": "1mo", "year": "1y"}
+
+
+def time_fields(
+    fields: list[dict[str, Any]],
+    numbers: dict[str, pl.Series],
+    keys: dict[str, list[str]],
+) -> dict[str, list[str]]:
+    """Every time field (dates, integer years), with the fields that key it with the time ([] when none do)."""
+    return {
+        f["name"]: keys.get(f["name"], [])
+        for f in fields
+        if f.get("type") in {"date", "datetime"}
+        or (f.get("type") == "integer" and _years(numbers.get(f["name"])))
+    }
+
+
+SERIES_MAX: Final = 40
+
+
+def _series_options(
+    values: pl.DataFrame, t: str, key: list[str], numbers: dict[str, pl.Series]
+) -> dict[str, list[str]]:
+    """
+    The ways a chart may split a time's rows into series, named.
+
+    Not at all ("*": one line of all rows), by the fields that key the time ("", the key
+    itself), and by each category or integer code of at most SERIES_MAX values (a line or
+    heatmap row each).
+    """
+    out = {"*": [], "": key}
+    for c in values.columns:
+        if c == t or (c in numbers and values[c].n_unique() > SERIES_MAX):
+            continue
+        if 2 <= values[c].drop_nulls().n_unique() <= SERIES_MAX:
+            out[c] = [c]
+    return out
+
+
+def line_shapes(
+    numbers: dict[str, pl.Series], times: dict[str, list[str]], values: pl.DataFrame
+) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, dict[str, dict[str, Any]]]]]:
+    """
+    How each time steps, and how each measure's lines along it would look.
+
+    ``steps[t]``: the most common gap between neighbouring times (a year; a month in
+    seconds); ``breakAt``, 1.5 times the 90th-percentile gap: the widest a line may cross
+    (a trading week's weekend is narrower; a year with no record is wider); and ``unit``,
+    the Vega-Lite time unit a line along the time averages its rows into (``time_unit``).
+
+    ``shapes[t][m][series]``, for each way a chart may split the rows into lines ("*" for
+    one line of all rows, "" for the fields that key the time, one row each, or a category's
+    name), bucketed by the unit: ``jag``, the median absolute step within a series over the
+    range, as the median across series (``jagLog`` on log10 values, for positive values);
+    and ``gaps``, whether some series skips (a bucket of the unit, or more than ``breakAt``)
+    where the measure has no value. CHART-STANDARDS.md S3 and S5 read these.
+    """
+    steps: dict[str, dict[str, Any]] = {}
+    shapes: dict[str, dict[str, dict[str, dict[str, Any]]]] = {}
+    for t, key in times.items():
+        distinct = values[t].drop_nulls().unique().sort()
+        if distinct.len() < 3:
+            continue
+        seconds = distinct.diff().drop_nulls()
+        seconds = (
+            seconds.dt.total_seconds() if seconds.dtype == pl.Duration else seconds
+        ).cast(pl.Float64)
+        p90 = cast("float", seconds.quantile(0.9, "lower"))
+        unit = time_unit(distinct, values.height)
+        steps[t] = {
+            "step": _nice(cast("float", seconds.mode().sort()[0])),
+            "breakAt": _nice(1.5 * p90),
+            "unit": unit,
+        }
+        options = _series_options(values, t, key, numbers)
+        measures = [m for m in numbers if m != t]
+        for (name, m), shape in _shapes(
+            values, t, unit, options, measures, 1.5 * p90
+        ).items():
+            shapes.setdefault(t, {}).setdefault(m, {})[name] = shape
+    return steps, shapes
+
+
+BUCKET_ROWS: Final = 1000
+
+
+def time_unit(times: pl.Series, rows: int) -> str:
+    """
+    The Vega-Lite time unit a line along a time averages its rows into ("none": as they are).
+
+    A date in a table of more than BUCKET_ROWS rows (a long daily or hourly series) is
+    averaged into days for up to two years, months up to forty, else years; a smaller
+    table, or a year or other number, is drawn as it is.
+    """
+    if not isinstance(times.dtype, pl.Datetime) or rows <= BUCKET_ROWS:
+        return "none"
+    span = cast("timedelta", times.max() - times.min()).total_seconds() / (
+        365.25 * 86400
+    )
+    return "yearmonthdate" if span <= 2 else "yearmonth" if span <= 40 else "year"
+
+
+def _shapes(
+    values: pl.DataFrame,
+    t: str,
+    unit: str,
+    options: dict[str, list[str]],
+    measures: list[str],
+    break_at: float,
+) -> dict[tuple[str, str], dict[str, Any]]:
+    """
+    Every way of drawing each measure's lines along a time (``line_shapes``), in one query.
+
+    For each way of splitting the rows into series: each series' mean per bucket of the
+    unit (as a line with that aggregate draws it), in long form (a row per way, measure,
+    series and time; missing values left out). Then per way and measure: ``gaps`` and the
+    median step within series over the range, ``jag`` and (for positive values) ``jagLog``.
+    """
+    is_date = isinstance(values[t].dtype, pl.Datetime)
+    bucket = pl.col(t).dt.truncate(UNITS[unit]) if unit != "none" else pl.col(t)
+    # The time the next one should start by: the next bucket, or within breakAt.
+    ahead = (
+        pl.col(t).dt.offset_by(UNITS[unit])
+        if unit != "none"
+        else pl.col(t) + (pl.duration(seconds=break_at) if is_date else break_at)
+    )
+    parts = []
+    for name, split in options.items():
+        own = [m for m in measures if m not in split]
+        if not own:
+            continue
+        series = (
+            pl.concat_str(
+                [pl.col(c).cast(pl.String).fill_null("\0") for c in split],
+                separator="\x1f",
+            )
+            if split
+            else pl.lit("")
+        )
+        parts.append(
+            values.lazy()
+            .select([*split, t, *own])
+            .filter(pl.col(t).is_not_null())
+            .with_columns(bucket.alias(t))
+            .group_by([*split, t])
+            # A bucket with no value is missing (polars may give NaN for a mean of none).
+            .agg(pl.col(own).mean().fill_nan(None))
+            .unpivot(
+                index=[*split, t], on=own, variable_name="__m__", value_name="__v__"
+            )
+            .drop_nulls("__v__")
+            .select(
+                pl.lit(name).alias("__k__"),
+                "__m__",
+                series.alias("__s__"),
+                t,
+                ahead.alias("__by__"),
+                pl.col("__v__").cast(pl.Float64),
+            )
+        )
+    if not parts:
+        return {}
+    way = ["__k__", "__m__"]
+    series = [*way, "__s__"]
+    # Rows are sorted by series, then time: a step is to the previous row in the same series
+    # (a comparison with the row before, cheaper than a window over thousands of series).
+    same = pl.all_horizontal([pl.col(c).eq_missing(pl.col(c).shift(1)) for c in series])
+    last = ~pl.all_horizontal([
+        pl.col(c).eq_missing(pl.col(c).shift(-1)) for c in series
+    ])
+    # log10 values, for a measure that is positive throughout.
+    positive = pl.col("__v__").min().over(way) > 0
+    measured = (
+        pl.concat(parts)
+        .sort([*series, t])
+        .with_columns(pl.when(positive).then(pl.col("__v__").log10()).alias("__log__"))
+        .with_columns(
+            pl.when(same).then(pl.col("__v__").diff().abs()).alias("__step__"),
+            pl.when(same).then(pl.col("__log__").diff().abs()).alias("__logstep__"),
+            pl.when(~last)
+            .then(pl.col(t).shift(-1) > pl.col("__by__"))
+            .alias("__gap__"),
+        )
+        .group_by(series)
+        .agg(
+            pl.col("__step__").median(),
+            pl.col("__logstep__").median(),
+            pl.col("__gap__").any(),
+            pl.len().alias("__n__"),
+            pl.col("__v__").min().alias("__lo__"),
+            pl.col("__v__").max().alias("__hi__"),
+            pl.col("__log__").min().alias("__loglo__"),
+            pl.col("__log__").max().alias("__loghi__"),
+        )
+        .group_by(way)
+        .agg(
+            pl.col("__step__").median(),
+            pl.col("__logstep__").median(),
+            pl.col("__gap__").any(),
+            pl.col("__n__").sum(),
+            pl.col("__lo__").min(),
+            pl.col("__hi__").max(),
+            pl.col("__loglo__").min(),
+            pl.col("__loghi__").max(),
+        )
+        .collect()
+    )
+    out: dict[tuple[str, str], dict[str, Any]] = {}
+    for r in measured.iter_rows(named=True):
+        span = r["__hi__"] - r["__lo__"]
+        # A flat measure (a span within rounding error of its values) has no shape to judge.
+        if span <= 1e-9 * max(abs(r["__hi__"]), abs(r["__lo__"])) or r["__n__"] < 3:
+            continue
+        shape: dict[str, Any] = {"gaps": bool(r["__gap__"])}
+        if r["__step__"] is not None:
+            shape["jag"] = round(r["__step__"] / span, 3)
+        if r["__logstep__"] is not None and r["__lo__"] > 0:
+            shape["jagLog"] = round(
+                r["__logstep__"] / ((r["__loghi__"] - r["__loglo__"]) or 1.0), 3
+            )
+        out[r["__k__"], r["__m__"]] = shape
+    return out
 
 
 def present_categories(

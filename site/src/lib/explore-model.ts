@@ -4,16 +4,16 @@
  * (starter.ts) for everything else — "Over Time" when it is a time series, "Small
  * Multiples" when it is one panel per group.
  */
-import { type Dataset, documentedRange, effectiveMissing, type Field, fieldTitle } from "./catalog";
+import { categoryLabels, categoryValues, type Dataset, documentedRange, effectiveMissing, type Field, fieldTitle } from "./catalog";
 import { correlation, distinctValues, legendsOnTop, PALETTE_SIZE, sampled, type ScaleType, scaleFor, scaleType, summable, withScale } from "./chart-rules";
 import { BAND_POLICY, rowBand } from "./large-data";
 import { formatCount } from "./format";
-import { category, categoryAsText, colorable, defaultPair, fieldRef, isMeasure, isYear, markerForms, missingFilter, PANEL_SIZE, starterSpec, tag, tagged, timeField, timeKeyOf, timeYear, titled, TOP, untag } from "./starter";
+import { category, categoryAsText, colorable, defaultPair, fieldRef, isMeasure, isYear, markerForms, missingFilter, PANEL_SIZE, starterSpec, tag, totalOf, totalSpec, tagged, timeField, timeKeyOf, timeYear, titled, TOP, untag } from "./starter";
 
 type Spec = Record<string, unknown>;
 
-export type Mode = "scatter" | "time" | "panels" | "starter";
-export const MODE_LABEL: Record<Mode, string> = { scatter: "Scatter", time: "Over Time", panels: "Small Multiples", starter: "Chart" };
+export type Mode = "scatter" | "time" | "panels" | "total" | "starter";
+export const MODE_LABEL: Record<Mode, string> = { scatter: "Scatter", time: "Over Time", panels: "Small Multiples", total: "Total", starter: "Chart" };
 
 const SCHEMA = "https://vega.github.io/schema/vega-lite/v6.json";
 
@@ -42,9 +42,9 @@ export function scatterFields(d: Dataset): ScatterFields | null {
 }
 
 /** A starter chart that is a line over dates or years. */
+/** A starter chart over time: a line, its points, or a heatmap of time by series (marked in `usermeta`). */
 function isTimeSeries(spec: Spec | null): boolean {
-  const mark = spec?.mark as { type?: string } | undefined;
-  return mark?.type === "line";
+  return (spec?.usermeta as { chart?: string } | undefined)?.chart === "time";
 }
 
 /**
@@ -80,8 +80,20 @@ export function exploreModes(d: Dataset): Mode[] {
   if (starter?.facet) return scatter ? ["panels", "scatter"] : ["panels"];
   // A table long enough for the density overview opens on it, and the overview is of the scatter plot.
   const overview = rowBand(d.rows ?? 0) === "density";
-  if (scatter) return isTimeSeries(starter) ? (!overview && timeFirst(d, scatter) ? ["time", "scatter"] : ["scatter", "time"]) : ["scatter"];
-  return starter ? ["starter"] : [];
+  // A detected total gets a mode of its own, never the parts' axes (CHART-STANDARDS.md S2).
+  const total: Mode[] = totalOf(d) ? ["total"] : [];
+  if (scatter) return [...(isTimeSeries(starter) ? (!overview && timeFirst(d, scatter) ? ["time", "scatter"] : ["scatter", "time"]) : ["scatter"]) as Mode[], ...total];
+  if (!starter) return [];
+  return isTimeSeries(starter) && total.length ? ["time", ...total] : ["starter"];
+}
+
+/** The chart of a mode other than the scatter plot, sized to its column. */
+export function modeChart(d: Dataset, mode: Mode, phone = false): Spec | null {
+  if (mode === "total") {
+    const spec = totalSpec(d, phone);
+    return spec ? sizedToColumn(d, spec, phone) : null;
+  }
+  return starterChart(d, phone);
 }
 
 export interface ScatterOptions {
@@ -158,8 +170,10 @@ export function scatterSpec(d: Dataset, f: ScatterFields, o: ScatterOptions): Sp
 /** A category's legend labels, as far as the profile knows them (its values, else its most common). */
 export function legendLabels(f: Field): string[] {
   const p = f.profile;
-  if (p.kind !== "nominal") return [];
-  return p.values ?? p.top.map(([v]) => v);
+  // The labels the legend shows: documented ones where the metadata has them (Codex round 5, #2).
+  const documented = new Map(categoryLabels(f) ?? []);
+  const values = p.kind === "nominal" ? (p.values ?? p.top.map(([v]) => v)) : (categoryValues(f) ?? []).map((c) => String(c.value));
+  return values.map((v) => documented.get(v) ?? v);
 }
 
 function scatterBase(d: Dataset, f: ScatterFields, o: ScatterOptions): Spec {
@@ -254,8 +268,11 @@ export function mapNote(d: Dataset): string | null {
 
 /** The starter chart, sized to its column; small multiples keep two columns of fixed panels, smaller on a phone. */
 export function starterChart(d: Dataset, phone = false): Spec | null {
-  const spec = starterSpec(d);
-  if (!spec) return null;
+  const spec = starterSpec(d, phone);
+  return spec ? sizedToColumn(d, spec, phone) : null;
+}
+
+function sizedToColumn(d: Dataset, spec: Spec, phone: boolean): Spec {
   if (spec.facet) {
     const size = phone ? PANEL_SIZE.phone : PANEL_SIZE.wide;
     const panels = { ...spec, spec: { ...(spec.spec as Spec), width: size, height: size } };

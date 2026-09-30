@@ -132,6 +132,14 @@ export interface Dataset {
   timeKeyBuckets?: Record<string, string[]>;
   /** Per category and number field with missing-value markers: the category's values left once those rows go (only where fewer). */
   presentCategories?: Record<string, Record<string, number>>;
+  /**
+   * Per time field: its most common step, the widest gap a line may cross (S3; seconds for
+   * dates), and the Vega-Lite time unit a line along it averages rows into ("none": as they
+   * are; a date in a table of over a thousand rows: days, months or years by its span).
+   */
+  timeSteps?: Record<string, { step: number; breakAt: number; unit: string }>;
+  /** Per time field, measure and way of splitting the lines ("*" one line, "" the time's key, or a category), bucketed by the unit: how jagged the lines are, and whether a series skips (S3, S5). */
+  lineShapes?: Record<string, Record<string, Record<string, { gaps: boolean; jag?: number; jagLog?: number }>>>;
   /** Per grouping field and number field, the values that look like totals of the others (a signal for choosing a chart; no row is ever removed). */
   totalValues?: Record<string, Record<string, string[]>>;
   /** Pairs of number fields that move together (|r| ≥ 0.9), as `[a, b, r]`. */

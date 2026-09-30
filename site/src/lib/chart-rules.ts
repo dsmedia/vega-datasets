@@ -3,6 +3,9 @@
  * first (documented categories and their order, titles, descriptions), then the field
  * profiles and the pairwise correlations the catalog builder records. No dataset names:
  * every rule reads structure, so a table added tomorrow gets the same treatment.
+ *
+ * The visual standards the rules meet (series limit, totals, gaps, log axes, jagged series,
+ * phone widths), with their rationale and the tests that hold them: site/CHART-STANDARDS.md.
  */
 import { categoryValues, type Dataset, documentedRange, type Field, orderedCategories } from "./catalog";
 
@@ -188,6 +191,10 @@ export function idName(f: Field, fields: Field[]): boolean {
  */
 export const TABLEAU10 = ["#4c78a8", "#f58518", "#e45756", "#72b7b2", "#54a24b", "#eeca3b", "#b279a2", "#ff9da6", "#9d755d", "#bab0ac"] as const;
 export const PALETTE_SIZE = TABLEAU10.length;
+/** Colored lines on one set of axes, at most (CHART-STANDARDS.md S1): beyond, a heatmap. */
+export const SERIES_LIMIT = { wide: 6, phone: 4 };
+/** Past this jaggedness (median step over the range), points instead of lines (S5). */
+export const JAGGED = 0.2;
 /** A line that is the total of the others: gray, so it reads as the sum, not as one more part (on light and dark grounds). */
 export const TOTAL_COLOR = "#8a8f98";
 
@@ -328,17 +335,23 @@ export function totalsOf(d: Dataset, f: Field, m: Field): string[] {
 /** Encoding channels that draw a legend. */
 const LEGEND_CHANNELS = ["color", "strokeDash", "shape", "size"] as const;
 
+/** A phone legend's room across (px): the Explore column (288 px at 320) past a y axis's labels. */
+const LEGEND_ROOM = 250;
+/** A legend label's width per character (px, at the theme's 11 px), and an entry's symbol, gap and column padding. */
+const LEGEND_CHAR = 6.5;
+const LEGEND_ENTRY = 36;
+
 /**
  * A spec with its legends above the plot, in columns, for a phone's narrow column: on the
- * right a legend takes half of 358 px. `labels` (the legend's values, when known) set the
- * columns: four short labels to a row, two long ones. Each legend keeps its own properties
+ * right a legend takes half of 358 px. `labels` (the labels the legend shows, when known)
+ * set the columns: as many as fit the room at the longest label's width, up to four. Each legend keeps its own properties
  * (labels, formats); channels sharing a field get the same placement, so Vega-Lite still
  * merges them into one legend. Layers and small multiples' inner specs alike. `offset`
  * (px above the plot) clears anything drawn there (the scatter plot's y title).
  */
 export function legendsOnTop(spec: Record<string, unknown>, labels: string[] = [], offset = 6): Record<string, unknown> {
   const longest = Math.max(0, ...labels.map((l) => l.length));
-  const columns = longest <= 8 ? 4 : longest <= 14 ? 3 : 2;
+  const columns = Math.max(1, Math.min(4, Math.floor(LEGEND_ROOM / (LEGEND_ENTRY + longest * LEGEND_CHAR))));
   const top = { orient: "top", direction: "horizontal", columns, columnPadding: 10, offset };
   const unit = (u: Record<string, unknown>): Record<string, unknown> => {
     const encoding = u.encoding as Record<string, Record<string, unknown>> | undefined;
