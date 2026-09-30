@@ -266,13 +266,27 @@ export function parseTemporal(text: string, format?: string): number | undefined
     if (!m) return undefined;
     const v: Record<string, number> = { Y: 1970, m: 1, d: 1, H: 0, M: 0, S: 0 };
     keys.forEach((k, i) => (v[k] = Number(m[i + 1])));
-    return Date.UTC(v.Y!, v.m! - 1, v.d!, v.H!, v.M!, v.S!);
+    return utc(v.Y!, v.m!, v.d!, v.H!, v.M!, v.S!);
   }
-  const iso = /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?))?(Z|[+-]\d{2}:?\d{2})?$/.exec(text.trim());
+  const iso = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(\.\d+)?)?)?(Z|([+-])(\d{2}):?(\d{2}))?$/.exec(text.trim());
   if (!iso) return undefined;
-  const zone = iso[3] ? iso[3].replace(/^([+-]\d{2})(\d{2})$/, "$1:$2") : "Z";
-  const t = Date.parse(`${iso[1]}T${iso[2] ?? "00:00"}${zone}`);
-  return Number.isNaN(t) ? undefined : t;
+  const [, Y, mo, d, H = "0", M = "0", S = "0", frac = "", , sign, zh = "0", zm = "0"] = iso;
+  const t = utc(+Y!, +mo!, +d!, +H, +M, +S);
+  if (t === undefined || +zh > 23 || +zm > 59) return undefined;
+  const offset = sign ? (sign === "-" ? -1 : 1) * (+zh * 60 + +zm) * 60_000 : 0;
+  return t + Math.round(Number(`0${frac}`) * 1000) - offset;
+}
+
+/**
+ * The instant of a UTC wall-clock date and time, the year taken as written (0099 is 99),
+ * or undefined when a part is out of range (31/02 is no date, not 2 March).
+ */
+function utc(y: number, mo: number, d: number, h: number, mi: number, s: number): number | undefined {
+  if (mo < 1 || mo > 12 || d < 1 || h > 23 || mi > 59 || s > 59) return undefined;
+  const t = new Date(0);
+  t.setUTCFullYear(y, mo - 1, d);
+  t.setUTCHours(h, mi, s, 0);
+  return t.getUTCFullYear() === y && t.getUTCMonth() === mo - 1 && t.getUTCDate() === d ? t.getTime() : undefined;
 }
 
 /**
@@ -289,7 +303,8 @@ export function insideDocumented(f: Field): boolean | null {
     : p.kind === "temporal" && typeof v === "string" ? parseTemporal(v, f.format)
     : undefined;
   const [min, max] = [value(minimum), value(maximum)];
-  if (min === undefined && max === undefined) return null;
+  // A bound that is there but can't be read leaves the whole check unknown.
+  if ((min === undefined && max === undefined) || (minimum !== undefined && min === undefined) || (maximum !== undefined && max === undefined)) return null;
   const [lo, hi] = p.kind === "quantitative" ? [p.min, p.max] : p.kind === "temporal" ? [Date.parse(p.min), Date.parse(p.max)] : [NaN, NaN];
   if (Number.isNaN(lo) || Number.isNaN(hi)) return null;
   const [dlo, dhi] = p.kind === "quantitative" ? [slack(lo), slack(hi)] : [0, 0];

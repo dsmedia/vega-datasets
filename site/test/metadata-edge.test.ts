@@ -3,7 +3,7 @@
 // bounds that must not leak into bars or other measures, date ranges, integer categories,
 // the constraints the fields table lists, its missing-values footer, and literal titles.
 import { describe, expect, test } from 'vitest';
-import type { Dataset, Field } from '../src/lib/catalog';
+import { type Dataset, type Field, insideDocumented } from '../src/lib/catalog';
 import { defaultAxes, scatterFields, scatterSpec } from '../src/lib/explore-model';
 import { fieldNotes, missingNote } from '../src/lib/field-meta';
 import { densityGrid } from '../src/lib/large-data';
@@ -354,4 +354,28 @@ test('ordered integer categories sort as one type, whatever mix of numbers and t
   } finally {
     scatter.finalize();
   }
+});
+
+describe('strptime bounds are read strictly', () => {
+  const when = (extra: Partial<Field>, min: string, max: string): Field => ({
+    name: 'when', type: 'date', description: null, profile: { kind: 'temporal', min, max, missing: 0 }, ...extra,
+  });
+
+  test('%Y is the four digits as written: 0099 is the year 99', () => {
+    const f = when({ format: '%Y-%m-%d', constraints: { minimum: '0099-01-01' } }, '0099-06-01T00:00:00Z', '0099-12-01T00:00:00Z');
+    expect(fieldNotes(f)).toEqual(['Documented minimum 0099-01-01']);
+    expect(insideDocumented(f)).toBe(true);
+  });
+
+  test('an impossible date is unreadable, not rolled over', () => {
+    const f = when({ format: '%d/%m/%Y', constraints: { maximum: '31/02/2020' } }, '2020-02-10T00:00:00Z', '2020-03-01T00:00:00Z');
+    expect(insideDocumented(f)).toBeNull();
+    expect(insideDocumented({ ...f, format: undefined, constraints: { maximum: '2020-02-31' } })).toBeNull();
+  });
+
+  test('one unreadable bound makes the whole check unknown', () => {
+    const f = when({ format: 'any', constraints: { minimum: '2020-01-01', maximum: 'Jan 31, 2020' } }, '2020-01-15T00:00:00Z', '2020-03-01T00:00:00Z');
+    expect(insideDocumented(f)).toBeNull();
+    expect(insideDocumented(quant(1, 2, { constraints: { minimum: 0, maximum: 'ten' as unknown as number } }))).toBeNull();
+  });
 });
