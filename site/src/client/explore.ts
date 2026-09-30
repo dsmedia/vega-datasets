@@ -12,7 +12,7 @@
  */
 import type { Dataset } from "../lib/catalog";
 import { deviceSignals, isDesktopClass } from "../lib/device";
-import { bothValuesNote, chartFeatures, defaultAxes, exploreModes, type Mode, scatterFields, scatterSpec, starterChart } from "../lib/explore-model";
+import { bothValuesNote, chartFeatures, defaultAxes, exploreModes, type Mode, pickScale, scatterFields, scatterSpec, starterChart } from "../lib/explore-model";
 import { allowed, BAND_POLICY, type DensityGrid, densityPageSpec, tableBand } from "../lib/large-data";
 import { editorUrl, starterSpec } from "../lib/starter";
 import { pointSource } from "../lib/vega-data";
@@ -47,7 +47,7 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
   // Scroll to zoom traps page scrolling on a narrow screen, and redraws every point per wheel step.
   const zoom = () => !phone.matches && (!policy || allowed(policy.zoom, desktop));
   const fields = scatterFields(d);
-  const state: { mode: Mode; x: string; y: string } = { mode: modes[0]!, ...(fields ? defaultAxes(fields) : { x: "", y: "" }) };
+  const state: { mode: Mode; x: string; y: string } = { mode: modes[0]!, ...(fields ? defaultAxes(d, fields) : { x: "", y: "" }) };
 
   const binds = $(".binds", section);
   const host = $(".explore-chart", section);
@@ -84,7 +84,7 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
   const currentSpec = (): Spec => {
     if (density) return overview(density, height());
     if (state.mode === "scatter" && fields) return scatterSpec(d, fields, { x: state.x, y: state.y, zoom: zoom(), height: height() });
-    return starterChart(d) ?? starterSpec(d)!;
+    return starterChart(d, phone.matches) ?? starterSpec(d)!;
   };
 
   const describe = () => {
@@ -138,7 +138,13 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
     recount();
     if (source) {
       const follow = (axis: "x" | "y") => (_name: string, value: unknown) => {
+        const before = pickScale(fields!, state[axis]);
         state[axis] = String(value);
+        // A field on a log scale (or off one) needs a new chart: a scale's type can't follow a param.
+        if (pickScale(fields!, state[axis]) !== before) {
+          void render();
+          return;
+        }
         // A zoom on the old fields would hide the new ones: clear it (the scale domains read this store).
         if (zoom()) void view.change("zoom_store", view.changeset().remove(() => true)).runAsync();
         void view.runAsync().then(recount);

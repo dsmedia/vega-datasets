@@ -8,7 +8,8 @@
  * Identifier and code columns are never plotted as measurements.
  */
 import LZString from "lz-string";
-import { categoryLabels, categoryValues, type Dataset, documentedRange, effectiveMissing, type Field, orderedCategories } from "./catalog";
+import { categoryLabels, categoryValues, type Dataset, documentedRange, effectiveMissing, type Field, fieldTitle, orderedCategories } from "./catalog";
+import { balanced, distinctValues, idName, informative, inUs, namedAxes, nearDuplicate, scaleFor, scaleType, summable, timeKey, unique, withScale } from "./chart-rules";
 
 type Spec = Record<string, unknown>;
 type Enc = Record<string, unknown>;
@@ -24,9 +25,10 @@ export function fieldRef(name: string): string {
 // What a field's metadata adds to an encoding of it. Each addition needs its property,
 // so an undescribed field encodes exactly as before.
 
-/** The field's title for an axis, legend or tooltip; Vega-Lite's own "Mean of …" for a mean. */
+/** The field's title for an axis, legend or tooltip; Vega-Lite's own "Mean of …" or "Sum of …" for an aggregate. */
 export function titled(f: Field, enc: Enc = {}): Enc {
-  return f.title ? { title: enc.aggregate === "mean" ? `Mean of ${f.title}` : f.title } : {};
+  if (!f.title) return {};
+  return { title: enc.aggregate === "mean" ? `Mean of ${f.title}` : enc.aggregate === "sum" ? `Sum of ${f.title}` : f.title };
 }
 
 // Text from the metadata inside a Vega expression. Vega refuses a string literal that names a
@@ -153,12 +155,16 @@ export function missingFilter(d: Dataset, fields: Field[]): Enc | null {
  * mark as missing left out, and ordered numbered categories made text. Markers are matched
  * on a value's text, as Table Schema says, so a date field with markers is read as text
  * (`parse: null`) and parsed after the filter (`toDate`, as Vega-Lite's own parse does).
- * Without such metadata the spec is unchanged.
+ * These go before the chart's own transforms. Without such metadata the spec is unchanged.
  */
 function withMetadata(d: Dataset, spec: Spec | null): Spec | null {
-  const encoding = spec?.encoding as Record<string, Enc> | undefined;
-  if (!spec || !encoding) return spec;
-  const used = new Set(Object.values(encoding).map((e) => e.field));
+  if (!spec) return spec;
+  // A map's points are its last layer (the basemap has its own data); small multiples encode in their inner spec.
+  const layers = spec.layer as Spec[] | undefined;
+  if (layers) return { ...spec, layer: layers.map((l, i) => (i === layers.length - 1 ? withMetadata(d, l)! : l)) };
+  const encoding = ((spec.spec as Spec | undefined)?.encoding ?? spec.encoding) as Record<string, Enc> | undefined;
+  if (!encoding) return spec;
+  const used = new Set([...Object.values(encoding).map((e) => e.field), (spec.facet as Enc | undefined)?.field]);
   const fields = d.fields.filter((f) => used.has(fieldRef(f.name)));
   const dates = fields.filter((f) => f.profile.kind === "temporal" && effectiveMissing(d, f)?.length);
   const transform = [
@@ -169,10 +175,9 @@ function withMetadata(d: Dataset, spec: Spec | null): Spec | null {
   if (!transform.length) return spec;
   const data = spec.data as Spec;
   const parse = dates.length ? { format: { ...(data.format as Spec | undefined), parse: Object.fromEntries(dates.map((f) => [f.name, null])) } } : {};
-  return { ...spec, data: { ...data, ...parse }, transform };
+  return { ...spec, data: { ...data, ...parse }, transform: [...transform, ...((spec.transform as Spec[] | undefined) ?? [])] };
 }
 
-const ID_NAME = /(^id$|_id$|^id_|code$|^code|^zip|zip_code|^key$|^index$|^cluster$|^source$|^target$|^group$|^fips)/i;
 const ID_DESC = /\b(identifier|unique id|fips|code for|index of)\b/i;
 const YEAR_NAME = /^(year|yr)$|year$/i;
 const TIME_PART = /^(month|day|hour|minute|weekday)$/i;
@@ -181,16 +186,29 @@ const GROUPING = /^(age|sex|rank|level|grade)$/i;
 const LAT = /^(lat|latitude)$/i;
 const LON = /^(lon|lng|long|longitude)$/i;
 const SERIES = /^(symbol|source|location|country|region|series|sex|gender|division|entity|variety|site|origin|species|type|category)$/i;
+/** A direction in degrees (wind, heading), drawn as the angle of a wedge on a map. */
+const DIRECTION = /^(dir|direction|bearing|heading|wind_?dir(ection)?)$/i;
+/** A series value that stands for all the others together ("All natural disasters", "Total"). */
+const TOTAL_VALUE = /^(all|total)\b/i;
+
+/** Coordinates, by name or (metadata first) by title. */
+export const isLat = (f: Field): boolean => LAT.test(f.name) || LAT.test(f.title ?? "");
+export const isLon = (f: Field): boolean => LON.test(f.name) || LON.test(f.title ?? "");
 
 /** Numeric identifiers and codes: plotting them as measurements is meaningless. */
-function isId(f: Field): boolean {
-  if (ID_NAME.test(f.name)) return true;
+function isId(f: Field, fields: Field[]): boolean {
+  if (idName(f, fields)) return true;
   return f.profile.kind === "quantitative" && (/categor/i.test(f.name) || ID_DESC.test(f.description ?? ""));
 }
 
 export function isYear(f: Field): boolean {
   const p = f.profile;
   return p.kind === "quantitative" && !integerCategory(f) && Number.isInteger(p.min) && p.min >= 1000 && p.max <= 2200 && (YEAR_NAME.test(f.name) || f.type === "integer");
+}
+
+/** A year field that makes a time axis: three or more years (two are a comparison, not a trend). */
+export function timeYear(f: Field): boolean {
+  return isYear(f) && (distinctValues(f) ?? 3) >= 3;
 }
 
 /** Small-range integers (cylinders, ratings, ages in bands) behave like categories, not measures. */
@@ -204,31 +222,109 @@ function integerCategory(f: Field): boolean {
   return f.type === "integer" && f.profile.kind === "quantitative" && categoryValues(f) !== null;
 }
 
-/** Quantities worth plotting on an axis (not identifiers, years, codes, coordinates or documented categories). */
-export function isMeasure(f: Field): boolean {
+/**
+ * Quantities worth plotting on an axis (not identifiers, years, codes, coordinates or
+ * documented categories). `fields` is the table's, for names that depend on their
+ * neighbors (`source` is an identifier only beside a `target`).
+ */
+export function isMeasure(f: Field, fields: Field[] = [f]): boolean {
   return (
     f.profile.kind === "quantitative" &&
     !integerCategory(f) &&
-    !isId(f) &&
+    !isId(f, fields) &&
     !isYear(f) &&
     !isOrdinalInt(f) &&
     !TIME_PART.test(f.name) &&
     !(f.type === "integer" && GROUPING.test(f.name)) &&
-    !LAT.test(f.name) &&
-    !LON.test(f.name)
+    !isLat(f) &&
+    !isLon(f)
   );
 }
 
-/** A category with between 2 and `max` values (identifiers excluded); an integer category counts its documented values. */
-export function nominal(f: Field, max: number): boolean {
+/**
+ * A category with between 2 and `max` values (identifiers excluded); an integer category
+ * counts its documented values. Documented categories count even under an identifier's
+ * name (gapminder's `cluster`, whose six values are labeled regions): the metadata says so.
+ */
+export function nominal(f: Field, max: number, fields: Field[] = [f]): boolean {
   const n = f.profile.kind === "nominal" ? f.profile.distinct : integerCategory(f) ? categoryValues(f)!.length : 0;
-  return n >= 2 && n <= max && !ID_NAME.test(f.name);
+  return n >= 2 && n <= max && (!idName(f, fields) || categoryValues(f) !== null);
+}
+
+/** A category worth a color: at most `max` values, and informative (G-5: not a helper, not nearly all one value). */
+export function colorable(f: Field, max: number, fields: Field[], rows: number): boolean {
+  return nominal(f, max, fields) && informative(f, rows);
+}
+
+/** Fields that can group a table's rows: categories (not one value per row) and integers that aren't measures. */
+function groupings(fields: Field[], rows: number): Field[] {
+  return fields.filter((f) => {
+    const n = distinctValues(f);
+    if (n === null || n < 2 || unique(f, rows)) return false;
+    return f.profile.kind === "nominal" || (f.profile.kind === "quantitative" && f.type === "integer" && !isMeasure(f, fields));
+  });
+}
+
+/** The field a time series runs along: the first date field, else the first year field with three or more years. */
+export function timeField(fields: Field[]): Field | undefined {
+  return fields.find((f) => f.profile.kind === "temporal") ?? fields.find(timeYear);
+}
+
+/** The fields that, with the time, identify every row (see `timeKey`); null when the time doesn't index the rows. */
+export function timeKeyOf(d: Dataset, t: Field): Field[] | null {
+  return timeKey(d, t);
 }
 
 function spanYears(f: Field): number {
   const p = f.profile;
   if (p.kind !== "temporal") return 0;
   return (new Date(p.max).getTime() - new Date(p.min).getTime()) / (365.25 * 864e5);
+}
+
+/** The unit a long daily or hourly series is averaged into: days for up to two years, months up to forty, else years. */
+function timeUnit(t: Field): string {
+  const span = spanYears(t);
+  return span <= 2 ? "yearmonthdate" : span <= 40 ? "yearmonth" : "year";
+}
+
+/** A measure's scale and axis for a position channel (G-2), as encoding properties. */
+function scaled(f: Field, scale: Enc = {}): Enc {
+  const s = scaleFor(f);
+  return { scale: withScale(scale, s), ...(Object.keys(s.axis).length ? { axis: s.axis } : {}) };
+}
+
+/**
+ * The two measures a scatter plot opens on (G-3, G-7): fields named for their axes (`x`
+ * and `y`, `cx` and `cy`) when there are such; else the first pair, in field order, that
+ * isn't a near-duplicate (|r| > 0.97: one line, the same thing measured twice), its first
+ * field on `first` (Explore's scatter puts it on y; the starter chart, as it always has, on x).
+ * A measure that wants a log axis goes on x when the other doesn't (income, population:
+ * orders of magnitude read left to right, as in the Preston curve). Null when every pair
+ * is a near-duplicate.
+ */
+export function defaultPair(d: Dataset, measures: Field[], first: "x" | "y" = "y"): { x: Field; y: Field } | null {
+  const named = namedAxes(measures);
+  if (named) return named;
+  for (const [i, a] of measures.entries()) {
+    for (const b of measures.slice(i + 1)) {
+      if (nearDuplicate(d, a.name, b.name)) continue;
+      const pair = first === "y" ? { x: b, y: a } : { x: a, y: b };
+      return scaleType(pair.y) === "log" && scaleType(pair.x) === "linear" ? { x: pair.y, y: pair.x } : pair;
+    }
+  }
+  return null;
+}
+
+/** Up to this many rows a table is small enough for small multiples of its points. */
+const SMALL_TABLE = 200;
+/** A small multiple's size (px): two columns fit a phone's Explore column (358 px). */
+export const PANEL_SIZE = { wide: 180, phone: 130 };
+
+/** The small multiples' category: a small table's category of two to four equal groups (Anscombe's four series). */
+export function panelsBy(d: Dataset, fields: Field[]): Field | undefined {
+  const rows = d.rows ?? 0;
+  if (rows === 0 || rows > SMALL_TABLE) return undefined;
+  return fields.find((f) => nominal(f, 4, fields) && balanced(f, rows));
 }
 
 const PROJECTION: Record<string, string> = {
@@ -239,10 +335,45 @@ const PROJECTION: Record<string, string> = {
   earthquakes: "equalEarth",
 };
 
+/** vega-datasets' own world map, beside the dataset's file (jsDelivr or GitHub Pages alike). */
+export function basemapUrl(d: Dataset): string {
+  return d.url.replace(/[^/]+$/, "world-110m.json");
+}
+
+/**
+ * Countries under a map's points, from vega-datasets' world_110m (119 KB, 45 KB over the
+ * wire, and shared by every page that draws it); only the United States under Albers USA.
+ * A quiet gray that reads on light and dark grounds; decorative, so screen readers skip it.
+ */
+function basemap(d: Dataset, usOnly: boolean): Spec {
+  return {
+    data: { url: basemapUrl(d), format: { type: "topojson", feature: "countries" } },
+    ...(usOnly ? { transform: [{ filter: "datum.id == 840" }] } : {}),
+    mark: { type: "geoshape", fill: "#8a8f98", fillOpacity: 0.14, stroke: "#8a8f98", strokeOpacity: 0.5, strokeWidth: 0.5, clip: true, aria: false },
+  };
+}
+
+/** The 1:110m basemap goes only under points spread over at least this many degrees: closer in, its coarse coast would mislead. */
+const BASEMAP_MIN_DEGREES = 10;
+
+/** A box of longitude and latitude as a GeoJSON feature to fit a projection to (corners and edge midpoints: edges curve). */
+function boxFeature(box: { longitude: [number, number]; latitude: [number, number] }): Spec {
+  const [w, e] = box.longitude;
+  const [s, n] = box.latitude;
+  const [mx, my] = [(w + e) / 2, (s + n) / 2];
+  return { type: "Feature", properties: {}, geometry: { type: "MultiPoint", coordinates: [[w, s], [mx, s], [e, s], [e, my], [e, n], [mx, n], [w, n], [w, my]] } };
+}
+
+function lineGeometry(types: string[] | undefined): boolean {
+  return !!types?.length && types.every((t) => /LineString$/.test(t));
+}
+
 function geoFile(d: Dataset, base: Spec): Spec | null {
   if (d.format === "topojson") {
     const feature = d.objects?.[0];
     if (!feature) return null;
+    // Lines (tube lines) are strokes: a fill would close each one into a shape. Each line's id colors it.
+    const lines = lineGeometry(d.objectGeometryTypes?.[feature]);
     return {
       ...base,
       width: 600,
@@ -250,43 +381,123 @@ function geoFile(d: Dataset, base: Spec): Spec | null {
       data: { url: d.url, format: { type: "topojson", feature } },
       projection: { type: PROJECTION[d.name] ?? "equalEarth" },
       // Thousands of shapes: screen readers get the chart's description, not each one.
-      mark: { type: "geoshape", stroke: "white", strokeWidth: 0.5, aria: false },
+      mark: lines
+        ? { type: "geoshape", filled: false, strokeWidth: 1.5, aria: false }
+        : { type: "geoshape", stroke: "white", strokeWidth: 0.5, aria: false },
+      ...(lines ? { encoding: { color: { field: "id", type: "nominal", title: "id", scale: { scheme: "tableau20" } } } } : {}),
     };
   }
-  return {
-    ...base,
-    width: 600,
-    height: 360,
+  const lines = lineGeometry(d.geometryTypes);
+  const points = !!d.geometryTypes?.length && d.geometryTypes.every((t) => /Point$/.test(t));
+  const shapes: Spec = {
     data: { url: d.url, format: { type: "json", property: "features" } },
-    projection: { type: PROJECTION[d.name] ?? "equalEarth" },
-    mark: { type: "geoshape", aria: false },
+    mark: lines ? { type: "geoshape", filled: false, strokeWidth: 1.5, aria: false } : { type: "geoshape", aria: false },
   };
+  const { $schema, description } = base;
+  const frame: Spec = { $schema, description, width: 600, height: 360, projection: { type: PROJECTION[d.name] ?? "equalEarth" } };
+  // Points (earthquakes) sit on the world's countries; shapes and lines carry their own geography.
+  if (points) return { ...frame, layer: [basemap(d, false), shapes] };
+  return { ...frame, ...shapes };
 }
 
-function pointMap(d: Dataset, base: Spec, lat: Field, lon: Field, color: Field | undefined): Spec {
+function pointMap(d: Dataset, base: Spec, lat: Field, lon: Field, color: Field | undefined, measures: Field[]): Spec {
   const la = lat.profile;
   const lo = lon.profile;
-  // Mostly-US coordinates read best on the Albers USA projection.
-  const us =
-    la.kind === "quantitative" && lo.kind === "quantitative" &&
-    lo.min >= -180 && lo.max <= -60 && la.min >= 15 && la.max <= 72;
-  return {
-    ...base,
-    width: 600,
-    height: 380,
-    projection: { type: us ? "albersUsa" : "equalEarth" },
-    mark: { type: "circle", size: (d.rows ?? 0) > 5000 ? 4 : 16, opacity: 0.7, tooltip: true },
+  // Where the points lie, as the builder recorded it for these two columns; else their range.
+  const where = d.points?.latitude === lat.name && d.points.longitude === lon.name ? d.points : null;
+  const box =
+    where?.box ??
+    (la.kind === "quantitative" && lo.kind === "quantitative" ? { longitude: [lo.min, lo.max] as [number, number], latitude: [la.min, la.max] as [number, number] } : null);
+  // Nearly all in the US (95% or more): Albers USA, which draws Alaska and Hawaii beside the
+  // rest and leaves out the few points elsewhere (airports' Pacific islands), instead of a
+  // world map with the US in a corner. Without the builder's share, the whole range must fit.
+  const us = where
+    ? where.us >= 0.95
+    : !!box && box.longitude[0] >= -180 && box.longitude[1] <= -60 && box.latitude[0] >= 15 && box.latitude[1] <= 72;
+  const wide = !!box && Math.max(box.longitude[1] - box.longitude[0], box.latitude[1] - box.latitude[0]) >= BASEMAP_MIN_DEGREES;
+  // A world projection fits the middle 98% of the points, so a few far ones don't shrink the
+  // rest; Albers USA fits the country (or the points themselves, when they are close together).
+  const fit = !us && where && wide ? { fit: boxFeature(where.box) } : {};
+  const direction = measures.find((m) => DIRECTION.test(m.name) && m.profile.kind === "quantitative" && m.profile.min >= 0 && m.profile.max <= 360);
+  const strength = direction && measures.find((m) => m !== direction && !DIRECTION.test(m.name) && !nearDuplicate(d, m.name, direction.name));
+  const clip = wide ? { clip: true } : {};
+  const points: Spec = {
+    // Albers USA has no place for points outside the US (they would pile up in a corner).
+    ...(us ? { transform: [{ filter: inUs(lon.name, lat.name) }] } : {}),
+    mark: direction
+      ? { type: "point", shape: "wedge", filled: true, size: (d.rows ?? 0) > 2000 ? 40 : 80, tooltip: true, ...clip }
+      : { type: "circle", size: (d.rows ?? 0) > 5000 ? 4 : 16, opacity: 0.7, tooltip: true, ...clip },
     encoding: {
       longitude: { field: fieldRef(lon.name), type: "quantitative", ...titled(lon) },
       latitude: { field: fieldRef(lat.name), type: "quantitative", ...titled(lat) },
-      ...(color ? { color: category(color) } : {}),
+      // A direction turns each wedge; the other measure (wind speed) colors it.
+      ...(direction ? { angle: { field: fieldRef(direction.name), type: "quantitative", scale: { domain: [0, 360], range: [0, 360] }, ...titled(direction) } } : {}),
+      ...(strength ? { color: { field: fieldRef(strength.name), type: "quantitative", ...titled(strength) } } : color ? { color: category(color) } : {}),
     },
   };
+  const frame: Spec = { ...base, width: 600, height: 380, projection: { type: us ? "albersUsa" : "equalEarth", ...fit } };
+  if (!wide) return { ...frame, ...points };
+  const { data, ...rest } = frame;
+  return { ...rest, layer: [basemap(d, us), { data, ...points }] };
 }
 
 export function starterSpec(d: Dataset): Spec | null {
   return withMetadata(d, starterRule(d));
 }
+
+/**
+ * A line over time (G-1, G-4). The line never joins rows of different series: when each
+ * time holds one row per series, the series colors the line (up to 12 of them); two year
+ * fields that index the rows together make one line per vintage (budgets: each budget
+ * year's forecasts). Rows it can't keep apart are aggregated: counts summed (the total is
+ * what they mean), other measures averaged. A series value that is the total of the others
+ * is left out, and an unaggregated heavy-tailed measure gets a log axis (G-2).
+ */
+function timeSeries(d: Dataset, base: Spec, t: Field, m: Field, fields: Field[]): Spec {
+  const rows = d.rows ?? 0;
+  const date = t.profile.kind === "temporal";
+  const key = timeKeyOf(d, t);
+  const unit = date && rows > 1000 ? timeUnit(t) : undefined;
+  const series =
+    key?.find((f) => colorable(f, 12, fields, rows)) ?? fields.find((f) => colorable(f, 12, fields, rows) && SERIES.test(f.name));
+  const vintage = !series && key?.length === 1 && timeYear(key[0]!) ? key[0] : undefined;
+  const exact = key !== null && key.every((f) => f === series || f === vintage);
+  const aggregate = unit || !exact ? (summable(m) ? "sum" : "mean") : undefined;
+  // Two year fields: the one with more years runs along x, and the other draws a line each.
+  const [along, lines] = vintage && (distinctValues(vintage) ?? 0) > (distinctValues(t) ?? 0) ? [vintage, t] : [t, vintage];
+  const p = series?.profile;
+  const totals = p?.kind === "nominal" ? p.top.map(([v]) => v).filter((v) => TOTAL_VALUE.test(v)) : [];
+  const leaveOut =
+    series && p?.kind === "nominal" && totals.length && p.distinct - totals.length >= 2
+      ? [{ filter: `indexof(${tagged(totals)}, ${tag(`datum[${JSON.stringify(series.name)}]`)}) < 0` }]
+      : [];
+  // Values in a narrow band far from zero (CO2 in ppm, air pressure) leave zero off the axis, or the line is flat.
+  const q = m.profile;
+  const band = aggregate !== "sum" && q.kind === "quantitative" && q.min > 0 && q.min >= q.max / 2;
+  return {
+    ...base,
+    width: 640,
+    height: 300,
+    ...(leaveOut.length ? { transform: leaveOut } : {}),
+    mark: date ? { type: "line", interpolate: "monotone", tooltip: true } : { type: "line", point: rows <= 60, tooltip: true },
+    encoding: {
+      x: date
+        ? { field: fieldRef(along.name), type: "temporal", ...(unit ? { timeUnit: unit } : {}), ...titled(along) }
+        : measure(along, { scale: { zero: false }, axis: { format: "d" } }),
+      y: measure(m, aggregate ? { aggregate, ...(band ? { scale: { zero: false } } : {}) } : scaled(m, band ? { zero: false } : {})),
+      ...(series ? { color: category(series) } : {}),
+      ...(lines
+        ? {
+            color: { field: fieldRef(lines.name), type: "quantitative", legend: { format: "d" }, ...titled(lines) },
+            detail: { field: fieldRef(lines.name), type: "quantitative" },
+          }
+        : {}),
+    },
+  };
+}
+
+/** Bars for the largest groups of a category with many values. */
+const TOP = 20;
 
 function starterRule(d: Dataset): Spec | null {
   const base: Spec = {
@@ -300,23 +511,21 @@ function starterRule(d: Dataset): Spec | null {
 
   const fields = d.fields.filter((f) => f.type !== "array");
   const rows = d.rows ?? 0;
-  const measures = fields.filter(isMeasure);
-  const temporal = fields.filter((f) => f.profile.kind === "temporal");
-  const years = fields.filter(isYear);
-  const smallCat = fields.find((f) => nominal(f, 10));
-  const seriesCat = fields.find((f) => nominal(f, 12) && SERIES.test(f.name));
-  const cat = fields.find((f) => nominal(f, 60));
+  const measures = fields.filter((f) => isMeasure(f, fields));
+  // Color only by informative categories (G-5); count and compare by categories that group rows, not by labels.
+  const smallCat = fields.find((f) => colorable(f, 10, fields, rows));
+  const cat = fields.find((f) => nominal(f, 60, fields));
   const colorBy = (f: Field | undefined): Enc => (f ? { color: category(f) } : {});
 
   // 1. Latitude/longitude columns → a point map.
-  const lat = fields.find((f) => LAT.test(f.name) && f.profile.kind === "quantitative");
-  const lon = fields.find((f) => LON.test(f.name) && f.profile.kind === "quantitative");
-  if (lat && lon) return pointMap(d, base, lat, lon, smallCat);
+  const lat = fields.find((f) => isLat(f) && f.profile.kind === "quantitative");
+  const lon = fields.find((f) => isLon(f) && f.profile.kind === "quantitative");
+  if (lat && lon) return pointMap(d, base, lat, lon, smallCat, measures);
 
   // 2. start/end columns → a timeline of ranges.
   const start = fields.find((f) => /^start$/i.test(f.name) && f.profile.kind === "quantitative");
   const end = fields.find((f) => /^end$/i.test(f.name) && f.profile.kind === "quantitative");
-  const label = fields.find((f) => nominal(f, 80));
+  const label = fields.find((f) => nominal(f, 80, fields));
   if (start && end && label) {
     return {
       ...base,
@@ -331,55 +540,67 @@ function starterRule(d: Dataset): Spec | null {
     };
   }
 
-  const [m1, m2] = measures;
+  const [m1] = measures;
 
-  // 3. Dates or years with a measure → a time series.
-  const t = temporal[0];
-  if (t && m1) {
-    const unit = rows > 1000 ? (spanYears(t) > 20 ? "year" : "yearmonth") : undefined;
+  // 3. Dates, or three or more years, with a measure → a time series.
+  const t = timeField(fields);
+  if (t && m1) return timeSeries(d, base, t, m1, fields);
+
+  // 4. A small table of equal groups with two measures → small multiples, a panel per group (G-7).
+  const pair = defaultPair(d, measures, "x");
+  const by = pair ? panelsBy(d, fields) : undefined;
+  if (pair && by) {
     return {
       ...base,
-      width: 640,
-      height: 300,
-      mark: { type: "line", interpolate: "monotone", tooltip: true },
-      encoding: {
-        x: { field: fieldRef(t.name), type: "temporal", ...(unit ? { timeUnit: unit } : {}), ...titled(t) },
-        y: measure(m1, unit || seriesCat ? { aggregate: "mean" } : {}),
-        ...colorBy(seriesCat),
-      },
-    };
-  }
-  const y = years[0];
-  if (y && m1) {
-    return {
-      ...base,
-      width: 640,
-      height: 300,
-      mark: { type: "line", point: rows <= 60, tooltip: true },
-      encoding: {
-        x: measure(y, { scale: { zero: false }, axis: { format: "d" } }),
-        y: measure(m1, { aggregate: "mean" }),
-        ...colorBy(seriesCat),
+      columns: 2,
+      facet: { field: fieldRef(by.name), type: "nominal", ...titled(by) },
+      spec: {
+        width: PANEL_SIZE.wide,
+        height: PANEL_SIZE.wide,
+        mark: { type: "point", tooltip: true },
+        encoding: {
+          x: measure(pair.x, { scale: { zero: false } }),
+          y: measure(pair.y, { scale: { zero: false } }),
+        },
       },
     };
   }
 
-  // 4. Two measures → a scatter plot.
-  if (m1 && m2) {
+  // 5. Two measures → a scatter plot, of the pair the Explore scatter opens on.
+  if (pair) {
     return {
       ...base,
       width: 480,
       height: 360,
       mark: { type: "point", tooltip: true, opacity: rows > 5000 ? 0.3 : 0.8 },
       encoding: {
-        x: measure(m1, { scale: { zero: false } }),
-        y: measure(m2, { scale: { zero: false } }),
+        x: measure(pair.x, scaled(pair.x, { zero: false })),
+        y: measure(pair.y, scaled(pair.y, { zero: false })),
         ...colorBy(smallCat),
       },
     };
   }
 
-  // 5. A measure by category → sorted bars.
+  // 6. One measure, a category, and a two- or three-way grouping (two years) → a dot plot
+  //    comparing the groups across the category with the fewest values (barley: its sites).
+  const across = fields
+    .filter((f) => nominal(f, 60, fields) && !unique(f, rows) && (distinctValues(f) ?? 0) > 3)
+    .sort((a, b) => (distinctValues(a) ?? 0) - (distinctValues(b) ?? 0))[0];
+  const compare = across && groupings(fields, rows).find((g) => g !== across && (distinctValues(g) ?? 0) <= 3);
+  if (m1 && across && compare) {
+    return {
+      ...base,
+      width: 480,
+      mark: { type: "point", filled: true, size: 60, tooltip: true },
+      encoding: {
+        y: category(across, { sort: "-x" }, "axis"),
+        x: measure(m1, { aggregate: summable(m1) ? "sum" : "mean", scale: { zero: false } }),
+        color: category(compare, { type: "nominal" }),
+      },
+    };
+  }
+
+  // 7. A measure by category → sorted bars.
   if (m1 && cat) {
     return {
       ...base,
@@ -392,7 +613,29 @@ function starterRule(d: Dataset): Spec | null {
     };
   }
 
-  // 6. One measure → a histogram.
+  // 8. A count by a category with many values → the largest twenty, summed (the busiest airports).
+  const many = fields.find((f) => f.profile.kind === "nominal" && f.profile.distinct > 60 && !unique(f, rows) && !idName(f, fields));
+  if (m1 && many && summable(m1)) {
+    const taken = new Set(fields.map((f) => f.name));
+    const free = (name: string): string => (taken.has(name) ? free(`_${name}`) : name);
+    const [total, rank] = [free("total"), free("rank")];
+    return {
+      ...base,
+      width: 480,
+      transform: [
+        { aggregate: [{ op: "sum", field: m1.name, as: total }], groupby: [many.name] },
+        { window: [{ op: "row_number", as: rank }], sort: [{ field: total, order: "descending" }] },
+        { filter: `datum[${JSON.stringify(rank)}] <= ${TOP}` },
+      ],
+      mark: { type: "bar", tooltip: true },
+      encoding: {
+        y: { field: fieldRef(many.name), type: "nominal", sort: "-x", ...titled(many) },
+        x: { field: total, type: "quantitative", title: `Sum of ${fieldTitle(m1)}` },
+      },
+    };
+  }
+
+  // 9. One measure → a histogram.
   if (m1) {
     return {
       ...base,
@@ -406,14 +649,32 @@ function starterRule(d: Dataset): Spec | null {
     };
   }
 
-  // 7. Only categories → counts.
-  if (cat) {
+  // 10. Two small-range integers (scores) → how often each pair of values occurs.
+  const grid = fields.filter((f) => isOrdinalInt(f) && !isId(f, fields) && !isYear(f) && !TIME_PART.test(f.name) && (distinctValues(f) ?? 0) >= 3);
+  if (grid.length >= 2) {
+    const [gx, gy] = grid as [Field, Field];
+    return {
+      ...base,
+      width: 480,
+      transform: [{ filter: `isValid(datum[${JSON.stringify(gx.name)}]) && isValid(datum[${JSON.stringify(gy.name)}])` }],
+      mark: { type: "rect", tooltip: true },
+      encoding: {
+        x: { field: fieldRef(gx.name), type: "ordinal", ...titled(gx) },
+        y: { field: fieldRef(gy.name), type: "ordinal", sort: "descending", ...titled(gy) },
+        color: { aggregate: "count", type: "quantitative" },
+      },
+    };
+  }
+
+  // 11. Only categories → counts, by a category that groups rows (a label unique to each row would make every bar one).
+  const groupedBy = fields.find((f) => nominal(f, 60, fields) && !unique(f, rows));
+  if (groupedBy) {
     return {
       ...base,
       width: 480,
       mark: { type: "bar", tooltip: true },
       encoding: {
-        y: category(cat, { sort: "-x" }, "axis"),
+        y: category(groupedBy, { sort: "-x" }, "axis"),
         x: { aggregate: "count", type: "quantitative" },
       },
     };

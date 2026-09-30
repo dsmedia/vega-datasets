@@ -81,7 +81,8 @@ export interface DrawnChart {
  */
 export async function drawnChart(spec: Record<string, unknown>, width: number): Promise<DrawnChart> {
   const config = themeConfig(lightToken);
-  const { spec: vg } = compile({ ...spec, width } as unknown as TopLevelSpec, { config: config as never });
+  // Small multiples size their panels themselves (a facet takes no width).
+  const { spec: vg } = compile((spec.facet ? spec : { ...spec, width }) as unknown as TopLevelSpec, { config: config as never });
   const loader = vega.loader();
   loader.load = async (uri: string) => readDataUrl(uri);
   const view = new vega.View(vega.parse(vg), { renderer: "none", loader });

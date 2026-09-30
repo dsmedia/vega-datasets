@@ -60,7 +60,7 @@ const names = new Set(c.datasets.map((x) => x.name));
 
 const modes = exploreModes(d);
 const sf = scatterFields(d);
-const axes = sf ? defaultAxes(sf) : null;
+const axes = sf ? defaultAxes(d, sf) : null;
 const first = modes[0];
 // The large-data policy (lib/large-data.ts), for a scatter plot: whether the points draw by
 // themselves, on a desktop-class device only (the client decides), or when asked; and
@@ -70,7 +70,7 @@ const band = first === "scatter" ? tableBand(d) : null;
 const policy = band ? BAND_POLICY[band] : null;
 const zoomable = !policy || policy.zoom !== "never";
 const specFor = (mode: string, phone: boolean) =>
-  mode === "scatter" && sf && axes ? scatterSpec(d, sf, { ...axes, zoom: !phone && zoomable, height: phone ? 300 : 380 }) : (starterChart(d) ?? starterSpec(d)!);
+  mode === "scatter" && sf && axes ? scatterSpec(d, sf, { ...axes, zoom: !phone && zoomable, height: phone ? 300 : 380 }) : (starterChart(d, phone) ?? starterSpec(d)!);
 const wideSpec = first ? specFor(first, false) : null;
 const phoneSpec = first ? specFor(first, true) : null;
 const pointsButton = band === "canvas" || band === "on-request";

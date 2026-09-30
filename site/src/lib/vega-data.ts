@@ -70,6 +70,8 @@ interface VegaMark {
  */
 export function pointSource(vg: { marks?: VegaMark[] }): string | null {
   for (const m of vg.marks ?? []) {
+    // Small multiples draw each panel from its own subset, not a dataset the view can name.
+    if (m.from?.facet) continue;
     if (m.type === "symbol" && m.from?.data) return m.from.data;
     const inner = pointSource(m);
     if (inner) return inner;

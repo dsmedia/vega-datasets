@@ -1,23 +1,25 @@
 /**
  * The Explore section's charts, as Vega-Lite specs (no DOM, so they are unit-tested):
  * a scatter plot of two measures picked with input bindings, and the starter chart
- * (starter.ts) for everything else — "Over Time" when it is a time series.
+ * (starter.ts) for everything else — "Over Time" when it is a time series, "Small
+ * Multiples" when it is one panel per group.
  */
 import { type Dataset, documentedRange, effectiveMissing, type Field, fieldTitle } from "./catalog";
+import { correlation, sampled, type ScaleType, scaleFor, scaleType, summable, withScale } from "./chart-rules";
 import { formatCount } from "./format";
 import { BAND_POLICY, rowBand } from "./large-data";
-import { category, categoryAsText, fieldRef, isMeasure, isYear, markerForms, missingFilter, nominal, starterSpec, tag, tagged, titled, untag } from "./starter";
+import { category, categoryAsText, colorable, defaultPair, fieldRef, isMeasure, isYear, markerForms, missingFilter, PANEL_SIZE, starterSpec, tag, tagged, timeField, timeKeyOf, timeYear, titled, untag } from "./starter";
 
 type Spec = Record<string, unknown>;
 
-export type Mode = "scatter" | "time" | "starter";
-export const MODE_LABEL: Record<Mode, string> = { scatter: "Scatter", time: "Over Time", starter: "Chart" };
+export type Mode = "scatter" | "time" | "panels" | "starter";
+export const MODE_LABEL: Record<Mode, string> = { scatter: "Scatter", time: "Over Time", panels: "Small Multiples", starter: "Chart" };
 
 const SCHEMA = "https://vega.github.io/schema/vega-lite/v6.json";
 
 export interface ScatterFields {
   measures: Field[];
-  /** Colored, and isolated from the legend: a category with at most 10 values. */
+  /** Colored, and isolated from the legend: an informative category with at most 10 values (G-5). */
   color: Field | undefined;
   /** Names the point in the tooltip: a category with many values (a car's name). */
   label: Field | undefined;
@@ -28,11 +30,12 @@ export interface ScatterFields {
 export function scatterFields(d: Dataset): ScatterFields | null {
   if (d.kind !== "table" || d.format === "parquet" || d.format === "arrow") return null;
   const fields = d.fields.filter((f) => f.type !== "array");
-  const measures = fields.filter(isMeasure);
-  if (measures.length < 2) return null;
+  const measures = fields.filter((f) => isMeasure(f, fields));
+  // No scatter plot when every pair is a near-duplicate (G-3): it would draw one line.
+  if (measures.length < 2 || !defaultPair(d, measures)) return null;
   return {
     measures,
-    color: fields.find((f) => nominal(f, 10)),
+    color: fields.find((f) => colorable(f, 10, fields, d.rows ?? 0)),
     label: fields.find((f) => f.profile.kind === "nominal" && f.profile.distinct > 10),
     time: fields.find((f) => f.profile.kind === "temporal" || isYear(f)),
   };
@@ -44,12 +47,38 @@ function isTimeSeries(spec: Spec | null): boolean {
   return mark?.type === "line";
 }
 
+/**
+ * Does "Over Time" open first (G-1)? When the time field is the table's axis: evenly
+ * sampled (days, months, years, not the times of events) and indexing the rows, alone or
+ * with the series the line keeps apart. Then a scatter of two of its measures mostly plots
+ * their shared trend against itself (high against open, CO2 against adjusted CO2). The
+ * scatter stays first when a category outside that key can color it (seattle_weather's
+ * weather type: the scatter shows how the measures separate by it), unless its opening
+ * pair moves together (|r| ≥ 0.9: the shared trend again, whatever the colors); and when
+ * the line would average over more entities than it can tell apart (countries), unless it
+ * counts things, which add up to a total.
+ */
+export function timeFirst(d: Dataset, f: ScatterFields): boolean {
+  const fields = d.fields.filter((x) => x.type !== "array");
+  const rows = d.rows ?? 0;
+  const t = timeField(fields);
+  if (!t || !sampled(t)) return false;
+  const key = timeKeyOf(d, t);
+  if (key === null) return false;
+  const pair = defaultPair(d, f.measures)!;
+  const trend = Math.abs(correlation(d, pair.x.name, pair.y.name) ?? 0) >= 0.9;
+  if (!trend && fields.some((c) => !key.includes(c) && colorable(c, 10, fields, rows))) return false;
+  return key.every((g) => colorable(g, 12, fields, rows) || timeYear(g)) || summable(f.measures[0]!);
+}
+
 /** The charts Explore offers for a dataset, in switch order; empty when none is possible. */
 export function exploreModes(d: Dataset): Mode[] {
   const starter = starterSpec(d);
   // Maps (geographic files, latitude/longitude columns) show the map.
   if (starter?.projection) return ["starter"];
-  if (scatterFields(d)) return isTimeSeries(starter) ? ["scatter", "time"] : ["scatter"];
+  const scatter = scatterFields(d);
+  if (starter?.facet) return scatter ? ["panels", "scatter"] : ["panels"];
+  if (scatter) return isTimeSeries(starter) ? (timeFirst(d, scatter) ? ["time", "scatter"] : ["scatter", "time"]) : ["scatter"];
   return starter ? ["starter"] : [];
 }
 
@@ -61,12 +90,24 @@ export interface ScatterOptions {
   height: number;
 }
 
-/** The measures to start with: fields named x and y when there are both, else the first two, the first on y. */
-export function defaultAxes(f: ScatterFields): { x: string; y: string } {
-  const named = (axis: string) => f.measures.find((m) => m.name.toLowerCase() === axis);
-  const [x, y] = [named("x"), named("y")];
-  if (x && y) return { x: x.name, y: y.name };
-  return { x: f.measures[1]!.name, y: f.measures[0]!.name };
+/** The measures to start with (starter.ts `defaultPair`: named axes, no near-duplicates, a log axis on x). */
+export function defaultAxes(d: Dataset, f: ScatterFields): { x: string; y: string } {
+  const pair = defaultPair(d, f.measures)!;
+  return { x: pair.x.name, y: pair.y.name };
+}
+
+/**
+ * The scale a picked measure is drawn on (G-2). A scale's type can't follow a param, so the
+ * page draws the chart again when a pick changes it; the Editor's copy keeps the types it opened with.
+ */
+export function pickScale(f: ScatterFields, name: string): ScaleType {
+  const m = f.measures.find((x) => x.name === name);
+  return m ? scaleType(m) : "linear";
+}
+
+function pickedScale(f: ScatterFields, name: string): { scale: Spec; axis: Spec } {
+  const m = f.measures.find((x) => x.name === name);
+  return m ? scaleFor(m) : { scale: {}, axis: {} };
 }
 
 /**
@@ -123,6 +164,7 @@ export function scatterSpec(d: Dataset, f: ScatterFields, o: ScatterOptions): Sp
   const taken = new Set(d.fields.map((m) => m.name));
   const free = (name: string): string => (taken.has(name) ? free(`_${name}`) : name);
   const [px, py] = [free("x"), free("y")];
+  const [sx, sy] = [pickedScale(f, o.x), pickedScale(f, o.y)];
   return {
     $schema: SCHEMA,
     description: `Two measures of ${d.name} from vega-datasets, picked with the x and y menus.`,
@@ -146,8 +188,8 @@ export function scatterSpec(d: Dataset, f: ScatterFields, o: ScatterOptions): Sp
         params,
         mark: { type: "point", opacity: opacity },
         encoding: {
-          x: { field: px, type: "quantitative", scale: { zero: false, ...meta.bounds("xField") }, axis: { title: null } },
-          y: { field: py, type: "quantitative", scale: { zero: false, ...meta.bounds("yField") }, axis: { title: null } },
+          x: { field: px, type: "quantitative", scale: withScale({ zero: false, ...meta.bounds("xField") }, sx), axis: { title: null, ...sx.axis } },
+          y: { field: py, type: "quantitative", scale: withScale({ zero: false, ...meta.bounds("yField") }, sy), axis: { title: null, ...sy.axis } },
           ...(f.color
             ? {
                 color: category(f.color),
@@ -176,10 +218,14 @@ export function hasDensity(d: Dataset): boolean {
   return rowBand(d.rows ?? 0) === "density" && scatterFields(d) !== null;
 }
 
-/** The starter chart, sized to its column. */
-export function starterChart(d: Dataset): Spec | null {
+/** The starter chart, sized to its column; small multiples keep two columns of fixed panels, smaller on a phone. */
+export function starterChart(d: Dataset, phone = false): Spec | null {
   const spec = starterSpec(d);
   if (!spec) return null;
+  if (spec.facet) {
+    const size = phone ? PANEL_SIZE.phone : PANEL_SIZE.wide;
+    return { ...spec, spec: { ...(spec.spec as Spec), width: size, height: size } };
+  }
   return { ...spec, width: "container", autosize: { type: "fit-x", contains: "padding" } };
 }
 
@@ -202,11 +248,16 @@ export function chartFeatures(spec: Spec): string[] {
   if (has('"bind":"scales"')) out.push("scale binding");
   if (has('"bind":"legend"')) out.push("legend binding");
   if (out.length > 1) return out;
-  const mark = spec.mark as { type?: string } | string | undefined;
+  // A map's marks are its last layer (over the basemap); small multiples', their inner spec.
+  const layers = spec.layer as Spec[] | undefined;
+  const unit = (spec.spec as Spec | undefined) ?? layers?.at(-1) ?? spec;
+  const mark = unit.mark as { type?: string } | string | undefined;
   const type = typeof mark === "string" ? mark : mark?.type;
   if (type) out.push(`${type} mark`);
   const projection = spec.projection as { type?: string } | undefined;
   if (projection?.type) out.push(`${projection.type} projection`);
+  if (layers) out.push("layers");
+  if (spec.facet) out.push("facet");
   if (has('"timeUnit"')) out.push("time unit");
   for (const agg of ["mean", "sum", "count"]) if (has(`"aggregate":"${agg}"`)) out.push(`${agg} aggregate`);
   if (has('"bin"')) out.push("binning");
