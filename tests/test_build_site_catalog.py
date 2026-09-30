@@ -28,6 +28,7 @@ from scripts.build_site_catalog import (
     read_table,
     readme_markdown,
     thumbnail_urls,
+    time_keys,
     write_thumbnail,
 )
 
@@ -285,6 +286,8 @@ def test_build_dataset_without_metadata_adds_no_keys(tmp_path: Path) -> None:
         "fields",
         "rows",
         "preview",
+        # Structure read from the data, not metadata: `when` is unique per row.
+        "timeKeys",
     ]
     for field in entry["fields"]:
         assert list(field) == ["name", "type", "description", "profile"]
@@ -619,3 +622,36 @@ def test_geo_features_record_geometry_types() -> None:
         "geojson",
     )
     assert geo == {"features": 1, "geometryTypes": ["Point"]}
+
+
+def test_time_keys_find_the_series_that_key_each_time() -> None:
+    df = pl.DataFrame({
+        "year": ["2001", "2001", "2002", "2002", "2003", "2003"],
+        "source": ["coal", "wind"] * 3,
+        "net": ["5", "1", "6", "2", "7", "3"],
+    })
+    fields = [
+        {"name": "year", "type": "integer"},
+        {"name": "source", "type": "string"},
+        {"name": "net", "type": "integer"},
+    ]
+    numbers = {
+        f["name"]: numeric_values(df[f["name"]])
+        for f in fields
+        if f["type"] == "integer"
+    }
+    assert time_keys(df, fields, numbers) == {"year": ["source"]}
+    # Without the series, years repeat, and a measure (many values) can't key them.
+    assert time_keys(df.select("year", "net"), fields[::2], numbers) == {}
+    days = pl.DataFrame({
+        "d": ["2020-01-01", "2020-01-02", "2020-01-03"],
+        "v": ["1", "2", "3"],
+    })
+    day_fields = [{"name": "d", "type": "date"}, {"name": "v", "type": "number"}]
+    assert time_keys(days, day_fields, {"v": numeric_values(days["v"])}) == {"d": []}
+    # Event times that repeat with nothing to tell them apart: no key.
+    events = pl.DataFrame({
+        "d": ["2020-01-01", "2020-01-01", "2020-01-02"],
+        "v": ["1", "2", "3"],
+    })
+    assert time_keys(events, day_fields, {"v": numeric_values(events["v"])}) == {}
