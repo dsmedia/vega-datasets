@@ -6,6 +6,7 @@
  */
 import type { GetStaticPaths } from "astro";
 import { catalog as c } from "../../prerender/catalog";
+import { metadataEntry } from "../../prerender/metadata-file";
 import FieldsTable from "../../components/FieldsTable.astro";
 import SnippetTabs from "../../components/SnippetTabs.astro";
 import Thumb from "../../components/Thumb.astro";
@@ -23,14 +24,16 @@ import { FORMAT_LABEL, formatBytes, formatCount, plural } from "../../lib/format
 import { markdownToHtml } from "../../lib/markdown";
 import { hasMotion } from "../../lib/motion";
 import { editorUrl, starterSpec } from "../../lib/starter";
-import { breadcrumbJsonLd, datasetJsonLd, datasetMetaDescription, datasetPath, datasetTitle, jsonForScript, REPO } from "../../lib/seo";
+import { breadcrumbJsonLd, datasetJsonLd, datasetMetaDescription, datasetPath, datasetTitle, jsonForScript, REPO, STATUS_PATH } from "../../lib/seo";
+import { completeness } from "../../lib/completeness";
 
 export const getStaticPaths = (() => c.datasets.map((d) => ({ params: { name: d.name }, props: { d } }))) satisfies GetStaticPaths;
 
 const { d } = Astro.props as { d: Dataset };
 const base = import.meta.env.BASE_URL;
 const page = (name: string) => `${base}${datasetPath(name)}`;
-const METADATA = `${REPO}/blob/main/_data/datapackage_additions.toml`;
+/** The dataset's entry in the metadata file, on the repository that built the site. */
+const METADATA = metadataEntry(d);
 const EXAMPLES_SHOWN = 8;
 const PREVIEW_ROWS = 5;
 /** The Explore column's width (px) at a 1360 px window and on a 390 px phone. */
@@ -49,6 +52,8 @@ const [lede = "", ...rest] = (d.description || "No description recorded.").trim(
 const usage = c.usage(d);
 const examples = d.usedBy.length;
 const license = licenseFamily(d);
+// Metadata gaps show quietly where they occur; the footer counts them and links to the status page.
+const { gaps } = completeness(d);
 
 // Sections, in page order (the section nav links to the ones that exist).
 const names = new Set(c.datasets.map((x) => x.name));
@@ -316,7 +321,7 @@ const title = datasetTitle(d);
   <script type="application/json" id="dataset-data" set:html={jsonForScript(clientData)} />
   {density && <script type="application/json" id="density-data" set:html={jsonForScript(density.grid)} />}
 
-  <Fragment slot="footer">Spot an error? <a href={METADATA}>Edit this dataset's metadata</a> on GitHub.</Fragment>
+  <Fragment slot="footer">Spot an error? <a href={METADATA}>Edit this dataset's metadata</a> on GitHub.{gaps > 0 && <span class="footer-gaps">This dataset has <a href={`${base}${STATUS_PATH}#${d.name}`}>{plural(gaps, "metadata gap")}</a>.</span>}</Fragment>
 </Base>
 
 <script>

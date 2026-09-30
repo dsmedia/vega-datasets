@@ -21,7 +21,7 @@ const TRY_TIMEOUT_MS = 30_000;
 const CONCURRENCY = 12;
 
 /**
- * Fixed links in site/src (layout, pages, components, scripts): literal https URLs, and `${REPO}…` templates
+ * Fixed links in site/src (layout, pages, components, scripts): literal https URLs, and `${REPO}…` (or `${EDIT_REPO}…`) templates
  * with the repository URL filled in. Links built from other values (a dataset's file,
  * an encoded spec) are covered by the catalog loop instead. Fragments are dropped:
  * a HEAD request can't see them (home.test.ts checks the README anchors).
@@ -35,7 +35,8 @@ function writtenLinks(): string[] {
   const texts = files(path.join(REPO, 'site', 'src')).map((f) => readFileSync(f, 'utf8'));
   const urls = texts.flatMap((t) => [
     ...[...t.matchAll(/https:\/\/[^\s"'`)<>]+/g)].map((m) => m[0]),
-    ...[...t.matchAll(/`\$\{REPO\}([^`]*)`/g)].map((m) => repo + m[1]),
+    // EDIT_REPO (SITE_REPO) is vega/vega-datasets unless a fork's build names itself.
+    ...[...t.matchAll(/`\$\{(?:EDIT_)?REPO\}([^`]*)`/g)].map((m) => repo + m[1]),
   ]);
   return [...new Set(urls
     .map((u) => u.split('#')[0]!)

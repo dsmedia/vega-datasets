@@ -1,12 +1,14 @@
 ---
 /**
  * A dataset's fields as a data dictionary: each field's name (with its title, and a key
- * mark when it is the primary key), description and documented metadata, its type (and
- * format), distribution, summary and missing count; then how the table joins others.
+ * mark when it is the primary key), description (or a quiet "Add" link to write one) and
+ * documented metadata, its type (and format), distribution, summary and missing count;
+ * then how the table joins others.
  */
 import type { Dataset } from "../lib/catalog";
 import { joins } from "../lib/catalog";
 import { fieldNotes, formatNote, isKey, missingNote } from "../lib/field-meta";
+import { hasDescription } from "../lib/completeness";
 import { formatCount } from "../lib/format";
 import { missingCount, profileSummary, sparkline, typeLabel } from "../lib/profile";
 import { datasetPath } from "../lib/seo";
@@ -14,14 +16,14 @@ import Sparkline from "./Sparkline.astro";
 
 interface Props {
   dataset: Dataset;
-  /** Where to add missing descriptions (the metadata file on GitHub). */
+  /** Where to add missing descriptions: the dataset's entry in the metadata file on GitHub. */
   metadata: string;
   /** Datasets with a page, so a join links only to a page that exists. */
   names: ReadonlySet<string>;
 }
 const { dataset: d, metadata, names } = Astro.props;
 const base = import.meta.env.BASE_URL;
-const described = d.fields.some((f) => f.description);
+const described = d.fields.some(hasDescription);
 const fields = d.fields.map((f) => ({ f, spark: sparkline(f), miss: missingCount(f, d.rows), notes: fieldNotes(f), format: formatNote(f), key: isKey(d, f) }));
 const missing = missingNote(d);
 const links = joins(d);
@@ -31,7 +33,7 @@ const links = joins(d);
   <tbody>
     {fields.map(({ f, spark, miss, notes, format, key }) => (
       <tr>
-        <td class="f-name"><code>{f.name}</code>{key && <span class="f-key">Key</span>}{f.title && <span class="f-title">{f.title}</span>}{f.description && <p class="f-desc">{f.description}</p>}{notes.length > 0 && <p class="f-meta">{notes.join(" · ")}</p>}</td>
+        <td class="f-name"><code>{f.name}</code>{key && <span class="f-key">Key</span>}{!hasDescription(f) && <a class="f-add" href={metadata}>Add<span class="visually-hidden"> a description for {f.name}</span></a>}{f.title && <span class="f-title">{f.title}</span>}{f.description && <p class="f-desc">{f.description}</p>}{notes.length > 0 && <p class="f-meta">{notes.join(" · ")}</p>}</td>
         <td class="f-type"><span class="type">{typeLabel(f)}</span>{format && <span class="f-format mono">{format}</span>}</td>
         <td class="f-dist">{spark ? <Sparkline model={spark} /> : f.profile.kind === "nominal" ? `${formatCount(f.profile.distinct)} distinct` : ""}</td>
         <td class={`f-sum${f.profile.kind === "nominal" ? "" : " mono"}`}>{profileSummary(f)}</td>
