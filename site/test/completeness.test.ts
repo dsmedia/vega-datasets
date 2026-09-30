@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, test } from 'vitest';
 import type { Dataset } from '../src/lib/catalog';
-import { ADDITIONS_FILE, byGaps, completeness, documented, entryUrl, hasDescription, resourceLines, sourcesUnlinked, summarize } from '../src/lib/completeness';
+import { ADDITIONS_FILE, byGaps, completeness, documented, entryUrl, hasDescription, pairHeaders, resourceLines, sourcesUnlinked, summarize } from '../src/lib/completeness';
 import { DEFAULT_SITE_REPO, siteRepo } from '../src/lib/seo';
 import { loadCatalog, REPO } from './catalog';
 import { described, strip } from './fixtures';
@@ -137,17 +137,49 @@ describe("a dataset's entry in the metadata TOML", () => {
     '[[resources]]', // 10: no comment, named by its path
     "path = 'b.json'",
     '',
-    '[[resources]]', // 13: no comment; its sub-table's path doesn't name it
+    '[[resources]]', // 13: no path of its own (its sub-table's doesn't name it)
     '[[resources.licenses]]',
     'path = "https://example.org/license"',
     '',
-    '[[resources]]   #   Path: c.png', // 17
-    '',
-    '[[resources]] # Path: a.csv', // 19: a duplicate keeps the first
+    '  [[ resources ]]   #   Path: c.png', // 17: spaces are allowed
+    'path = "c.png"',
+    '[["resources"]]', // 19: so is a quoted key
+    'path = "d.png"',
+    '[[resources]] # Path: a.csv', // 21: a duplicate keeps the first
+    'path = "a.csv"',
   ].join('\r\n');
 
-  test('lines by file: the header comment, else the block\'s own path', () => {
-    expect([...resourceLines(TOML)]).toEqual([['a.csv', 4], ['b.json', 10], ['c.png', 17]]);
+  test("lines by file: each real header paired, in order, with the parser's resources", () => {
+    expect([...resourceLines(TOML)]).toEqual([['a.csv', 4], ['b.json', 10], ['c.png', 17], ['d.png', 19]]);
+  });
+
+  test('paths in any TOML string form (Codex round 2, #3)', () => {
+    const toml = ['[[resources]] # Path: x.csv', 'path = """a.csv"""', "[[resources]]", "path = '''b.csv'''", '[[resources]] # Path: b.csv', 'path = "c\\u002ecsv"'].join('\n');
+    expect(Object.fromEntries(resourceLines(toml))).toEqual({ 'a.csv': 1, 'b.csv': 3, 'c.csv': 5 });
+  });
+
+  test('array continuation lines that start with "[" are values (Codex round 2, #4)', () => {
+    const toml = [
+      '[[resources]]',
+      'schema = { fields = [{ name = "v", type = "array", constraints = { enum = [ [1, 2], [3] ] } }] }',
+      'tags = [',
+      '  [1, 2],',
+      '  ["resources"],',
+      ']',
+      'path = "a.csv"',
+      '[[resources]]',
+      'path = "b.csv"',
+    ].join('\n');
+    expect(Object.fromEntries(resourceLines(toml))).toEqual({ 'a.csv': 1, 'b.csv': 8 });
+  });
+
+  test('when the headers and the parsed resources disagree, or the file does not parse, no anchors', () => {
+    expect(pairHeaders([1, 5], ['a.csv', 'b.csv'])).toEqual(new Map([['a.csv', 1], ['b.csv', 5]]));
+    expect(pairHeaders([1], ['a.csv', 'b.csv'])).toEqual(new Map());
+    expect(pairHeaders([1, 5, 9], ['a.csv', 'b.csv'])).toEqual(new Map());
+    // A resource without a path gets no anchor, and the others keep theirs.
+    expect(pairHeaders([1, 5], [undefined, 'b.csv'])).toEqual(new Map([['b.csv', 5]]));
+    expect(resourceLines('[[resources]]\npath = "a.csv"\n[[resources]\n')).toEqual(new Map());
   });
 
   test('header-like text inside strings is not a header (Codex round 1, #2)', () => {
@@ -176,7 +208,7 @@ describe("a dataset's entry in the metadata TOML", () => {
     expect(Object.fromEntries(resourceLines(toml))).toEqual({ 'a.csv': 1, 'b.csv': 7, 'c.csv': 17, 'd.csv': 19 });
   });
 
-  test("the block's own path wins over a stale comment", () => {
+  test('comments name nothing: only the parsed path does', () => {
     const toml = ['[[resources]] # Path: old.csv', 'path = "new.csv"', '[[resources]] # Path: old.csv', 'path = "old.csv"'].join('\n');
     expect(Object.fromEntries(resourceLines(toml))).toEqual({ 'new.csv': 1, 'old.csv': 3 });
   });
@@ -226,13 +258,22 @@ describe('the repository edit links go to', () => {
   });
 });
 
-test('the live catalog: every dataset is judged, and the totals add up', () => {
-  const c = loadCatalog();
-  const s = summarize(c.datasets);
-  expect(s.datasets).toBe(c.datasets.length);
-  const gaps = c.datasets.map((d) => completeness(d).gaps);
+/** Invariants that hold however much metadata is filled in (and whichever tables have a schema). */
+function totalsAddUp(datasets: Dataset[]) {
+  const s = summarize(datasets);
+  expect(s.datasets).toBe(datasets.length);
+  const gaps = datasets.map((d) => completeness(d).gaps);
   expect(gaps.every((g) => Number.isInteger(g) && g >= 0)).toBe(true);
   expect(s.complete).toBe(gaps.filter((g) => g === 0).length);
-  expect(s.fields.total).toBe(c.datasets.reduce((n, d) => n + d.fields.length, 0));
-  expect(s.fields.described).toBeLessThanOrEqual(s.fields.total);
+  // Declared fields only: a table whose columns were read from the data has no field items.
+  const declared = datasets.filter((d) => !d.fieldsInferred);
+  expect(s.fields.total).toBe(declared.reduce((n, d) => n + d.fields.length, 0));
+  expect(s.fields.described).toBe(declared.reduce((n, d) => n + d.fields.filter(hasDescription).length, 0));
+}
+
+test('the live catalog: every dataset is judged, and the totals add up', () => {
+  const c = loadCatalog();
+  totalsAddUp(c.datasets);
+  // As they would if a table lost its schema (Codex round 2, #2).
+  totalsAddUp(c.datasets.map((d) => (d.name === 'cars' ? { ...d, fieldsInferred: true as const } : d)));
 });

@@ -10,6 +10,7 @@
  * documented when present, never as gaps.
  */
 import type { Dataset, Field } from "./catalog";
+import { parse } from "smol-toml";
 import { licenseFamily } from "./catalog";
 
 /** The dataset-level checklist, in the order the status page shows it. */
@@ -158,17 +159,15 @@ function openAtEnd(line: string, from: number): Quote | null {
 }
 
 /**
- * The line of each `[[resources]]` block in the metadata TOML, by the file it describes: the
- * block's own `path = "…"`, else its header's `# Path: <file>` comment. Text inside multiline
- * strings (descriptions) is never read as a header or a key; the first block for a file wins.
+ * A `[[resources]]` header line (spaces and a quoted key allowed, then an optional comment).
+ * Outside a multiline string, a line like this can only be a header: an array element or an
+ * inline table's content can't be the bare word `resources`, so valid TOML has no other reading.
  */
-export function resourceLines(toml: string): Map<string, number> {
-  const lines = new Map<string, number>();
-  let block: { line: number; comment?: string; path?: string; own: boolean } | null = null;
-  const close = () => {
-    const file = block?.path ?? block?.comment;
-    if (block && file && !lines.has(file)) lines.set(file, block.line);
-  };
+const HEADER = /^\s*\[\[\s*(?:resources|"resources"|'resources')\s*\]\]\s*(?:#.*)?$/;
+
+/** The (1-based) lines of the `[[resources]]` headers, skipping text inside multiline strings. */
+function headerLines(toml: string): number[] {
+  const out: number[] = [];
   let string: Quote | null = null;
   toml.split(/\r?\n/).forEach((line, i) => {
     let from = 0;
@@ -177,25 +176,47 @@ export function resourceLines(toml: string): Map<string, number> {
       if (end < 0) return;
       string = null;
       from = end;
-    } else {
-      const header = /^\s*\[\[resources\]\]\s*(?:#\s*Path:\s*(\S+))?/.exec(line);
-      if (header) {
-        close();
-        block = { line: i + 1, ...(header[1] ? { comment: header[1] } : {}), own: true };
-        return;
-      }
-      // Only the block's own keys: a sub-table (sources, licenses, schema) has paths of its own.
-      if (/^\s*\[/.test(line)) {
-        if (block) block.own = false;
-      } else if (block?.own && block.path === undefined) {
-        const path = /^\s*path\s*=\s*(?:"([^"\\]*)"|'([^']*)')/.exec(line);
-        if (path) block.path = path[1] ?? path[2];
-      }
+    } else if (HEADER.test(line)) {
+      out.push(i + 1);
+      return;
     }
     string = openAtEnd(line, from);
   });
-  close();
-  return lines;
+  return out;
+}
+
+/**
+ * Header lines paired, in order, with the parsed resources' paths (the first block for a file
+ * wins); nothing at all when the counts disagree, since then no pairing can be trusted.
+ */
+export function pairHeaders(lines: number[], paths: (string | undefined)[]): Map<string, number> {
+  const out = new Map<string, number>();
+  if (lines.length !== paths.length) return out;
+  paths.forEach((p, i) => {
+    if (p !== undefined && !out.has(p)) out.set(p, lines[i]!);
+  });
+  return out;
+}
+
+/**
+ * The line of each `[[resources]]` block in the metadata TOML, by the file it describes: a TOML
+ * parser reads the resources and their `path`s, and the n-th header line is the n-th resource.
+ * Comments name nothing. A file that doesn't parse, or whose headers can't be matched to its
+ * resources, gives no lines (edit links then go to the file itself).
+ */
+export function resourceLines(toml: string): Map<string, number> {
+  let resources: unknown;
+  try {
+    resources = parse(toml).resources;
+  } catch {
+    return new Map();
+  }
+  if (!Array.isArray(resources)) return new Map();
+  const paths = resources.map((r: unknown) => {
+    const p = r && typeof r === "object" ? (r as { path?: unknown }).path : undefined;
+    return typeof p === "string" ? p : undefined;
+  });
+  return pairHeaders(headerLines(toml), paths);
 }
 
 /** A link to a dataset's entry in the metadata file (its line when known, else the file). */

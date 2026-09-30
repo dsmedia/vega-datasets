@@ -8,6 +8,7 @@ import { completeness } from '../src/lib/completeness';
 import { chartFeatures } from '../src/lib/explore-model';
 import { type DensityGrid, densityCaption, densityPageSpec, densitySpec } from '../src/lib/large-data';
 import { editorUrl } from '../src/lib/starter';
+import { parse as parseToml } from 'smol-toml';
 import { siteRepo } from '../src/lib/seo';
 import { loadCatalog, REPO } from './catalog';
 
@@ -95,7 +96,7 @@ describe('metadata gaps (DECISIONS D6)', () => {
   const FILE = `${siteRepo(process.env)}/blob/main/_data/datapackage_additions.toml`;
   const isEntry = (href: string | undefined) => !!href && href.startsWith(`${FILE}#L`) && /^\d+$/.test(href.slice(FILE.length + 2));
   const status = html(path.join(dist, 'metadata', 'index.html'));
-  const rows = [...status.matchAll(/<tr id="([^"]+)">([\s\S]*?)<\/tr>/g)].map(([, id, body]) => ({ id: id!, body: body! }));
+  const rows = [...status.matchAll(/<tr id="ds-([^"]+)">([\s\S]*?)<\/tr>/g)].map(([, id, body]) => ({ id: id!, body: body! }));
 
   test('the status page: a row per dataset, most gaps first, ties by name, each linking to its page and entry', () => {
     expect(status).toContain('<title>Metadata Status · Vega Datasets</title>');
@@ -108,17 +109,23 @@ describe('metadata gaps (DECISIONS D6)', () => {
       expect(hrefs, id).toHaveLength(1);
       expect(isEntry(hrefs[0]), `${id}: ${hrefs[0]}`).toBe(true);
     }
-    // The row ids are the only ids named after datasets: none collides with the page's own.
+    // Row ids are namespaced ("ds-<name>"), so none collides with the layout's own (main#page, …).
     const ids = [...status.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]!);
     expect(new Set(ids).size).toBe(ids.length);
+    expect(ids.filter((i) => i.startsWith('ds-'))).toHaveLength(catalog.datasets.length);
   });
 
-  test('each entry link points at its [[resources]] block', () => {
-    const toml = readFileSync(path.join(REPO, '_data', 'datapackage_additions.toml'), 'utf8').split(/\r?\n/);
+  test('each entry link points at its [[resources]] header (checked with a TOML parser, whatever the block holds)', () => {
+    const text = readFileSync(path.join(REPO, '_data', 'datapackage_additions.toml'), 'utf8');
+    const lines = text.split(/\r?\n/);
+    const all = (parseToml(text).resources as { path: string }[]).map((r) => r.path);
     for (const { id, body } of rows) {
       const line = Number(body.match(/\.toml#L(\d+)"/)![1]);
-      expect(toml[line - 1], id).toMatch(/^\[\[resources\]\]/);
-      expect(toml.slice(line - 1, line + 1).join('\n'), id).toContain(catalog.dataset(id)!.file);
+      // From a resource's header to the end is valid TOML whose first resource is that one,
+      // and whose resources are exactly those from it on.
+      const tail = (parseToml(lines.slice(line - 1).join('\n')).resources as { path: string }[]).map((r) => r.path);
+      expect(tail[0], id).toBe(catalog.dataset(id)!.file);
+      expect(tail, id).toEqual(all.slice(all.length - tail.length));
     }
   });
 
@@ -134,7 +141,7 @@ describe('metadata gaps (DECISIONS D6)', () => {
       const line = text.match(/<span class="footer-gaps">This dataset has <a href="([^"]+)">([^<]+)<\/a>\.<\/span>/);
       if (s.gaps === 0) expect(line, d.name).toBeNull();
       else {
-        expect(line?.[1], d.name).toBe(`${BASE}metadata/#${d.name}`);
+        expect(line?.[1], d.name).toBe(`${BASE}metadata/#ds-${d.name}`);
         expect(line?.[2], d.name).toBe(s.gaps === 1 ? '1 metadata gap' : `${s.gaps.toLocaleString('en-US')} metadata gaps`);
       }
     }
