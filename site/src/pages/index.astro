@@ -112,16 +112,16 @@ const about = readmeItems.flatMap(([id, title, hint, heading]) => {
   </section>
 
   <section class="wrap about" aria-labelledby="about-h">
+    <h2 id="about-h">About the Collection</h2>
     <div class="about-list">
-      <h2 id="about-h">About the Collection</h2>
       <details class="about-item" id="about-licensing" open>
-        <summary><span class="about-title">Licensing</span><span class="hint">Each dataset keeps its source's license</span></summary>
-        <div class="about-body">Code is BSD-3-Clause. Each dataset keeps its source's license, recorded in its metadata and shown on its page. Check the source's terms before reuse.</div>
+        <summary><span class="about-label"><span class="about-title">Licensing</span><span class="hint">Each dataset keeps its source's license</span></span></summary>
+        <div class="about-panel"><div class="about-body">Code is BSD-3-Clause. Each dataset keeps its source's license, recorded in its metadata and shown on its page. Check the source's terms before reuse.</div></div>
       </details>
       {about.map((a) => (
         <details class="about-item" id={a.id}>
-          <summary><span class="about-title">{a.title}</span><span class="hint">{a.hint}</span></summary>
-          <div class="about-body md" set:html={a.html} />
+          <summary><span class="about-label"><span class="about-title">{a.title}</span><span class="hint">{a.hint}</span></span></summary>
+          <div class="about-panel"><div class="about-body md" set:html={a.html} /></div>
         </details>
       ))}
     </div>

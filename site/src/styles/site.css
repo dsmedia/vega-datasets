@@ -515,7 +515,7 @@ button.link:hover { text-decoration: underline; }
 .browse, .use, .about { padding-top: 48px; }
 .browse { display: flex; flex-direction: column; gap: 16px; }
 .browse h2, .use h2, .about h2 { font-size: 28px; font-weight: 500; color: var(--ink-strong); }
-.use h2, .about h2 { border-bottom: 1px solid var(--rule); padding-bottom: 1px; }
+.use h2 { border-bottom: 1px solid var(--rule); padding-bottom: 1px; }
 .sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--rule); padding-bottom: 1px; }
 .status { font-size: 13px; color: var(--ink-muted); white-space: pre-wrap; text-align: right; }
 .catalog-chart { position: relative; min-height: var(--chart-h, 240px); }
@@ -574,18 +574,48 @@ html:not(.js) :is(.filters, .browse-foot .more, #examples .seg, #examples .more,
 .use-grid p, .use-link { font-size: 14px; }
 .use-grid .snippet { font-size: 12px; }
 
-.about { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 60px; align-items: start; }
-.about-list h2 { margin-bottom: 8px; }
-.about-item { border-top: 1px solid var(--rule); }
-.about-item:last-child { border-bottom: 1px solid var(--rule); }
+.about { display: grid; grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); gap: 20px 40px; align-items: start; }
+.about > h2 { grid-column: 1 / -1; }
+.about-list { min-width: 0; border: 1px solid var(--rule-soft); border-radius: var(--radius-button); }
+.about-item { scroll-margin-top: 16px; }
+.about-item + .about-item { border-top: 1px solid var(--rule-soft); }
 .about-item summary {
-  list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: baseline; gap: 16px;
-  padding: 14px 0; font-size: 17px; color: var(--ink-strong);
+  list-style: none; cursor: pointer; display: flex; align-items: center; gap: 24px;
+  min-height: 76px; padding: 18px 20px; color: var(--ink-strong);
+  border-radius: var(--radius-button); transition: background-color 160ms ease;
 }
 .about-item summary::-webkit-details-marker { display: none; }
-.about-item .hint { font-size: 13px; color: var(--ink-muted); text-align: right; }
-.about-body { padding: 0 0 16px; font-size: 15px; max-width: 70ch; }
-.contribute { border: 1px solid var(--rule-soft); padding: 20px; display: flex; flex-direction: column; gap: 12px; margin-top: 48px; }
+.about-item summary::marker { content: ""; }
+.about-item summary:hover { background: var(--surface-alt); }
+.about-item summary:focus-visible { outline-offset: -3px; background: var(--surface-alt); }
+.about-label { display: grid; gap: 4px; min-width: 0; flex: 1; }
+.about-title { font-size: 16px; font-weight: 600; line-height: 1.4; }
+.about-item .hint { font-size: 14px; line-height: 1.5; color: var(--ink-muted); }
+.about-item summary::after {
+  content: ""; flex: none; width: 8px; height: 8px; margin: 0 4px;
+  border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
+  color: var(--ink-muted); transform: rotate(-45deg); transition: transform 220ms ease;
+}
+.about-item[open] > summary::after { transform: rotate(45deg); }
+.about-body { padding: 0 52px 20px 20px; font-size: 15px; line-height: 1.65; max-width: 74ch; overflow-wrap: anywhere; }
+
+/* Native details owns state, keyboard behavior and hidden content. The grid track
+   follows the content's natural height (including reflow); no measured heights or
+   JS animation state. Older browsers keep the ordinary disclosure behavior. */
+@supports selector(details::details-content) and (transition-behavior: allow-discrete) {
+  .about-item::details-content {
+    display: grid; grid-template-rows: 0fr;
+    transition: grid-template-rows 220ms ease, content-visibility 220ms allow-discrete;
+  }
+  .about-item[open]::details-content { grid-template-rows: 1fr; }
+  .about-panel { min-height: 0; overflow: hidden; }
+  /* Anchor navigation opens before scrolling, without a second layout shift. */
+  .about-item.about-reveal::details-content { transition: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .about-item::details-content, .about-item summary, .about-item summary::after { transition: none; }
+}
+.contribute { border: 1px solid var(--rule-soft); border-radius: var(--radius-button); background: var(--surface-alt); padding: 24px; display: flex; flex-direction: column; gap: 12px; }
 .contribute h3 { font-size: 17px; color: var(--ink-strong); }
 .contribute p, .contribute a { font-size: 14px; }
 
@@ -599,10 +629,10 @@ html:not(.js) :is(.filters, .browse-foot .more, #examples .seg, #examples .more,
   .section-nav { top: 0; }
   .ds-sec { scroll-margin-top: 56px; }
   .ex-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .intro, .about { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+  .intro { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+  .about { grid-template-columns: minmax(0, 1fr); }
   .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .use-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .contribute { margin-top: 0; }
 }
 
 /* Phone header (as on the family sites): the title and the theme switch on one row, the links below. */
@@ -653,8 +683,8 @@ html:not(.js) :is(.filters, .browse-foot .more, #examples .seg, #examples .more,
   .card-size, .card-ex { display: none; }
   .card .stack { width: 80px; }
   .use-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
-  .about-item summary { flex-direction: column; gap: 2px; min-height: 44px; }
-  .about-item .hint { text-align: left; }
+  .about-item summary { padding: 16px; gap: 16px; }
+  .about-body { padding: 0 16px 20px; }
   .contribute { padding: 16px; }
 
   .phone-only { display: revert; }

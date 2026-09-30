@@ -223,18 +223,32 @@ phone.addEventListener("change", () => {
 // --- Links into the page ------------------------------------------------------------------
 // "Browse Datasets" jumps to the list; the search box takes focus.
 $("[data-browse]").addEventListener("click", () => setTimeout(() => search.focus({ preventScroll: true })));
-// "Versioning" and any other link to an About item opens it.
-const openTarget = () => {
-  const target = location.hash ? document.getElementById(location.hash.slice(1)) : null;
-  if (target instanceof HTMLDetailsElement) {
+// Reveal before the browser follows an in-page link, including a repeated link to
+// the current hash after its item was closed. Keep native URL/history navigation.
+const openTarget = (hash = location.hash, scroll = false) => {
+  let id: string;
+  try { id = decodeURIComponent(hash.slice(1)); } catch { return; }
+  const target = id ? document.getElementById(id) : null;
+  if (target instanceof HTMLDetailsElement && target.classList.contains("about-item")) {
+    target.classList.add("about-reveal");
     target.open = true;
+    // Resolve the natural height with transitions disabled before anchor scrolling.
+    target.getBoundingClientRect();
+    target.classList.remove("about-reveal");
     target.querySelector("summary")?.focus({ preventScroll: true });
+    if (scroll) target.scrollIntoView({ block: "start", behavior: "instant" });
   }
 };
-window.addEventListener("hashchange", () => {
-  if (!openLegacy()) openTarget();
+document.querySelectorAll<HTMLAnchorElement>("[data-open-details]").forEach((link) => {
+  link.addEventListener("click", (event) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    openTarget(link.hash);
+  });
 });
-openTarget();
+window.addEventListener("hashchange", () => {
+  if (!openLegacy()) openTarget(location.hash, true);
+});
+openTarget(location.hash, true);
 
 // Filters from the URL (a shared link, or Back from a dataset): apply them straight away.
 readUrl();
