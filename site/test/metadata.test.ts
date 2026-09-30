@@ -92,7 +92,7 @@ describe('starter charts', () => {
 
   test('a time series titles its axes, and a series without metadata stays nominal', () => {
     const e = enc(starterSpec(d));
-    expect(e.x).toEqual({ field: 'when', type: 'temporal', title: 'Date Sold' });
+    expect(e.x).toEqual({ field: 'when', type: 'temporal', axis: { tickCount: { expr: 'ceil(width / 90)' }, labelOverlap: 'greedy', format: '%b %d' }, title: 'Date Sold' });
     expect(e.y).toEqual({ field: 'hp', type: 'quantitative', aggregate: 'mean', scale: { domainMin: 0, domainMax: 500 }, title: 'Mean of Horsepower (hp)' });
     expect(e.color).toEqual({ field: 'origin', type: 'nominal' });
   });

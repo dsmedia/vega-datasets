@@ -112,7 +112,8 @@ export function chartConfig(c: ChartInk, font: string): Config {
     axis: { ...guide, domainColor: c.rule, tickColor: c.rule, gridColor: c.grid, gridWidth: 1 },
     // The base colors draw a legend's symbols when no color scale does (size, shape).
     legend: { ...guide, symbolBaseStrokeColor: c.rule },
-    header: { labelColor: c.ink, titleColor: c.ink },
+    // Small multiples' panel names and their field: as legible as axis titles.
+    header: { labelColor: c.ink, titleColor: c.ink, labelFontSize: 12, titleFontSize: 12, labelFontWeight: "bold", titleFontWeight: "normal" },
     title: { color: c.strong, subtitleColor: c.ink },
     text: { color: c.ink },
     selection: {

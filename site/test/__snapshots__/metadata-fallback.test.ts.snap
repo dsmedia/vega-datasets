@@ -458,7 +458,14 @@ exports[`time series colored by a series > starter and Explore specs match the c
   "encoding": {
    "x": {
     "field": "when",
-    "type": "temporal"
+    "type": "temporal",
+    "axis": {
+     "tickCount": {
+      "expr": "ceil(width / 90)"
+     },
+     "labelOverlap": "greedy",
+     "format": "%b %d"
+    }
    },
    "y": {
     "field": "hp",
@@ -487,7 +494,14 @@ exports[`time series colored by a series > starter and Explore specs match the c
   "encoding": {
    "x": {
     "field": "when",
-    "type": "temporal"
+    "type": "temporal",
+    "axis": {
+     "tickCount": {
+      "expr": "ceil(width / 90)"
+     },
+     "labelOverlap": "greedy",
+     "format": "%b %d"
+    }
    },
    "y": {
     "field": "hp",

@@ -170,6 +170,7 @@ code, .mono { font-family: var(--font-mono); font-size: 0.85em; }
 :where(.catalog-chart, .explore-chart) svg .role-legend-label text { fill: var(--ink-muted); }
 :where(.catalog-chart, .explore-chart) svg .role-axis-title text,
 :where(.catalog-chart, .explore-chart) svg .role-legend-title text,
+:where(.catalog-chart, .explore-chart) svg .role-title-text text,
 :where(.catalog-chart, .explore-chart) svg .mark-text.role-mark text { fill: var(--ink); }
 :where(.catalog-chart, .explore-chart) svg .role-axis-domain line,
 :where(.catalog-chart, .explore-chart) svg .role-axis-tick line { stroke: var(--rule); }

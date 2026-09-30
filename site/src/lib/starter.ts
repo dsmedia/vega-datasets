@@ -353,6 +353,13 @@ function basemap(d: Dataset, usOnly: boolean): Spec {
   };
 }
 
+/**
+ * A sequential ramp for marks over the basemap: both ends at mid luminance (blue to orange),
+ * so the weakest values stay visible on the gray countries and on light and dark grounds;
+ * the default ramp starts near the background color.
+ */
+const BASEMAP_RAMP = ["#3b82c4", "#e0662a"];
+
 /** The 1:110m basemap goes only under points spread over at least this many degrees: closer in, its coarse coast would mislead. */
 const BASEMAP_MIN_DEGREES = 10;
 
@@ -432,7 +439,9 @@ function pointMap(d: Dataset, base: Spec, lat: Field, lon: Field, color: Field |
       latitude: { field: fieldRef(lat.name), type: "quantitative", ...titled(lat) },
       // A direction turns each wedge; the other measure (wind speed) colors it.
       ...(direction ? { angle: { field: fieldRef(direction.name), type: "quantitative", scale: { domain: [0, 360], range: [0, 360] }, ...titled(direction) } } : {}),
-      ...(strength ? { color: { field: fieldRef(strength.name), type: "quantitative", ...titled(strength) } } : color ? { color: category(color) } : {}),
+      ...(strength
+        ? { color: { field: fieldRef(strength.name), type: "quantitative", scale: { range: BASEMAP_RAMP, interpolate: "hcl" }, ...titled(strength) } }
+        : color ? { color: category(color) } : {}),
     },
   };
   const frame: Spec = { ...base, width: 600, height: 380, projection: { type: us ? "albersUsa" : "equalEarth", ...fit } };
@@ -482,8 +491,8 @@ function timeSeries(d: Dataset, base: Spec, t: Field, m: Field, fields: Field[])
     mark: date ? { type: "line", interpolate: "monotone", tooltip: true } : { type: "line", point: rows <= 60, tooltip: true },
     encoding: {
       x: date
-        ? { field: fieldRef(along.name), type: "temporal", ...(unit ? { timeUnit: unit } : {}), ...titled(along) }
-        : measure(along, { scale: { zero: false }, axis: { format: "d" } }),
+        ? { field: fieldRef(along.name), type: "temporal", ...(unit ? { timeUnit: unit } : {}), axis: { ...TIME_AXIS, format: dateFormat(along) }, ...titled(along) }
+        : measure(along, { scale: { zero: false }, axis: { format: "d", ...TIME_AXIS } }),
       y: measure(m, aggregate ? { aggregate, ...(band ? { scale: { zero: false } } : {}) } : scaled(m, band ? { zero: false } : {})),
       ...(series ? { color: category(series) } : {}),
       ...(lines
@@ -494,6 +503,18 @@ function timeSeries(d: Dataset, base: Spec, t: Field, m: Field, fields: Field[])
         : {}),
     },
   };
+}
+
+/**
+ * A time axis: about one tick per 90 px of plot (so a 60-year series doesn't label every
+ * year at 880 px, nor collide at 358), and any labels that still overlap dropped.
+ */
+const TIME_AXIS = { tickCount: { expr: "ceil(width / 90)" }, labelOverlap: "greedy" };
+
+/** Date labels as short as the span allows: years over four years, months and years up to four, days within a year and a half. */
+function dateFormat(t: Field): string {
+  const span = spanYears(t);
+  return span > 4 ? "%Y" : span > 1.5 ? "%b %Y" : "%b %d";
 }
 
 /** Bars for the largest groups of a category with many values. */

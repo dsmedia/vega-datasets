@@ -6,7 +6,8 @@ import { expressionInterpreter } from 'vega-interpreter';
 import { compile, type TopLevelSpec } from 'vega-lite';
 import { describe, expect, test } from 'vitest';
 import type { Dataset, Field } from '../src/lib/catalog';
-import { idName, informative, namedAxes, nearDuplicate, scaleFor, scaleType, summable } from '../src/lib/chart-rules';
+import { idName, informative, logTicks, namedAxes, nearDuplicate, scaleFor, scaleType, summable } from '../src/lib/chart-rules';
+import { chartConfig, tokenInk } from '../src/lib/vega-theme';
 import { chartFeatures, defaultAxes, exploreModes, pickScale, scatterFields, scatterSpec, starterChart } from '../src/lib/explore-model';
 import { basemapUrl, starterSpec } from '../src/lib/starter';
 import { draw } from './draw';
@@ -278,5 +279,65 @@ describe('G-7: obvious axes and small multiples', () => {
   test('unequal groups (a real category) stay one colored scatter plot', () => {
     const unequal = table([nominal('Series', [['I', 30], ['II', 14]]), quant('X', 4, 19), quant('Y', 3, 13)], 44);
     expect(exploreModes(unequal)[0]).toBe('scatter');
+  });
+});
+
+describe('readability (orchestrator review)', () => {
+  test('log axes: 1-2-5 steps over up to three decades, powers of ten beyond, a domain fitted to the data', async () => {
+    expect(logTicks(5.97, 800)).toEqual([5, 10, 20, 50, 100, 200, 500, 1000]);
+    const wide = logTicks(0.001, 870);
+    expect(wide.every((v) => Number.isInteger(Math.log10(v)) || v === 0.001)).toBe(true);
+    expect(wide[0]).toBe(0.001);
+    expect(wide.at(-1)).toBe(1000);
+    const svg = async (min: number, max: number) => {
+      const s = scaleFor(quant('v', min, max));
+      const view = await draw({ mark: 'point', encoding: { x: { field: 'v', type: 'quantitative', scale: s.scale, axis: s.axis } } }, [{ v: min }, { v: max }]);
+      try {
+        return await view.toSVG();
+      } finally {
+        view.finalize();
+      }
+    };
+    // Below one, plain decimals, never a milli prefix ("1m").
+    const small = await svg(0.001, 870);
+    expect(small).toContain('>0.001<');
+    expect(small).not.toMatch(/>\d+m</);
+    const s = scaleFor(quant('price', 5.97, 800, {}, { bins: bins(20, 1) }));
+    expect(s.scale).toEqual({ type: 'log', domainMin: 5, domainMax: 1000, nice: false });
+    expect(s.axis.values).toEqual([5, 10, 20, 50, 100, 200, 500, 1000]);
+  });
+
+  test('a time axis ties its tick count to the plot width and drops overlapping labels', async () => {
+    const d = table([dates('date', 120), quant('co2', 313, 420)], 120, { timeKeys: { date: [] } });
+    const x = enc(starterChart(d)).x;
+    expect(x.axis).toEqual({ tickCount: { expr: 'ceil(width / 90)' }, labelOverlap: 'greedy', format: '%Y' });
+    for (const width of [880, 358]) {
+      const rows = Array.from({ length: 120 }, (_, i) => ({ date: `${1960 + Math.floor(i / 2)}-0${1 + (i % 2) * 6}-01`, co2: 313 + i }));
+      const view = await draw({ ...starterSpec(d)!, width }, rows);
+      try {
+        const labels = (await view.toSVG()).match(/role-axis-label[\s\S]*?<\/g>/)![0].match(/<text/g)!.length;
+        // No crowding: at least 70 px of axis per label.
+        expect(labels).toBeLessThanOrEqual(Math.floor(width / 70));
+      } finally {
+        view.finalize();
+      }
+    }
+  });
+
+  test('a measure colored over the basemap starts its ramp at mid luminance', () => {
+    const d = table([quant('latitude', 45, 60), quant('longitude', -10, 10), quant('dir', 0, 360, { type: 'integer' }), quant('speed', 0, 12)], 4800);
+    const range = (enc(starterSpec(d)).color!.scale as { range: string[] }).range;
+    expect(range).toHaveLength(2);
+    for (const c of range) {
+      const [r, g, b] = [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16) / 255);
+      const lum = 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+      expect(lum).toBeGreaterThan(0.25);
+      expect(lum).toBeLessThan(0.6);
+    }
+  });
+
+  test('small multiples label their panels at 12 px in the ink color', () => {
+    const header = chartConfig(tokenInk(() => '#123456'), 'sans-serif').header as Record<string, unknown>;
+    expect(header).toMatchObject({ labelFontSize: 12, titleFontSize: 12, labelColor: '#123456' });
   });
 });

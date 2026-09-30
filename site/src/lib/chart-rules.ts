@@ -70,6 +70,31 @@ function symlogTicks(f: Field): number[] {
 }
 
 /**
+ * A log or symlog tick's label, each on its own: SI prefixes from a thousand up ("10k", "1M"),
+ * plain numbers below ("0.001", not "1m"). A shared axis format would give every label one prefix ("0.1M").
+ */
+const POWER_LABEL = "abs(datum.value) >= 1000 ? format(datum.value, '~s') : format(datum.value, '~g')";
+
+/**
+ * A log axis's steps from just below `min` to just above `max`: 1, 2 and 5 times each power of
+ * ten over up to three decades, whole powers beyond (thinned to at most ten), never the minor
+ * 3, 4, 6 … ticks that crowd a log axis.
+ */
+export function logTicks(min: number, max: number): number[] {
+  const lo = Math.floor(Math.log10(min));
+  const hi = Math.ceil(Math.log10(max));
+  const steps = hi - lo <= 3 ? [1, 2, 5] : [1];
+  const all: number[] = [];
+  for (let k = lo; k <= hi; k++) for (const m of steps) all.push(Number((m * 10 ** k).toPrecision(12)));
+  const below = all.filter((v) => v <= min * 1.0001).at(-1) ?? all[0]!;
+  const above = all.find((v) => v >= max / 1.0001) ?? all.at(-1)!;
+  const inside = all.filter((v) => v >= below && v <= above);
+  const every = Math.ceil(inside.length / 10);
+  // Thin from the top, keeping both ends.
+  return inside.filter((_, i) => (inside.length - 1 - i) % every === 0 || i === 0);
+}
+
+/**
  * The scale and axis properties for a measure on a position channel: nothing for a linear
  * one, `log`, or `symlog` with its constant at the smallest positive value (below it the
  * axis is linear) and ticks at powers of ten, which symlog doesn't place by itself.
@@ -77,12 +102,20 @@ function symlogTicks(f: Field): number[] {
 export function scaleFor(f: Field): { scale: Enc; axis: Enc } {
   const type = scaleType(f);
   if (type === "linear") return { scale: {}, axis: {} };
-  if (type === "log") return { scale: { type: "log" }, axis: {} };
+  if (type === "log") {
+    const p = f.profile as { min: number; max: number };
+    const ticks = logTicks(p.min, p.max);
+    // The domain ends at the steps around the data (5 to 1,000 for prices of 6 to 800), not at a
+    // power of ten far below it; ticks, and so grid lines, only at those steps.
+    return {
+      scale: { type: "log", domainMin: ticks[0], domainMax: ticks.at(-1), nice: false },
+      axis: { values: ticks, labelExpr: POWER_LABEL },
+    };
+  }
   const p = f.profile as { min: number; minPositive?: number };
   return {
     scale: { type: "symlog", constant: p.min > 0 ? p.min : (p.minPositive ?? 1) },
-    // Each label on its own ("100k", "1M"): an axis format would share one SI prefix across them ("0.1M").
-    axis: { values: symlogTicks(f), labelExpr: "format(datum.value, '~s')" },
+    axis: { values: symlogTicks(f), labelExpr: POWER_LABEL },
   };
 }
 
