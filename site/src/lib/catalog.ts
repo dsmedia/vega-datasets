@@ -225,26 +225,76 @@ export function documentedRange(f: Field): { min?: number; max?: number; fits: b
   const min = typeof minimum === "number" ? minimum : undefined;
   const max = typeof maximum === "number" ? maximum : undefined;
   if (min === undefined && max === undefined) return null;
-  const fits = insideDocumented(f) !== false;
+  // Bounds only an axis the data provably fits: a bin extent the data leaves drops rows.
+  const fits = insideDocumented(f) === true;
   return { ...(min !== undefined ? { min } : {}), ...(max !== undefined ? { max } : {}), fits };
 }
 
 /**
+ * How far a profile's minimum or maximum may lie from the data's own: the builder rounds
+ * them to four significant figures.
+ */
+function slack(x: number): number {
+  return x === 0 ? 0 : 0.5 * 10 ** (Math.floor(Math.log10(Math.abs(x))) - 3);
+}
+
+/** The strptime directives a date constraint can use here, as patterns. */
+const DIRECTIVES: Record<string, string> = { Y: "(\\d{4})", m: "(\\d{1,2})", d: "(\\d{1,2})", H: "(\\d{1,2})", M: "(\\d{1,2})", S: "(\\d{1,2})" };
+
+/**
+ * A date or time constraint as an instant, read with the field's `format` (strptime
+ * directives %Y %m %d %H %M %S) or as ISO 8601. A time without a zone is wall-clock time,
+ * read as UTC as the builder writes the profile. Undefined when it can't be read exactly.
+ */
+export function parseTemporal(text: string, format?: string): number | undefined {
+  if (format && format !== "default" && format !== "any") {
+    const keys: string[] = [];
+    let pattern = "";
+    for (let i = 0; i < format.length; i++) {
+      if (format[i] !== "%") {
+        pattern += format[i]!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        continue;
+      }
+      const k = format[++i] ?? "";
+      if (k === "%") pattern += "%";
+      else if (DIRECTIVES[k]) {
+        keys.push(k);
+        pattern += DIRECTIVES[k];
+      } else return undefined;
+    }
+    const m = keys.length ? new RegExp(`^${pattern}$`).exec(text.trim()) : null;
+    if (!m) return undefined;
+    const v: Record<string, number> = { Y: 1970, m: 1, d: 1, H: 0, M: 0, S: 0 };
+    keys.forEach((k, i) => (v[k] = Number(m[i + 1])));
+    return Date.UTC(v.Y!, v.m! - 1, v.d!, v.H!, v.M!, v.S!);
+  }
+  const iso = /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?))?(Z|[+-]\d{2}:?\d{2})?$/.exec(text.trim());
+  if (!iso) return undefined;
+  const zone = iso[3] ? iso[3].replace(/^([+-]\d{2})(\d{2})$/, "$1:$2") : "Z";
+  const t = Date.parse(`${iso[1]}T${iso[2] ?? "00:00"}${zone}`);
+  return Number.isNaN(t) ? undefined : t;
+}
+
+/**
  * Whether the data's range (the profile's) lies inside the documented `minimum` and
- * `maximum`: numbers for a number field, dates and times (as text) for a temporal one;
- * null when that can't be told (no bounds, or bounds that don't match the data's kind).
+ * `maximum`: numbers for a number field, dates and times for a temporal one. True or
+ * false only when the profile proves it (its rounding taken into account); null when
+ * that can't be told (no bounds, bounds the site can't read, or data too close to call).
  */
 export function insideDocumented(f: Field): boolean | null {
   const { minimum, maximum } = f.constraints ?? {};
   const p = f.profile;
   const value = (v: number | string | undefined): number | undefined =>
     p.kind === "quantitative" ? (typeof v === "number" ? v : undefined)
-    : p.kind === "temporal" && typeof v === "string" && !Number.isNaN(Date.parse(v)) ? Date.parse(v)
+    : p.kind === "temporal" && typeof v === "string" ? parseTemporal(v, f.format)
     : undefined;
   const [min, max] = [value(minimum), value(maximum)];
   if (min === undefined && max === undefined) return null;
   const [lo, hi] = p.kind === "quantitative" ? [p.min, p.max] : p.kind === "temporal" ? [Date.parse(p.min), Date.parse(p.max)] : [NaN, NaN];
-  return (min === undefined || lo >= min) && (max === undefined || hi <= max);
+  if (Number.isNaN(lo) || Number.isNaN(hi)) return null;
+  const [dlo, dhi] = p.kind === "quantitative" ? [slack(lo), slack(hi)] : [0, 0];
+  if ((min !== undefined && lo + dlo < min) || (max !== undefined && hi - dhi > max)) return false;
+  return (min === undefined || lo - dlo >= min) && (max === undefined || hi + dhi <= max) ? true : null;
 }
 
 /** The primary key's fields (empty when there is none). */

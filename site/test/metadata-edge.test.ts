@@ -207,3 +207,50 @@ test('bars with only a positive minimum documented encode as if undescribed', ()
   const plain = starterSpec(table([nominal('c', ['a', 'b']), quant(46, 230, { name: 'hp' })]));
   expect(starterSpec(table([nominal('c', ['a', 'b']), quant(46, 230, { name: 'hp', constraints: { minimum: 40 } })]))).toEqual(plain);
 });
+
+// Codex review, round 2.
+
+describe('rounded profile extremes', () => {
+  // The builder rounds min and max to four significant figures: 100.01–100.04 profiles as 100–100.
+  const near = quant(100, 100, { constraints: { minimum: 0, maximum: 100 } });
+
+  test('don’t prove a documented range fits: no bin extent that could drop every row', async () => {
+    const spec = starterSpec(table([near]))!;
+    expect(enc(spec).x).toEqual({ field: 'v', type: 'quantitative', bin: { maxbins: 30 } });
+    const view = await draw(spec, [{ v: 100.01 }, { v: 100.02 }, { v: 100.04 }]);
+    try {
+      expect(rowsWith(view, '__count').reduce((n, r) => n + (r.__count as number), 0)).toBe(3);
+    } finally {
+      view.finalize();
+    }
+  });
+
+  test('nor prove values fall outside', () => {
+    expect(fieldNotes(near)).toEqual(['Documented range 0 – 100']);
+    expect(fieldNotes(quant(100.1, 230, { constraints: { minimum: 0, maximum: 100 } }))).toEqual(['Documented range 0 – 100 (some values fall outside)']);
+    // Clearly inside by more than the rounding: still bounded.
+    expect(enc(starterSpec(table([quant(46, 99.5, { constraints: { minimum: 0, maximum: 100 } })]))).x!.bin).toEqual({ maxbins: 30, extent: [0, 100] });
+  });
+});
+
+describe('date bounds follow the field’s format and the profile’s UTC wall clock', () => {
+  const when = (extra: Partial<Field>, min = '2020-01-15T00:00:00Z', max = '2020-03-01T00:00:00Z'): Field => ({
+    name: 'when', type: 'date', description: null, profile: { kind: 'temporal', min, max, missing: 0 }, ...extra,
+  });
+
+  test('a strptime format reads day-first bounds', () => {
+    const f = when({ format: '%d/%m/%Y', constraints: { minimum: '01/02/2020', maximum: '31/12/2020' } });
+    expect(fieldNotes(f)).toEqual(['Documented range 01/02/2020 – 31/12/2020 (some values fall outside)']);
+  });
+
+  test('a datetime without a zone is wall-clock time, as the profile is', () => {
+    const f = when({ type: 'datetime', constraints: { minimum: '2020-01-15T00:00:00' } });
+    expect(fieldNotes(f)).toEqual(['Documented minimum 2020-01-15T00:00:00']);
+    expect(fieldNotes({ ...f, constraints: { minimum: '2020-01-15T00:00:01' } })).toEqual(['Documented minimum 2020-01-15T00:00:01 (some values fall outside)']);
+  });
+
+  test('a format the site can’t read claims nothing', () => {
+    const f = when({ format: '%d %B %Y', constraints: { minimum: '01 February 2020' } });
+    expect(fieldNotes(f)).toEqual(['Documented minimum 01 February 2020']);
+  });
+});
