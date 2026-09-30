@@ -3,9 +3,6 @@
 // with their labels; documented ranges as axis bounds (only when every value is inside);
 // and, in the fields table's text, ranges, values, rules, keys, joins and formats. The
 // charts are drawn the way the page draws them (the expression interpreter, no eval).
-import * as vega from 'vega';
-import { expressionInterpreter } from 'vega-interpreter';
-import { compile, type TopLevelSpec } from 'vega-lite';
 import { describe, expect, test } from 'vitest';
 import { Catalog, type CatalogFile, categoryLabels, type Dataset, documentedRange, fieldTitle, joins, missingMarkers, orderedCategories, primaryKey } from '../src/lib/catalog';
 import { defaultAxes, scatterFields, scatterSpec } from '../src/lib/explore-model';
@@ -14,6 +11,7 @@ import { homeIndex, listDatasets, NO_FILTERS } from '../src/lib/home-model';
 import { densityPageSpec, densitySpec, type DensityGrid } from '../src/lib/large-data';
 import { datasetMetaDescription } from '../src/lib/seo';
 import { starterSpec } from '../src/lib/starter';
+import { draw as drawRows } from './draw';
 import { described, only, ROWS, strip } from './fixtures';
 
 type Spec = Record<string, unknown>;
@@ -23,23 +21,8 @@ const d = described();
 const field = (name: string) => d.fields.find((f) => f.name === name)!;
 const enc = (spec: Spec | null) => (spec as { encoding: Enc }).encoding;
 
-/** Compile to Vega (no warnings) and run it on the fixture's rows, with the page's CSP-safe settings. */
-async function draw(spec: Spec, signals: Record<string, unknown> = {}): Promise<vega.View> {
-  const warnings: string[] = [];
-  const logger = {
-    level: () => logger,
-    error: (...m: unknown[]) => { throw new Error(m.join(' ')); },
-    warn: (...m: unknown[]) => { warnings.push(m.join(' ')); return logger; },
-    info: () => logger,
-    debug: () => logger,
-  };
-  const { spec: vg } = compile({ ...spec, data: { values: ROWS } } as TopLevelSpec, { logger: logger as never });
-  expect(warnings).toEqual([]);
-  const view = new vega.View(vega.parse(vg, undefined, { ast: true }), { renderer: 'none', expr: expressionInterpreter } as vega.ViewOptions);
-  for (const [k, v] of Object.entries(signals)) view.signal(k, v);
-  await view.runAsync();
-  return view;
-}
+const GRADE_LABELS = 'indexof(["v:low","v:mid","v:high"], "v:" + datum.label) < 0 ? datum.label : slice(["v:Low","v:Medium","v:High"][indexof(["v:low","v:mid","v:high"], "v:" + datum.label)], 2)';
+const draw = (spec: Spec, signals: Record<string, unknown> = {}) => drawRows(spec, ROWS, signals);
 
 describe('catalog helpers normalize the Table Schema forms', () => {
   test('titles, categories, ranges and keys', () => {
@@ -47,7 +30,7 @@ describe('catalog helpers normalize the Table Schema forms', () => {
     expect(fieldTitle(field('parent'))).toBe('parent');
     expect(orderedCategories(field('grade'))).toEqual(['low', 'mid', 'high']);
     expect(orderedCategories(field('side'))).toBeNull();
-    expect(categoryLabels(field('grade'))).toEqual({ low: 'Low', mid: 'Medium', high: 'High' });
+    expect(categoryLabels(field('grade'))).toEqual([['low', 'Low'], ['mid', 'Medium'], ['high', 'High']]);
     expect(categoryLabels(field('side'))).toBeNull();
     expect(documentedRange(field('hp'))).toEqual({ min: 0, max: 500, fits: true });
     expect(documentedRange(field('mpg'))).toEqual({ min: 0, max: 40, fits: false });
@@ -76,7 +59,7 @@ describe('starter charts', () => {
     expect(e.y).toEqual({ field: 'mpg', type: 'quantitative', scale: { zero: false }, title: 'Miles per Gallon' });
     expect(e.color).toEqual({
       field: 'grade', type: 'nominal', sort: ['low', 'mid', 'high'], title: 'Trim Grade',
-      legend: { labelExpr: '{"low":"Low","mid":"Medium","high":"High"}[datum.label] || datum.label' },
+      legend: { labelExpr: GRADE_LABELS },
     });
   });
 
@@ -90,7 +73,7 @@ describe('starter charts', () => {
     const e = enc(starterSpec(only(d, ['grade', 'hp'])));
     expect(e.y).toEqual({
       field: 'grade', type: 'ordinal', sort: ['low', 'mid', 'high'], title: 'Trim Grade',
-      axis: { labelExpr: '{"low":"Low","mid":"Medium","high":"High"}[datum.label] || datum.label' },
+      axis: { labelExpr: GRADE_LABELS },
     });
     expect(e.x).toEqual({ field: 'hp', type: 'quantitative', aggregate: 'mean', scale: { domainMin: 0, domainMax: 500 }, title: 'Mean of Horsepower (hp)' });
     expect(enc(starterSpec(only(strip(d), ['grade', 'hp']))).y).toEqual({ field: 'grade', type: 'nominal', sort: '-x' });

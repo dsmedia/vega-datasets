@@ -149,12 +149,21 @@ const EPSILON = 1e-14;
 
 /**
  * Bin every row with numbers in both fields into at most `maxbins` bins across and up,
- * between the DENSITY_CLIP quantiles of each field; count the rest as outside.
+ * between the DENSITY_CLIP quantiles of each field; count the rest as outside. A value
+ * whose text is one of the field's `missing` markers is no number.
  */
-export function densityGrid(rows: readonly Record<string, unknown>[], x: string, y: string, maxbins: { x: number; y: number } = DENSITY_BINS): DensityGrid {
+export function densityGrid(
+  rows: readonly Record<string, unknown>[],
+  x: string,
+  y: string,
+  maxbins: { x: number; y: number } = DENSITY_BINS,
+  missing: { x?: string[]; y?: string[] } = {},
+): DensityGrid {
   const xs: number[] = [];
   const ys: number[] = [];
+  const [mx, my] = [new Set(missing.x), new Set(missing.y)];
   for (const r of rows) {
+    if (mx.has(String(r[x])) || my.has(String(r[y]))) continue;
     const a = toNumber(r[x]);
     const b = toNumber(r[y]);
     if (Number.isFinite(a) && Number.isFinite(b)) {

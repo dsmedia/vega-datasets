@@ -210,10 +210,10 @@ export function orderedCategories(f: Field): (string | number)[] | null {
   return values ? values.map((c) => c.value) : null;
 }
 
-/** Labels for the categories that have one, by value (as text), or null when none does. */
-export function categoryLabels(f: Field): Record<string, string> | null {
+/** `[value (as text), label]` for the categories that have a label, or null when none does. */
+export function categoryLabels(f: Field): [string, string][] | null {
   const labeled = (categoryValues(f) ?? []).filter((c) => c.label !== undefined);
-  return labeled.length ? Object.fromEntries(labeled.map((c) => [String(c.value), c.label!])) : null;
+  return labeled.length ? labeled.map((c) => [String(c.value), c.label!]) : null;
 }
 
 /**
@@ -253,4 +253,13 @@ export function joins(d: Dataset): Join[] {
 /** The values a `missingValues` list marks as missing, as text (empty when there is no list). */
 export function missingMarkers(values: MissingValues | undefined): string[] {
   return (values ?? []).map((m) => (typeof m === "object" ? m.value : m));
+}
+
+/**
+ * The markers that count as missing in a field: its own list, else the schema's (Table
+ * Schema v2); null when neither has one, and the default (empty cells) applies.
+ */
+export function effectiveMissing(d: Dataset, f: Field): string[] | null {
+  const values = f.missingValues ?? d.missingValues;
+  return values ? missingMarkers(values) : null;
 }

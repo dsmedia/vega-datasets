@@ -4,8 +4,9 @@
  * downloading the file.
  */
 import * as vega from "vega";
-import type { Dataset } from "../lib/catalog";
-import { type DensityGrid, densityGrid } from "../lib/large-data";
+import { type Dataset, effectiveMissing } from "../lib/catalog";
+import { DENSITY_BINS, type DensityGrid, densityGrid } from "../lib/large-data";
+import { markerForms } from "../lib/starter";
 import { readData } from "./repo";
 
 /** Every row of a table file, as Vega reads it (CSV and TSV values stay strings). */
@@ -13,6 +14,8 @@ export function readRows(d: Dataset): Record<string, unknown>[] {
   return vega.read(readData(d.file), { type: d.format as "csv" | "tsv" | "json" }) as Record<string, unknown>[];
 }
 
+/** The grid of two fields, without the rows their documented missing-value markers leave out. */
 export function densityOf(d: Dataset, axes: { x: string; y: string }): DensityGrid {
-  return densityGrid(readRows(d), axes.x, axes.y);
+  const markers = (name: string) => markerForms(d.fields.flatMap((f) => (f.name === name ? (effectiveMissing(d, f) ?? []) : [])));
+  return densityGrid(readRows(d), axes.x, axes.y, DENSITY_BINS, { x: markers(axes.x), y: markers(axes.y) });
 }

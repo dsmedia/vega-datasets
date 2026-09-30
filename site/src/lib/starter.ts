@@ -8,7 +8,7 @@
  * Identifier and code columns are never plotted as measurements.
  */
 import LZString from "lz-string";
-import { categoryLabels, type Dataset, documentedRange, type Field, orderedCategories } from "./catalog";
+import { categoryLabels, categoryValues, type Dataset, documentedRange, effectiveMissing, type Field, orderedCategories } from "./catalog";
 
 type Spec = Record<string, unknown>;
 type Enc = Record<string, unknown>;
@@ -29,18 +29,55 @@ export function titled(f: Field, enc: Enc = {}): Enc {
   return f.title ? { title: enc.aggregate === "mean" ? `Mean of ${f.title}` : f.title } : {};
 }
 
-/** An expression that shows each category's label in place of its value (object literals are CSP-safe: the interpreter reads them). */
-export function labelExpr(labels: Record<string, string>): string {
-  return `${JSON.stringify(labels)}[datum.label] || datum.label`;
+// Text from the metadata inside a Vega expression. Vega refuses a string literal that names a
+// JavaScript object property ("toString", "__proto__", "constructor"), so each one goes in
+// behind a prefix that no such name has, and is compared with the prefixed text of a value.
+const TAG = "v:";
+
+/** Texts as an array literal of prefixed strings, for `indexof(…, tag(expr))`. */
+export function tagged(texts: string[]): string {
+  return JSON.stringify(texts.map((t) => TAG + t));
+}
+
+/** An expression's value as prefixed text (numbers too: -99 becomes "v:-99"). */
+export function tag(expr: string): string {
+  return `"${TAG}" + ${expr}`;
+}
+
+/** A prefixed text back as the text. */
+export function untag(expr: string): string {
+  return `slice(${expr}, ${TAG.length})`;
+}
+
+/**
+ * An expression that shows each category's label in place of its value, looked up in
+ * arrays (no object literal), so any value is safe and the CSP-safe interpreter reads it.
+ */
+export function labelExpr(labels: [string, string][]): string {
+  const at = `indexof(${tagged(labels.map(([v]) => v))}, ${tag("datum.label")})`;
+  return `${at} < 0 ? datum.label : ${untag(`${tagged(labels.map(([, l]) => l))}[${at}]`)}`;
+}
+
+type Range = ReturnType<typeof documentedRange>;
+
+/** The bounds of `r` on zero's side (a minimum at or below it, a maximum at or above it); null when none is. */
+function zeroSide(r: Range): Range {
+  if (!r) return null;
+  const min = r.min !== undefined && r.min <= 0 ? r.min : undefined;
+  const max = r.max !== undefined && r.max >= 0 ? r.max : undefined;
+  if (min === undefined && max === undefined) return null;
+  return { ...(min !== undefined ? { min } : {}), ...(max !== undefined ? { max } : {}), fits: r.fits };
 }
 
 /**
  * A number field on a channel. A documented range that every value lies inside becomes
- * the scale's bounds (a histogram's bin extent, when both ends are documented).
+ * the scale's bounds (a histogram's bin extent, when both ends are documented). A bar's
+ * length starts at zero, so for `bars` a bound on the far side of zero is left out: the
+ * bars would start off the plot.
  */
-export function measure(f: Field, enc: Enc = {}): Enc {
+export function measure(f: Field, enc: Enc = {}, bars = false): Enc {
   const out: Enc = { field: fieldRef(f.name), type: "quantitative", ...enc };
-  const range = documentedRange(f);
+  const range = bars ? zeroSide(documentedRange(f)) : documentedRange(f);
   if (range?.fits && out.bin) {
     if (range.min !== undefined && range.max !== undefined) out.bin = { ...(out.bin as Enc), extent: [range.min, range.max] };
   } else if (range?.fits) {
@@ -72,6 +109,33 @@ export function category(f: Field, enc: Enc = {}, guide: "axis" | "legend" = "le
   };
 }
 
+/** A marker as a value may hold it: its text, and for a number the number's own text ("-99.0" is -99 once parsed). */
+export function markerForms(markers: string[]): string[] {
+  return [...new Set(markers.flatMap((m) => (m.trim() !== "" && Number.isFinite(Number(m)) ? [m, String(Number(m))] : [m])))];
+}
+
+/**
+ * A filter that leaves out the rows where any of `fields` holds one of its documented
+ * missing-value markers, as the fields table's profile does; null when no field has
+ * markers declared, so an undescribed chart stays as it was.
+ */
+export function missingFilter(d: Dataset, fields: Field[]): Enc | null {
+  const tests = fields.flatMap((f) => {
+    const markers = effectiveMissing(d, f);
+    return markers?.length ? [`indexof(${tagged(markerForms(markers))}, ${tag(`datum[${JSON.stringify(f.name)}]`)}) < 0`] : [];
+  });
+  return tests.length ? { filter: tests.join(" && ") } : null;
+}
+
+/** The starter chart with the rows its encoded fields mark as missing left out. */
+function withoutMissing(d: Dataset, spec: Spec | null): Spec | null {
+  const encoding = spec?.encoding as Record<string, Enc> | undefined;
+  if (!spec || !encoding) return spec;
+  const used = new Set(Object.values(encoding).map((e) => e.field));
+  const filter = missingFilter(d, d.fields.filter((f) => used.has(fieldRef(f.name))));
+  return filter ? { ...spec, transform: [filter] } : spec;
+}
+
 const ID_NAME = /(^id$|_id$|^id_|code$|^code|^zip|zip_code|^key$|^index$|^cluster$|^source$|^target$|^group$|^fips)/i;
 const ID_DESC = /\b(identifier|unique id|fips|code for|index of)\b/i;
 const YEAR_NAME = /^(year|yr)$|year$/i;
@@ -99,10 +163,16 @@ function isOrdinalInt(f: Field): boolean {
   return p.kind === "quantitative" && f.type === "integer" && p.max - p.min <= 12;
 }
 
-/** Quantities worth plotting on an axis (not identifiers, years, codes or coordinates). */
+/** Integers the metadata documents as categories (grades 1–3, with labels): groups, not measures. */
+function integerCategory(f: Field): boolean {
+  return f.type === "integer" && f.profile.kind === "quantitative" && categoryValues(f) !== null;
+}
+
+/** Quantities worth plotting on an axis (not identifiers, years, codes, coordinates or documented categories). */
 export function isMeasure(f: Field): boolean {
   return (
     f.profile.kind === "quantitative" &&
+    !integerCategory(f) &&
     !isId(f) &&
     !isYear(f) &&
     !isOrdinalInt(f) &&
@@ -113,9 +183,10 @@ export function isMeasure(f: Field): boolean {
   );
 }
 
-/** A category with between 2 and `max` values (identifiers excluded). */
+/** A category with between 2 and `max` values (identifiers excluded); an integer category counts its documented values. */
 export function nominal(f: Field, max: number): boolean {
-  return f.profile.kind === "nominal" && f.profile.distinct >= 2 && f.profile.distinct <= max && !ID_NAME.test(f.name);
+  const n = f.profile.kind === "nominal" ? f.profile.distinct : integerCategory(f) ? categoryValues(f)!.length : 0;
+  return n >= 2 && n <= max && !ID_NAME.test(f.name);
 }
 
 function spanYears(f: Field): number {
@@ -178,6 +249,10 @@ function pointMap(d: Dataset, base: Spec, lat: Field, lon: Field, color: Field |
 }
 
 export function starterSpec(d: Dataset): Spec | null {
+  return withoutMissing(d, starterRule(d));
+}
+
+function starterRule(d: Dataset): Spec | null {
   const base: Spec = {
     $schema: SCHEMA,
     description: `Starter chart for ${d.name} from vega-datasets. Edit freely.`,
@@ -276,7 +351,7 @@ export function starterSpec(d: Dataset): Spec | null {
       mark: { type: "bar", tooltip: true },
       encoding: {
         y: category(cat, { sort: "-x" }, "axis"),
-        x: measure(m1, { aggregate: "mean" }),
+        x: measure(m1, { aggregate: "mean" }, true),
       },
     };
   }

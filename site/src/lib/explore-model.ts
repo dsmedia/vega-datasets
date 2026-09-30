@@ -3,10 +3,10 @@
  * a scatter plot of two measures picked with input bindings, and the starter chart
  * (starter.ts) for everything else — "Over Time" when it is a time series.
  */
-import { type Dataset, documentedRange, type Field, fieldTitle } from "./catalog";
+import { type Dataset, documentedRange, effectiveMissing, type Field, fieldTitle } from "./catalog";
 import { formatCount } from "./format";
 import { BAND_POLICY, rowBand } from "./large-data";
-import { category, fieldRef, isMeasure, isYear, nominal, starterSpec, titled } from "./starter";
+import { category, fieldRef, isMeasure, isYear, markerForms, missingFilter, nominal, starterSpec, tag, tagged, titled, untag } from "./starter";
 
 type Spec = Record<string, unknown>;
 
@@ -71,22 +71,30 @@ export function defaultAxes(f: ScatterFields): { x: string; y: string } {
 
 /**
  * What the measures' metadata adds to the scatter plot, looked up by the picked field's
- * name in expressions (object literals, which the CSP-safe interpreter reads): their
- * titles, and the documented ranges that every value lies inside. Empty when no
- * measure has either, so the spec stays as it was.
+ * position among the measures in expressions (arrays, which the CSP-safe interpreter reads,
+ * and which take any field name): their titles, and the documented ranges that every value
+ * lies inside. A measure without a range keeps Vega-Lite's own "nice" domain, as it has
+ * without metadata. Empty when no measure has either, so the spec stays as it was.
  */
-function measureLookups(measures: Field[]) {
-  const titles = Object.fromEntries(measures.filter((m) => m.title).map((m) => [m.name, fieldTitle(m)]));
-  const ranges = measures.map((m) => [m.name, documentedRange(m)] as const).filter(([, r]) => r?.fits);
-  const mins = Object.fromEntries(ranges.flatMap(([n, r]) => (r?.min !== undefined ? [[n, r.min]] : [])));
-  const maxs = Object.fromEntries(ranges.flatMap(([n, r]) => (r?.max !== undefined ? [[n, r.max]] : [])));
-  const lookup = (map: Record<string, unknown>, param: string) => `${JSON.stringify(map)}[${param}]`;
+function measureLookups(d: Dataset, measures: Field[]) {
+  const at = (param: string) => `indexof(${tagged(measures.map((m) => m.name))}, ${tag(param)})`;
+  const ranges = measures.map((m) => documentedRange(m)).map((r) => (r?.fits ? r : null));
+  const mins = ranges.map((r) => r?.min ?? null);
+  const maxs = ranges.map((r) => r?.max ?? null);
+  const lookup = (values: unknown[], param: string) => `${JSON.stringify(values)}[${at(param)}]`;
+  const titled = measures.some((m) => m.title);
+  const markers = measures.map((m) => markerForms(effectiveMissing(d, m) ?? []));
+  const drop = (param: string) => `indexof([${markers.map(tagged).join(", ")}][${at(param)}], ${tag(`datum[${param}]`)}) < 0`;
   return {
-    labels: Object.keys(titles).length ? measures.map(fieldTitle) : null,
-    title: (param: string) => (Object.keys(titles).length ? `${lookup(titles, param)} || ${param}` : param),
+    /** Leaves out the rows whose picked measures hold a documented missing-value marker. */
+    missing: markers.some((m) => m.length) ? { filter: `${drop("xField")} && ${drop("yField")}` } : null,
+    labels: titled ? measures.map(fieldTitle) : null,
+    title: (param: string) => (titled ? untag(`${tagged(measures.map(fieldTitle))}[${at(param)}]`) : param),
     bounds: (param: string): Spec => ({
-      ...(Object.keys(mins).length ? { domainMin: { expr: lookup(mins, param) } } : {}),
-      ...(Object.keys(maxs).length ? { domainMax: { expr: lookup(maxs, param) } } : {}),
+      ...(mins.some((v) => v !== null) ? { domainMin: { expr: lookup(mins, param) } } : {}),
+      ...(maxs.some((v) => v !== null) ? { domainMax: { expr: lookup(maxs, param) } } : {}),
+      // Setting a bound turns Vega-Lite's default nice off for every pick; keep it for the unbounded.
+      ...(ranges.some((r) => r) ? { nice: { expr: `!${lookup(ranges.map((r) => r !== null), param)}` } } : {}),
     }),
   };
 }
@@ -98,7 +106,8 @@ function measureLookups(measures: Field[]) {
  */
 export function scatterSpec(d: Dataset, f: ScatterFields, o: ScatterOptions): Spec {
   const options = f.measures.map((m) => m.name);
-  const meta = measureLookups(f.measures);
+  const meta = measureLookups(d, f.measures);
+  const missing = [meta.missing, f.color ? missingFilter(d, [f.color]) : null].filter((t) => t !== null);
   const labels = meta.labels ? { labels: meta.labels } : {};
   const title = (param: string, place: Spec) => ({
     data: { values: [{}] },
@@ -129,6 +138,7 @@ export function scatterSpec(d: Dataset, f: ScatterFields, o: ScatterOptions): Sp
       {
         // The field is picked at run time, so Vega-Lite can't parse it up front (CSV values are strings).
         transform: [
+          ...missing,
           { calculate: "toNumber(datum[xField])", as: px },
           { calculate: "toNumber(datum[yField])", as: py },
           { filter: `isValid(datum.${px}) && isValid(datum.${py}) && isFinite(datum.${px}) && isFinite(datum.${py})` },
