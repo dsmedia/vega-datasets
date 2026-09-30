@@ -102,7 +102,7 @@ describe('the bands', () => {
     const opacity = (name: string) => {
       const d = ds(name);
       const f = scatterFields(d)!;
-      const layer = (scatterSpec(d, f, { ...defaultAxes(f), zoom: false, height: 300 }).layer as { mark: { opacity: number } }[])[0]!;
+      const layer = (scatterSpec(d, f, { ...defaultAxes(d, f), zoom: false, height: 300 }).layer as { mark: { opacity: number } }[])[0]!;
       return layer.mark.opacity;
     };
     expect(opacity('cars')).toBe(0.8);
@@ -183,7 +183,7 @@ describe('the density builder', () => {
   test('the page spec carries its tooltip text, so no expression runs per bin', () => {
     expect([1050, -40, 0.2, 2600, 1234567.5, 0].map(groupDigits)).toEqual(['1,050', '-40', '0.2', '2,600', '1,234,567.5', '0']);
     const d = ds('flights_200k_json');
-    const g = densityOf(d, defaultAxes(scatterFields(d)!));
+    const g = densityOf(d, defaultAxes(d, scatterFields(d)!));
     const spec = densityPageSpec(d, g, 380);
     expect(spec.transform).toBeUndefined();
     expect(spec.mark).toEqual({ type: 'rect', aria: false });
@@ -200,7 +200,7 @@ describe('the density builder', () => {
 
   describe('flights_200k_json', () => {
     const d = ds('flights_200k_json');
-    const axes = defaultAxes(scatterFields(d)!);
+    const axes = defaultAxes(d, scatterFields(d)!);
     const g = densityOf(d, axes);
 
     test('bins every row, and fits the page in under 30 KB', () => {

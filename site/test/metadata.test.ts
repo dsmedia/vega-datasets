@@ -64,9 +64,16 @@ describe('starter charts', () => {
   });
 
   test('unordered plain categories change nothing', () => {
-    const plain = only(d, ['hp', 'mpg', 'side']);
-    expect(enc(starterSpec(plain)).color).toEqual({ field: 'side', type: 'nominal' });
+    // `side` itself is a helper's name (G-5, below): the same categories under another name.
+    const fixture = only(d, ['hp', 'mpg', 'side']);
+    const plain = { ...fixture, fields: fixture.fields.map((f) => (f.name === 'side' ? { ...f, name: 'finish' } : f)) };
+    expect(enc(starterSpec(plain)).color).toEqual({ field: 'finish', type: 'nominal' });
     expect(enc(starterSpec(plain)).color).toEqual(enc(starterSpec(strip(plain))).color);
+  });
+
+  test('a helper field (side) colors nothing, even with its values documented (G-5)', () => {
+    expect(enc(starterSpec(only(d, ['hp', 'mpg', 'side']))).color).toBeUndefined();
+    expect(scatterFields(only(d, ['hp', 'mpg', 'side']))!.color).toBeUndefined();
   });
 
   test('bars follow the documented order instead of sorting by value', () => {
@@ -113,7 +120,7 @@ describe('starter charts', () => {
 
 describe('Explore scatter plot', () => {
   const sf = scatterFields(d)!;
-  const spec = scatterSpec(d, sf, { ...defaultAxes(sf), zoom: true, height: 380 });
+  const spec = scatterSpec(d, sf, { ...defaultAxes(d, sf), zoom: true, height: 380 });
   const params = spec.params as { name: string; bind: { labels?: string[]; options: string[] } }[];
 
   test('the pickers show the titles; the values stay field names', () => {
@@ -124,7 +131,7 @@ describe('Explore scatter plot', () => {
   test('without titles or ranges the spec is the one an undescribed dataset gets', () => {
     const bare = strip(d);
     const bf = scatterFields(bare)!;
-    const plain = JSON.stringify(scatterSpec(bare, bf, { ...defaultAxes(bf), zoom: true, height: 380 }));
+    const plain = JSON.stringify(scatterSpec(bare, bf, { ...defaultAxes(bare, bf), zoom: true, height: 380 }));
     expect(plain).not.toMatch(/labels|domainMin|domainMax|labelExpr|Horsepower|ordinal|"sort"/);
   });
 

@@ -75,7 +75,7 @@ test("the cars scatter plot draws its chrome in the system colors and its points
   const catalog = loadCatalog();
   const d = catalog.dataset('cars')!;
   const f = scatterFields(d)!;
-  const spec = scatterSpec(d, f, { ...defaultAxes(f), zoom: true, height: 300 });
+  const spec = scatterSpec(d, f, { ...defaultAxes(d, f), zoom: true, height: 300 });
   const loader = vega.loader();
   loader.load = async (uri: string) => readDataUrl(uri);
   const draw = async (ink: ChartInk) => {

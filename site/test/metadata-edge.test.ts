@@ -94,7 +94,7 @@ describe('missing-value markers are missing in charts too', () => {
     expect(starterSpec(bare)).not.toHaveProperty('transform');
     const both = table([quant(100, 200, { name: 'hp' }), quant(10, 40, { name: 'mpg' })]);
     const sf = scatterFields(both)!;
-    expect(JSON.stringify(scatterSpec(both, sf, { ...defaultAxes(sf), zoom: true, height: 300 }))).not.toContain('indexof');
+    expect(JSON.stringify(scatterSpec(both, sf, { ...defaultAxes(both, sf), zoom: true, height: 300 }))).not.toContain('indexof');
   });
 });
 

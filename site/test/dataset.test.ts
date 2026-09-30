@@ -125,9 +125,9 @@ describe('Explore', () => {
   test('names the features each chart uses', () => {
     const cars = ds('cars');
     const f = scatterFields(cars)!;
-    expect(chartFeatures(scatterSpec(cars, f, { ...defaultAxes(f), zoom: true, height: 380 })))
+    expect(chartFeatures(scatterSpec(cars, f, { ...defaultAxes(cars, f), zoom: true, height: 380 })))
       .toEqual(['Vega-Lite', 'input binding', 'scale binding', 'legend binding']);
-    expect(chartFeatures(scatterSpec(cars, f, { ...defaultAxes(f), zoom: false, height: 300 })))
+    expect(chartFeatures(scatterSpec(cars, f, { ...defaultAxes(cars, f), zoom: false, height: 300 })))
       .toEqual(['Vega-Lite', 'input binding', 'legend binding']);
     expect(chartFeatures(starterChart(ds('us_10m'))!)).toContain('albersUsa projection');
     expect(chartFeatures(starterChart(cars)!)).toContain('line mark');
@@ -183,7 +183,7 @@ describe('Explore', () => {
   describe.each(scatters.map((d) => [d.name, d] as const))('%s scatter', (_name, d) => {
     test('compiles without warnings, draws points, and its titles follow the pickers', async () => {
       const f = scatterFields(d)!;
-      const axes = defaultAxes(f);
+      const axes = defaultAxes(d, f);
       const { logger, warnings } = collectingLogger();
       const spec = { ...scatterSpec(d, f, { ...axes, zoom: true, height: 380 }), width: 600 };
       const { spec: vg } = compile(spec as TopLevelSpec, { logger });
@@ -217,7 +217,7 @@ describe('every Explore chart draws from its public URL, as the page runs it', (
 
   test.each(charts)('%s', async (_name, d, mode) => {
     const f = scatterFields(d);
-    const spec = mode === 'scatter' ? scatterSpec(d, f!, { ...defaultAxes(f!), zoom: true, height: 380 }) : starterChart(d)!;
+    const spec = mode === 'scatter' ? scatterSpec(d, f!, { ...defaultAxes(d, f!), zoom: true, height: 380 }) : starterChart(d)!;
     const { logger, warnings } = collectingLogger();
     const { spec: vg } = compile({ ...spec, width: 600 } as TopLevelSpec, { logger });
     expect(warnings.filter((w) => w !== KNOWN_VL_WARNING)).toEqual([]);
@@ -255,7 +255,7 @@ describe('every scatter plots each row at its own values', () => {
     const f = scatterFields(d)!;
     const pristine = readRows(d);
     // The default axes, and the same two fields swapped: a derived field must not overwrite a source field.
-    const axes = defaultAxes(f);
+    const axes = defaultAxes(d, f);
     for (const { x, y } of [axes, { x: axes.y, y: axes.x }]) {
       const spec = scatterSpec(d, f, { x, y, zoom: false, height: 300 });
       const layer = (spec.layer as { encoding: { x: { field: string }; y: { field: string } } }[])[0]!;
@@ -274,9 +274,9 @@ describe('every scatter plots each row at its own values', () => {
 });
 
 test('fields named x and y start on the x and y axes', () => {
-  expect(defaultAxes(scatterFields(ds('platformer_terrain'))!)).toEqual({ x: 'x', y: 'y' });
-  expect(defaultAxes(scatterFields(ds('anscombe'))!)).toEqual({ x: 'X', y: 'Y' });
-  expect(defaultAxes(scatterFields(ds('cars'))!)).toEqual({ x: 'Displacement', y: 'Miles_per_Gallon' });
+  expect(defaultAxes(ds('platformer_terrain'), scatterFields(ds('platformer_terrain'))!)).toEqual({ x: 'x', y: 'y' });
+  expect(defaultAxes(ds('anscombe'), scatterFields(ds('anscombe'))!)).toEqual({ x: 'X', y: 'Y' });
+  expect(defaultAxes(ds('cars'), scatterFields(ds('cars'))!)).toEqual({ x: 'Displacement', y: 'Miles_per_Gallon' });
 });
 
 test('examples take the galleries in turn', () => {
@@ -297,7 +297,7 @@ describe('overviews drawn when the site is built', () => {
 
   test('the density overview compiles without warnings, from the Editor spec or from the bins', () => {
     const d = ds('flights_200k_json');
-    const grid = densityOf(d, defaultAxes(scatterFields(d)!));
+    const grid = densityOf(d, defaultAxes(d, scatterFields(d)!));
     for (const spec of [densitySpec(d, grid, 380), densityPageSpec(d, grid, 380)]) {
       const warnings: string[] = [];
       const logger = { level: () => logger, error: (...m: unknown[]) => { throw new Error(m.join(' ')); }, warn: (...m: unknown[]) => { warnings.push(m.join(' ')); return logger; }, info: () => logger, debug: () => logger };

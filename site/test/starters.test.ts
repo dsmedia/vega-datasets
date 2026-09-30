@@ -5,41 +5,76 @@ import * as vega from 'vega';
 import { compile, type TopLevelSpec } from 'vega-lite';
 import { describe, expect, test } from 'vitest';
 import type { Dataset } from '../src/lib/catalog';
+import { defaultAxes, exploreModes, scatterFields } from '../src/lib/explore-model';
 import { starterEditorUrl, starterSpec } from '../src/lib/starter';
 import { loadCatalog, readDataUrl } from './catalog';
 
 const catalog = loadCatalog();
 const withStarter = catalog.datasets.filter((d) => starterSpec(d) !== null);
 
+type Unit = { mark: { type: string; filled?: boolean }; encoding?: Record<string, Record<string, unknown>>; transform?: unknown[] };
+type Starter = Unit & { layer?: Unit[]; spec?: Unit; facet?: { field: string }; projection?: { type: string; fit?: unknown } };
+
+/** The part of a starter spec that draws the data: a map's last layer, small multiples' inner spec, or the spec itself. */
+function unitOf(spec: Starter): Unit {
+  return spec.spec ?? spec.layer?.at(-1) ?? spec;
+}
+
 /** One line per dataset: the chart the rules picked, for reviewing rule changes in the snapshot. */
 function describeStarter(d: Dataset): string {
-  const spec = starterSpec(d) as { mark: { type: string }; encoding?: Record<string, Record<string, string>> } | null;
+  const spec = starterSpec(d) as Starter | null;
   if (!spec) return `${d.name}: none`;
-  const enc = spec.encoding ?? {};
+  const unit = unitOf(spec);
+  const enc = unit.encoding ?? {};
   const channel = (k: string) => {
-    const e = enc[k];
+    const e = enc[k] as Record<string, string & { type?: string }> | undefined;
     if (!e) return null;
     const field = e.field ?? '';
     const inner = e.timeUnit ? `${e.timeUnit}(${field})` : field;
-    return `${k}=${e.aggregate ? `${e.aggregate}(${inner})` : inner}`;
+    const scale = (e.scale as { type?: string } | undefined)?.type;
+    const value = e.aggregate ? `${e.aggregate}(${inner})` : inner;
+    return `${k}=${scale ? `${scale}(${value})` : value}`;
   };
-  const channels = ['x', 'x2', 'y', 'latitude', 'longitude', 'color'].map(channel).filter(Boolean);
-  return `${d.name}: ${spec.mark.type} ${channels.join(' ')}`.trimEnd();
+  const channels = ['x', 'x2', 'y', 'latitude', 'longitude', 'color', 'detail', 'angle'].map(channel).filter(Boolean);
+  const extras = [
+    spec.facet ? `facet=${spec.facet.field}` : null,
+    spec.layer ? `over basemap` : null,
+    spec.projection ? `${spec.projection.type}${spec.projection.fit ? ' fitted' : ''}` : null,
+    unit.mark.filled === false ? 'unfilled' : null,
+    unit.transform?.length || (spec as Unit).transform?.length ? 'transformed' : null,
+  ].filter(Boolean);
+  return `${d.name}: ${unit.mark.type} ${[...channels, ...extras].join(' ')}`.trimEnd();
+}
+
+/** One line per dataset: Explore's modes in order and the scatter plot's opening fields. */
+function describeExplore(d: Dataset): string {
+  const modes = exploreModes(d);
+  const sf = scatterFields(d);
+  const axes = sf ? defaultAxes(d, sf) : null;
+  const scatter = axes ? ` x=${axes.x} y=${axes.y}${sf!.color ? ` color=${sf!.color.name}` : ''}` : '';
+  return `${d.name}: ${modes.join(', ') || 'none'}${scatter}`;
 }
 
 test('starter chart choices', () => {
   expect(catalog.datasets.map(describeStarter).join('\n')).toMatchSnapshot();
 });
 
+test('explore choices', () => {
+  expect(catalog.datasets.map(describeExplore).join('\n')).toMatchSnapshot();
+});
+
 /** Field names a spec encodes, with Vega-Lite's `\\.` / `\\[` escapes removed. */
 function encodedFields(spec: unknown): string[] {
-  const enc = (spec as { encoding?: Record<string, { field?: string }> }).encoding ?? {};
+  const enc = (unitOf(spec as Starter).encoding ?? {}) as Record<string, { field?: string }>;
   return Object.values(enc).flatMap((e) => (e.field ? [e.field.replace(/\\(.)/g, '$1')] : []));
 }
 
 describe.each(withStarter.map((d) => [d.name, d] as const))('%s', (_name, d) => {
   test('encodes only columns the file has', () => {
-    const columns = new Set(d.fields.map((f) => f.name));
+    // Also what its transforms compute (a sum per group), and a geographic feature's own id.
+    const spec = starterSpec(d) as Starter;
+    const computed = [...(spec.transform ?? []), ...(unitOf(spec).transform ?? [])].flatMap((t) => JSON.stringify(t).match(/"as":"[^"]+"/g) ?? []).map((m) => m.slice(6, -1));
+    const columns = new Set([...d.fields.map((f) => f.name), ...computed, ...(d.kind === 'json' && /json/.test(d.format) ? ['id'] : [])]);
     expect(encodedFields(starterSpec(d)).filter((f) => !columns.has(f))).toEqual([]);
   });
 

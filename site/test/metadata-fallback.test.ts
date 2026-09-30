@@ -25,7 +25,7 @@ describe.each(VARIANTS)('%s', (_name, fields) => {
       modes: exploreModes(d),
       starter: starterSpec(d),
       chart: starterChart(d),
-      scatter: sf ? scatterSpec(d, sf, { ...defaultAxes(sf), zoom: true, height: 380 }) : null,
+      scatter: sf ? scatterSpec(d, sf, { ...defaultAxes(d, sf), zoom: true, height: 380 }) : null,
     };
     expect(JSON.stringify(specs, null, 1)).toMatchSnapshot();
   });
