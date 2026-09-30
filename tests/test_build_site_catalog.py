@@ -462,3 +462,27 @@ def test_an_explicit_missing_values_list_replaces_the_empty_string_default(
     assert profile(missingValues=["A"])["top"] == [["", 1]]
     both = profile(missingValues=["", "A"])
     assert (both["missing"], both["distinct"]) == (2, 0)
+
+
+def test_an_explicit_empty_list_keeps_empty_csv_cells_as_values(tmp_path: Path) -> None:
+    # CSV and TSV readers turn an empty cell into null unless told otherwise; with an
+    # explicit list that lacks "", the cell is a value. Without a list, it stays missing.
+    path = tmp_path / "rows.csv"
+    path.write_text("c,n\n,1\nA,2\n", "utf-8")
+
+    def profiles(**schema: object) -> list[dict[str, object]]:
+        fields = [{"name": "c", "type": "string"}, {"name": "n", "type": "integer"}]
+        entry = build_dataset(
+            _resource(path, schema={"fields": fields, **schema}),
+            [],
+            "https://example.invalid/rows.csv",
+            tmp_path,
+        )
+        return [f["profile"] for f in entry["fields"]]
+
+    c, n = profiles()
+    assert (c["missing"], c["distinct"], n["missing"]) == (1, 1, 0)
+    c, n = profiles(missingValues=[])
+    assert (c["missing"], c["distinct"], n["missing"]) == (0, 2, 0)
+    c, _ = profiles(missingValues=["A"])
+    assert (c["missing"], c["top"]) == (1, [["", 1]])

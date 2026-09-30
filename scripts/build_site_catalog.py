@@ -243,14 +243,22 @@ def _cell(value: Any) -> str | None:
     return str(value)
 
 
-def read_table(path: Path, fmt: str) -> pl.DataFrame | None:
-    """Read a tabular resource. CSV and JSON load as strings; the schema decides types."""
+def read_table(
+    path: Path, fmt: str, *, keep_empty: bool = False
+) -> pl.DataFrame | None:
+    """
+    Read a tabular resource. CSV and JSON load as strings; the schema decides types.
+
+    An empty CSV or TSV cell reads as null, unless ``keep_empty`` (a schema that
+    declares ``missingValues`` decides for itself whether empty text is missing).
+    """
     if fmt in {"csv", "tsv"}:
         return pl.read_csv(
             path,
             separator="\t" if fmt == "tsv" else ",",
             infer_schema=False,
             truncate_ragged_lines=True,
+            missing_utf8_is_empty_string=keep_empty,
         )
     if fmt == "parquet":
         return pl.read_parquet(path)
@@ -514,10 +522,17 @@ def build_dataset(
             path.read_bytes(), ".png", thumbs / "data" / resource["name"]
         )
         entry["image"] = f"thumbs/data/{name}"
-    df = read_table(path, fmt) if resource["type"] == "table" else None
+    schema = resource.get("schema") or {}
+    declared = "missingValues" in schema or any(
+        "missingValues" in f for f in schema.get("fields") or []
+    )
+    df = (
+        read_table(path, fmt, keep_empty=declared)
+        if resource["type"] == "table"
+        else None
+    )
     if df is None:
         return entry
-    schema = resource.get("schema") or {}
     fields = schema.get("fields") or [{"name": c, "type": "string"} for c in df.columns]
     for field in fields:
         if field["name"] not in df.columns:
