@@ -159,16 +159,28 @@ function openAtEnd(line: string, from: number): Quote | null {
 }
 
 /**
- * A `[[resources]]` header line (spaces and a quoted key allowed, then an optional comment).
- * Outside a multiline string, a line like this can only be a header: an array element or an
- * inline table's content can't be the bare word `resources`, so valid TOML has no other reading.
+ * A `[[resources]]` header in its plain form: the bare key, optional spaces inside and around
+ * the brackets, an optional comment. The metadata file writes every header this way.
  */
-const HEADER = /^\s*\[\[\s*(?:resources|"resources"|'resources')\s*\]\]\s*(?:#.*)?$/;
+const HEADER = /^\s*\[\[\s*resources\s*\]\]\s*(?:#.*)?$/;
+/** Another array-of-tables header with a plain bare (dotted) key, such as `[[resources.sources]]`: harmless. */
+const BARE_TABLES = /^\s*\[\[\s*[A-Za-z0-9_-]+(?:\s*\.\s*[A-Za-z0-9_-]+)*\s*\]\]\s*(?:#.*)?$/;
 
-/** The (1-based) lines of the `[[resources]]` headers, skipping text inside multiline strings. */
-function headerLines(toml: string): number[] {
+/** Whether a line is a `[[resources]]` header as this module recognizes one (the plain form). */
+export function isResourcesHeader(line: string): boolean {
+  return HEADER.test(line);
+}
+
+/**
+ * The (1-based) lines of the `[[resources]]` headers, skipping text inside multiline strings;
+ * null when any other line outside a string starts with `[[` and isn't a plain bare-key header.
+ * Such a line could be `resources` spelled another way (`[["resources"]]`, an escape) or an
+ * array value (`[["resources"]]` inside a multiline array), so no line can be trusted.
+ */
+function headerLines(toml: string): number[] | null {
   const out: number[] = [];
   let string: Quote | null = null;
+  let suspicious = false;
   toml.split(/\r?\n/).forEach((line, i) => {
     let from = 0;
     if (string) {
@@ -179,10 +191,12 @@ function headerLines(toml: string): number[] {
     } else if (HEADER.test(line)) {
       out.push(i + 1);
       return;
+    } else if (/^\s*\[\[/.test(line) && !BARE_TABLES.test(line)) {
+      suspicious = true;
     }
     string = openAtEnd(line, from);
   });
-  return out;
+  return suspicious ? null : out;
 }
 
 /**
@@ -216,7 +230,8 @@ export function resourceLines(toml: string): Map<string, number> {
     const p = r && typeof r === "object" ? (r as { path?: unknown }).path : undefined;
     return typeof p === "string" ? p : undefined;
   });
-  return pairHeaders(headerLines(toml), paths);
+  const headers = headerLines(toml);
+  return headers ? pairHeaders(headers, paths) : new Map();
 }
 
 /** A link to a dataset's entry in the metadata file (its line when known, else the file). */

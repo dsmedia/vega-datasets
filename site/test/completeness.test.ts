@@ -6,8 +6,9 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, test } from 'vitest';
 import type { Dataset } from '../src/lib/catalog';
-import { ADDITIONS_FILE, byGaps, completeness, documented, entryUrl, hasDescription, pairHeaders, resourceLines, sourcesUnlinked, summarize } from '../src/lib/completeness';
+import { ADDITIONS_FILE, byGaps, completeness, documented, entryUrl, hasDescription, isResourcesHeader, pairHeaders, resourceLines, sourcesUnlinked, summarize } from '../src/lib/completeness';
 import { DEFAULT_SITE_REPO, siteRepo } from '../src/lib/seo';
+import { anchorProblems } from './anchors';
 import { loadCatalog, REPO } from './catalog';
 import { described, strip } from './fixtures';
 
@@ -143,14 +144,31 @@ describe("a dataset's entry in the metadata TOML", () => {
     '',
     '  [[ resources ]]   #   Path: c.png', // 17: spaces are allowed
     'path = "c.png"',
-    '[["resources"]]', // 19: so is a quoted key
-    'path = "d.png"',
+    '[[ contributors ]]', // another array of tables, a plain bare key: harmless
+    'title = "x"',
     '[[resources]] # Path: a.csv', // 21: a duplicate keeps the first
     'path = "a.csv"',
   ].join('\r\n');
 
   test("lines by file: each real header paired, in order, with the parser's resources", () => {
-    expect([...resourceLines(TOML)]).toEqual([['a.csv', 4], ['b.json', 10], ['c.png', 17], ['d.png', 19]]);
+    expect([...resourceLines(TOML)]).toEqual([['a.csv', 4], ['b.json', 10], ['c.png', 17]]);
+  });
+
+  test('only the plain header form counts; any other spelling that could name resources means no anchors (Codex round 3, #1)', () => {
+    expect(isResourcesHeader('[[resources]]')).toBe(true);
+    expect(isResourcesHeader('  [[ resources ]]   # Path: a.csv')).toBe(true);
+    expect(isResourcesHeader('[[resources.sources]]')).toBe(false);
+    expect(isResourcesHeader('[["resources"]]')).toBe(false);
+    // Codex's case: a quoted nested-array value and an escaped header, counts still equal (2 and 2).
+    const codex = ['[[resources]]', 'path = "a.csv"', 'tags = [', '[["resources"]]', ']', '[["\\u0072esources"]]', 'path = "b.csv"'].join('\n');
+    expect(resourceLines(codex)).toEqual(new Map());
+    const plain = (header: string) => ['[[resources]]', 'path = "a.csv"', header, 'path = "b.csv"'].join('\n');
+    expect(resourceLines(plain('[[resources]]'))).toEqual(new Map([['a.csv', 1], ['b.csv', 3]]));
+    for (const header of ['[["resources"]]', "[[ 'resources' ]]", '[["\\u0072esources"]]', '[["resources".x]]', '[[resources . "x"]]']) {
+      expect(resourceLines(plain(header)), header).toEqual(new Map());
+    }
+    // A plain bare-key array of tables (a sub-table, another list) doesn't disturb the anchors.
+    expect(resourceLines(plain('[[resources.sources]]\ntitle = "s"\n[[resources]]'))).toEqual(new Map([['a.csv', 1], ['b.csv', 5]]));
   });
 
   test('paths in any TOML string form (Codex round 2, #3)', () => {
@@ -220,13 +238,31 @@ describe("a dataset's entry in the metadata TOML", () => {
     expect(entryUrl(file, lines, 'missing.csv')).toBe(file);
   });
 
+  test("the build test's anchor check never parses a suffix (Codex round 3, #3)", () => {
+    const real = readFileSync(path.join(REPO, ADDITIONS_FILE), 'utf8');
+    // Valid as a whole, though its suffix from the first resource isn't: the later
+    // [[contributors]] would then redefine [contributors.details].
+    const text = [real, '[contributors.details]', 'note = "Maintainer"', '[[contributors]]', 'title = "Another contributor"', ''].join('\n');
+    const anchors = resourceLines(text);
+    expect(anchors).toEqual(resourceLines(real));
+    expect(anchorProblems(text, anchors)).toEqual([]);
+    // And it catches wrong anchors: off the header, out of order, missing.
+    const [first, second] = [...anchors.keys()];
+    expect(anchorProblems(text, new Map([...anchors, [first!, anchors.get(first!)! + 1]]))).not.toEqual([]);
+    expect(anchorProblems(text, new Map([...anchors, [first!, anchors.get(second!)!], [second!, anchors.get(first!)!]]))).not.toEqual([]);
+    const missing = new Map(anchors);
+    missing.delete(second!);
+    expect(anchorProblems(text, missing)).toEqual([`resource 2 (${second}) has no anchor`]);
+  });
+
   test('every dataset in the catalog has a line in the real file', () => {
     const lines = resourceLines(readFileSync(path.join(REPO, ADDITIONS_FILE), 'utf8'));
     const text = readFileSync(path.join(REPO, ADDITIONS_FILE), 'utf8').split(/\r?\n/);
     for (const d of loadCatalog().datasets) {
       const n = lines.get(d.file);
       expect(n, d.file).toBeDefined();
-      expect(text[n! - 1], d.file).toMatch(/^\[\[resources\]\]/);
+      // As the module recognizes headers (Codex round 3, #2: `[[ resources ]]` is fine too).
+      expect(isResourcesHeader(text[n! - 1]!), d.file).toBe(true);
     }
   });
 });

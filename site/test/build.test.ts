@@ -8,8 +8,8 @@ import { completeness } from '../src/lib/completeness';
 import { chartFeatures } from '../src/lib/explore-model';
 import { type DensityGrid, densityCaption, densityPageSpec, densitySpec } from '../src/lib/large-data';
 import { editorUrl } from '../src/lib/starter';
-import { parse as parseToml } from 'smol-toml';
 import { siteRepo } from '../src/lib/seo';
+import { anchorProblems } from './anchors';
 import { loadCatalog, REPO } from './catalog';
 
 const catalog = loadCatalog();
@@ -115,18 +115,10 @@ describe('metadata gaps (DECISIONS D6)', () => {
     expect(ids.filter((i) => i.startsWith('ds-'))).toHaveLength(catalog.datasets.length);
   });
 
-  test('each entry link points at its [[resources]] header (checked with a TOML parser, whatever the block holds)', () => {
+  test('each entry link points at its [[resources]] header, in the order the parser reads the resources', () => {
     const text = readFileSync(path.join(REPO, '_data', 'datapackage_additions.toml'), 'utf8');
-    const lines = text.split(/\r?\n/);
-    const all = (parseToml(text).resources as { path: string }[]).map((r) => r.path);
-    for (const { id, body } of rows) {
-      const line = Number(body.match(/\.toml#L(\d+)"/)![1]);
-      // From a resource's header to the end is valid TOML whose first resource is that one,
-      // and whose resources are exactly those from it on.
-      const tail = (parseToml(lines.slice(line - 1).join('\n')).resources as { path: string }[]).map((r) => r.path);
-      expect(tail[0], id).toBe(catalog.dataset(id)!.file);
-      expect(tail, id).toEqual(all.slice(all.length - tail.length));
-    }
+    const anchors = new Map(rows.map(({ id, body }) => [catalog.dataset(id)!.file, Number(body.match(/\.toml#L(\d+)"/)![1])] as const));
+    expect(anchorProblems(text, anchors)).toEqual([]);
   });
 
   test('dataset pages: an "Add" per undescribed field, and one footer line to the status row when there are gaps', () => {
