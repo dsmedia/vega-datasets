@@ -12,7 +12,7 @@ export const SITE_NAME = "Vega Datasets";
 /** The canonical home of the site; fork deployments point here too. */
 export const HOME_URL = "https://vega.github.io/vega-datasets/";
 export const REPO = "https://github.com/vega/vega-datasets";
-export const HOME_TITLE = "Vega Datasets – The Data Behind the Examples";
+export const HOME_TITLE = "Vega Datasets: Example Data for Vega, Vega-Lite and Altair";
 export const HOME_DESCRIPTION =
   "Every dataset in vega-datasets: what each field holds, where the data comes from, its license, and the Vega, Vega-Lite and Altair gallery examples that use it.";
 

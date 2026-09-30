@@ -48,7 +48,7 @@ const about = readmeItems.flatMap(([id, title, hint, heading]) => {
 });
 ---
 <Base title={HOME_TITLE} description={HOME_DESCRIPTION} path="" section="home" jsonLd={catalogJsonLd(c)}>
-  <div class="wrap"><h1 class="home-title"><b>Vega Datasets</b> – The Data Behind the Examples</h1></div>
+  <div class="wrap"><h1 class="home-title"><b>Vega Datasets</b></h1></div>
   <div class="showcase" aria-hidden="true">
     {showcase(c, 8).map((p) => <a href={`${import.meta.env.BASE_URL}${datasetPath(p.dataset)}`} tabindex="-1"><Thumb example={p.example} eager /><span class="showcase-name mono">{p.dataset}</span></a>)}
   </div>
