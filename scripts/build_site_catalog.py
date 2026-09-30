@@ -22,6 +22,8 @@ Three things are fetched, because they live upstream:
 from __future__ import annotations
 
 import argparse
+import functools
+import itertools
 import json
 import logging
 import math
@@ -63,8 +65,9 @@ CORRELATION_ROWS: Final = 5
 LAT_NAME: Final = re.compile(r"^(lat|latitude)$", re.IGNORECASE)
 LON_NAME: Final = re.compile(r"^(lon|lng|long|longitude)$", re.IGNORECASE)
 # The United States as boxes of (west, east, south, north): the lower 48, Alaska
-# (and the Aleutians past 180°) and Hawaii. Border strips of Canada and Mexico fall
-# inside; for choosing a projection that is close enough.
+# (and the Aleutians past 180°) and Hawaii: where Albers USA can place a point. The
+# site leaves out points outside them and says how many; the US share itself is
+# counted against the US land outline, since the boxes hold southern Canada too.
 US_BOXES: Final = (
     (-125.0, -66.5, 24.3, 49.5),
     (-180.0, -129.9, 51.0, 71.5),
@@ -642,24 +645,33 @@ def build_dataset(
             ),
         })
     entry.update(_present(schema, SCHEMA_PROPERTIES))
+    entry.update(structure(df, fields, schema))
+    columns = [f["name"] for f in entry["fields"]]
+    entry["rows"] = df.height
+    entry["preview"] = {"columns": columns, "rows": preview_rows(df, columns)}
+    return entry
+
+
+def structure(
+    df: pl.DataFrame, fields: list[dict[str, Any]], schema: dict[str, Any]
+) -> dict[str, Any]:
+    """What the site's chart rules read from the data itself; each key only when it applies."""
+    fields = [f for f in fields if f["name"] in df.columns]
     numbers = {
         f["name"]: numeric_values(
             df[f["name"]],
             missing_values(f.get("missingValues", schema.get("missingValues"))),
         )
         for f in fields
-        if f["name"] in df.columns and f.get("type") in {"integer", "number"}
+        if f.get("type") in {"integer", "number"}
     }
-    if correlated := correlations(numbers):
-        entry["correlated"] = correlated
-    if points := coordinates(numbers, fields):
-        entry["points"] = points
-    if keys := time_keys(df, [f for f in fields if f["name"] in df.columns], numbers):
-        entry["timeKeys"] = keys
-    columns = [f["name"] for f in entry["fields"]]
-    entry["rows"] = df.height
-    entry["preview"] = {"columns": columns, "rows": preview_rows(df, columns)}
-    return entry
+    found = {
+        "correlated": correlations(numbers),
+        "points": coordinates(numbers, fields),
+        "timeKeys": time_keys(df, fields, numbers),
+        "totalValues": total_values(df, fields),
+    }
+    return {k: v for k, v in found.items() if v}
 
 
 def correlations(numbers: dict[str, pl.Series]) -> list[list[Any]]:
@@ -700,32 +712,17 @@ def time_keys(
     rows = df.height
     if rows == 0:
         return {}
-
-    def years(name: str) -> bool:
-        s = numbers.get(name)
-        if s is None or s.null_count() == s.len():
-            return False
-        lo, hi = cast("float", s.min()), cast("float", s.max())
-        return bool((s.drop_nulls() % 1 == 0).all()) and lo >= 1000 and hi <= 2200
-
+    values = parsed_values(df, fields, numbers)
     times = [
         f["name"]
         for f in fields
         if f.get("type") in {"date", "datetime"}
-        or (f.get("type") == "integer" and years(f["name"]))
+        or (f.get("type") == "integer" and _years(numbers.get(f["name"])))
     ]
-
-    def grouping(f: dict[str, Any]) -> bool:
-        kind = f.get("type", "string")
-        n = df[f["name"]].n_unique()
-        # Integers with many values are measures (delays, budgets), not series.
-        limit = rows / 2 if kind in {"string", "boolean"} else min(rows / 2, 60)
-        return kind in {"string", "integer", "boolean"} and 2 <= n <= limit
-
-    groups = [f["name"] for f in fields if grouping(f)]
+    groups = [f["name"] for f in fields if _grouping(f, values[f["name"]], rows)]
 
     def unique(columns: list[str]) -> bool:
-        return df.select(pl.struct(columns).n_unique()).item() == rows
+        return values.select(pl.struct(columns).n_unique()).item() == rows
 
     out: dict[str, list[str]] = {}
     for t in times:
@@ -735,6 +732,70 @@ def time_keys(
         key = next((c for c in candidates if unique([t, *c])), None)
         if key is not None:
             out[t] = key
+    return out
+
+
+def _years(s: pl.Series | None) -> bool:
+    """Whole numbers from 1000 to 2200: a field of years."""
+    if s is None or s.null_count() == s.len():
+        return False
+    lo, hi = cast("float", s.min()), cast("float", s.max())
+    return bool((s.drop_nulls() % 1 == 0).all()) and lo >= 1000 and hi <= 2200
+
+
+def _grouping(f: dict[str, Any], values: pl.Series, rows: int) -> bool:
+    """Text or integer values that repeat: a series. Integers with many values are measures (delays, budgets)."""
+    kind = f.get("type", "string")
+    limit = rows / 2 if kind in {"string", "boolean"} else min(rows / 2, 60)
+    return kind in {"string", "integer", "boolean"} and 2 <= values.n_unique() <= limit
+
+
+def parsed_values(
+    df: pl.DataFrame, fields: list[dict[str, Any]], numbers: dict[str, pl.Series]
+) -> pl.DataFrame:
+    """
+    The fields' values as a chart reads them.
+
+    Numbers parsed ("2000" and "2000.0" are one year), dates parsed (one date written
+    two ways is one date), text as it is.
+    """
+
+    def parsed(f: dict[str, Any]) -> pl.Series:
+        name = f["name"]
+        if name in numbers:
+            return numbers[name]
+        if f.get("type") in {"date", "datetime"}:
+            s = df[name]
+            if s.dtype == pl.Date or isinstance(s.dtype, pl.Datetime):
+                return s.cast(pl.Datetime)
+            return parse_dates(s.cast(pl.String).str.strip_chars())
+        return df[name]
+
+    return pl.DataFrame({f["name"]: parsed(f) for f in fields})
+
+
+TOTAL_VALUE: Final = re.compile(r"^(all|total)\b", re.IGNORECASE)
+
+
+def total_values(
+    df: pl.DataFrame, fields: list[dict[str, Any]]
+) -> dict[str, list[str]]:
+    """
+    Text values that stand for all the others ("All natural disasters", "Total"), per field.
+
+    Every distinct value is read, so the site can leave them out wherever it adds up
+    rows (a sum over a total counts everything twice).
+    """
+    out: dict[str, list[str]] = {}
+    for f in fields:
+        if f.get("type", "string") != "string" or f["name"] not in df.columns:
+            continue
+        distinct = df[f["name"]].cast(pl.String).drop_nulls().unique().sort().to_list()
+        # A category, not names or titles ("All the King's Men").
+        if len(distinct) > 60:
+            continue
+        if hits := [v for v in distinct if TOTAL_VALUE.match(v.strip())]:
+            out[f["name"]] = hits
     return out
 
 
@@ -767,24 +828,127 @@ def coordinates(
     both = pl.DataFrame({"lat": numbers[lat], "lon": numbers[lon]}).drop_nulls()
     if both.height == 0:
         return None
-    inside = pl.lit(value=False)
+    boxed = pl.lit(value=False)
     for west, east, south, north in US_BOXES:
-        inside |= pl.col("lon").is_between(west, east) & pl.col("lat").is_between(
+        boxed |= pl.col("lon").is_between(west, east) & pl.col("lat").is_between(
             south, north
         )
-    us = cast("int", both.select(inside.sum()).item())
+    outside = cast("int", both.select((~boxed).sum()).item())
+    land = us_land()
+    us = sum(itertools.starmap(land.contains, both.select("lon", "lat").iter_rows()))
 
-    def box(c: str) -> list[float]:
-        return [
-            _nice(cast("float", both[c].quantile(q, "linear"))) for q in (0.01, 0.99)
-        ]
+    def quantiles(s: pl.Series) -> list[float]:
+        return [_nice(cast("float", s.quantile(q, "linear"))) for q in (0.01, 0.99)]
 
+    west, east = quantiles(shortest_arc(both["lon"]))
+    if west >= 180:
+        west, east = _nice(west - 360), _nice(east - 360)
     return {
         "latitude": lat,
         "longitude": lon,
-        "box": {"longitude": box("lon"), "latitude": box("lat")},
+        "box": {
+            "longitude": [west, east],
+            "latitude": quantiles(both["lat"]),
+        },
         "us": round(us / both.height, 3),
+        "outsideUs": outside,
     }
+
+
+def shortest_arc(lon: pl.Series) -> pl.Series:
+    """
+    Longitudes moved onto the shortest arc that holds them all.
+
+    Points on both sides of 180° (Fiji: 179 and -179) keep their neighborhood: the
+    ones west of the widest gap move up by 360°, so the box spans 178 to 181, not -179 to 179.
+    """
+    distinct = lon.unique().sort().to_list()
+    if len(distinct) < 2:
+        return lon
+    gaps = [(b - a, b) for a, b in itertools.pairwise(distinct)]
+    wrap = distinct[0] + 360 - distinct[-1]
+    widest, start = max(gaps)
+    if widest <= wrap:
+        return lon
+    return pl.Series(lon.name, [x + 360 if x < start else x for x in lon.to_list()])
+
+
+class Outline:
+    """
+    A polygon outline for point-in-polygon tests: its edges, indexed by bands of latitude.
+
+    Even-odd ray casting, so holes and islands count right whatever the rings' order.
+    """
+
+    BAND: Final = 0.1
+
+    def __init__(self, rings: list[list[tuple[float, float]]]) -> None:
+        self.bands: defaultdict[int, list[tuple[float, float, float, float]]] = (
+            defaultdict(list)
+        )
+        for ring in rings:
+            for (x1, y1), (x2, y2) in itertools.pairwise(ring):
+                if y1 == y2:
+                    continue
+                lo, hi = sorted((y1, y2))
+                for b in range(
+                    math.floor(lo / self.BAND), math.floor(hi / self.BAND) + 1
+                ):
+                    self.bands[b].append((x1, y1, x2, y2))
+
+    def contains(self, x: float, y: float) -> bool:
+        inside = False
+        for x1, y1, x2, y2 in self.bands.get(math.floor(y / self.BAND), ()):
+            if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * (x2 - x1) / (y2 - y1):
+                inside = not inside
+        return inside
+
+
+def topojson_rings(doc: dict[str, Any], name: str) -> list[list[tuple[float, float]]]:
+    """An object's polygon rings from a quantized TopoJSON file, in longitude and latitude."""
+    t = doc.get("transform")
+    arcs: list[list[tuple[float, float]]] = []
+    for arc in doc["arcs"]:
+        x = y = 0.0
+        points = []
+        for dx, dy in arc:
+            if t:
+                x, y = x + dx, y + dy
+                points.append((
+                    x * t["scale"][0] + t["translate"][0],
+                    y * t["scale"][1] + t["translate"][1],
+                ))
+            else:
+                points.append((dx, dy))
+        arcs.append(points)
+
+    def ring(indexes: list[int]) -> list[tuple[float, float]]:
+        out: list[tuple[float, float]] = []
+        for i in indexes:
+            points = arcs[i] if i >= 0 else arcs[~i][::-1]
+            out.extend(points if not out else points[1:])
+        return out
+
+    obj = doc["objects"][name]
+    geometries = obj["geometries"] if obj["type"] == "GeometryCollection" else [obj]
+    rings: list[list[tuple[float, float]]] = []
+    for g in geometries:
+        polygons = (
+            g["arcs"]
+            if g["type"] == "MultiPolygon"
+            else [g["arcs"]]
+            if g["type"] == "Polygon"
+            else []
+        )
+        rings.extend(ring(r) for polygon in polygons for r in polygon)
+    return rings
+
+
+@functools.cache
+def us_land() -> Outline:
+    """The United States' land (vega-datasets' own us_10m, at 1:10m), for the US share of a table's points."""
+    doc = json.loads((REPO_ROOT / "data" / "us-10m.json").read_text("utf-8"))
+    return Outline(topojson_rings(doc, "land"))
 
 
 # ---------------------------------------------------------------------------

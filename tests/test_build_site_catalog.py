@@ -27,8 +27,11 @@ from scripts.build_site_catalog import (
     profile_field,
     read_table,
     readme_markdown,
+    shortest_arc,
     thumbnail_urls,
     time_keys,
+    total_values,
+    us_land,
     write_thumbnail,
 )
 
@@ -584,8 +587,9 @@ def test_numeric_values_drop_markers_and_text() -> None:
 
 
 def test_coordinates_box_and_us_share() -> None:
-    lat = pl.Series([40.7, 34.0, 41.9, 47.6, 13.4] + [39.0] * 95)
-    lon = pl.Series([-74.0, -118.2, -87.6, -122.3, 144.8] + [-95.0] * 95)
+    # Denver, Dallas, Chicago, Boise and Guam; the rest in Kansas.
+    lat = pl.Series([39.74, 32.78, 41.88, 43.62, 13.4] + [39.0] * 95)
+    lon = pl.Series([-104.99, -96.8, -87.63, -116.2, 144.8] + [-95.0] * 95)
     fields = [
         {"name": "latitude", "type": "number"},
         {"name": "longitude", "type": "number"},
@@ -593,7 +597,8 @@ def test_coordinates_box_and_us_share() -> None:
     points = coordinates({"latitude": lat, "longitude": lon}, fields)
     assert points is not None
     assert points["us"] == 0.99
-    assert points["box"]["longitude"][0] < -118
+    assert points["outsideUs"] == 1
+    assert points["box"]["longitude"][0] < -116
     assert points["box"]["longitude"][1] < 0  # the 1% beyond the box doesn't stretch it
     # Found by title too; none without both columns.
     titled = [
@@ -655,3 +660,56 @@ def test_time_keys_find_the_series_that_key_each_time() -> None:
         "v": ["1", "2", "3"],
     })
     assert time_keys(events, day_fields, {"v": numeric_values(events["v"])}) == {}
+
+
+def test_us_share_uses_the_land_outline_not_boxes() -> None:
+    land = us_land()
+    # Inside the lower-48 box, but Canada and Mexico: Toronto, Vancouver, Tijuana, Windsor.
+    for x, y in [(-79.38, 43.65), (-123.12, 49.28), (-117.02, 32.52), (-83.0, 42.28)]:
+        assert not land.contains(x, y)
+    for x, y in [(-87.63, 41.88), (-117.16, 32.72), (-149.9, 61.2), (-104.99, 39.74)]:
+        assert land.contains(x, y)
+    fields = [{"name": "lat", "type": "number"}, {"name": "lon", "type": "number"}]
+    canada = {"lat": pl.Series([43.65, 49.28]), "lon": pl.Series([-79.38, -123.12])}
+    points = coordinates(canada, fields)
+    assert points is not None
+    assert points["us"] == 0
+
+
+def test_longitude_box_takes_the_short_way_across_180() -> None:
+    lon = pl.Series([179.0] * 50 + [-179.0] * 50)
+    fields = [{"name": "lat", "type": "number"}, {"name": "lon", "type": "number"}]
+    points = coordinates({"lat": pl.Series([-17.0] * 100), "lon": lon}, fields)
+    assert points is not None
+    west, east = points["box"]["longitude"]
+    assert east - west == 2
+    assert shortest_arc(pl.Series([-100.0, -90.0])).to_list() == [-100.0, -90.0]
+
+
+def test_time_keys_compare_parsed_values() -> None:
+    df = pl.DataFrame({
+        "year": ["2000", "2000.0", "2001", "2001.0", "2002", "2002.0"],
+        "cohort": ["A", "B"] * 3,
+        "value": ["1", "2", "3", "4", "5", "6"],
+    })
+    fields = [
+        {"name": "year", "type": "integer"},
+        {"name": "cohort", "type": "string"},
+        {"name": "value", "type": "number"},
+    ]
+    numbers = {n: numeric_values(df[n]) for n in ("year", "value")}
+    assert time_keys(df, fields, numbers) == {"year": ["cohort"]}
+
+
+def test_total_values_read_every_value_of_a_category() -> None:
+    regions = [f"r{i:02}" for i in range(12)]
+    df = pl.DataFrame({
+        "region": [*regions, "Total"],
+        "title": ["All About Eve", *regions],
+    })
+    fields = [{"name": "region", "type": "string"}, {"name": "title", "type": "string"}]
+    assert total_values(df, fields) == {"region": ["Total"], "title": ["All About Eve"]}
+    many = pl.DataFrame({
+        "title": ["All the King's Men", *[f"t{i}" for i in range(70)]]
+    })
+    assert total_values(many, [{"name": "title", "type": "string"}]) == {}
