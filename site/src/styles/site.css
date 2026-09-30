@@ -339,6 +339,9 @@ td.f-miss.any { color: var(--missing); }
 .status-intro { max-width: 66ch; font-size: 15px; }
 .status-body { display: flex; flex-direction: column; gap: 16px; padding-top: 28px; }
 .kv.status-sum { grid-template-columns: 150px minmax(0, 1fr); max-width: 420px; }
+/* Positioned, so the visually hidden words in its cells (absolutely positioned) scroll with it
+   instead of widening the page. */
+.status-scroll { position: relative; }
 table.status { border-collapse: collapse; min-width: 100%; font-size: 13.5px; font-variant-numeric: tabular-nums; }
 table.status th, table.status td { padding: 7px 12px; text-align: left; white-space: nowrap; vertical-align: top; border-bottom: 1px solid var(--rule-faint); }
 table.status thead th { font-size: 12.5px; color: var(--ink-muted); border-bottom-color: var(--rule); }

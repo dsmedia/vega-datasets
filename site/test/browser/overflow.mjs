@@ -1,6 +1,6 @@
-// No page scrolls sideways: home and every dataset page on a phone (390px) and a desktop,
-// and on the desktop the fields table stays inside its column (long unbroken summary
-// values, URLs and list literals, used to push it out).
+// No page scrolls sideways: home, the metadata status page and every dataset page on a phone
+// (390px) and a desktop, and on the desktop the fields table stays inside its column (long
+// unbroken summary values, URLs and list literals, used to push it out).
 // Not part of `npm run site:test` (it needs Chrome and a built site).
 //
 // Usage, after `npm run site:build`:
@@ -40,7 +40,8 @@ const PHONE = { width: 390, height: 844, deviceScaleFactor: 1, isMobile: true, h
 const DESKTOP = { width: 1360, height: 900, deviceScaleFactor: 1, isMobile: false, hasTouch: false };
 
 const dist = path.join(repo, 'site', 'dist', 'datasets');
-const pages = ['', ...readdirSync(dist).sort().map((n) => `datasets/${n}/`)];
+// Home, the metadata status page (its table scrolls inside its own region) and every dataset page.
+const pages = ['', 'metadata/', ...readdirSync(dist).sort().map((n) => `datasets/${n}/`)];
 
 /** How far the page scrolls sideways, and how far the fields table reaches past its column. */
 function measure() {
