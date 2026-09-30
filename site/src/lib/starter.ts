@@ -91,13 +91,25 @@ export function measure(f: Field, enc: Enc = {}, bars = false): Enc {
 }
 
 /**
+ * The documented order as a Vega-Lite `sort` array, or null. Numbers are listed as text too:
+ * a CSV gives them as text, and the sort compares strictly. Text that names an object
+ * property can't go in (Vega refuses the literal in the sort expression Vega-Lite writes),
+ * so such categories keep the default order.
+ */
+function sortOrder(f: Field): (string | number)[] | null {
+  const order = orderedCategories(f);
+  if (!order || order.some((v) => typeof v === "string" && v in Object.prototype)) return null;
+  return [...order, ...order.filter((v) => typeof v === "number").map(String)];
+}
+
+/**
  * A category on a channel, with labels on its axis or legend. When the metadata says the
  * order matters, the documented order replaces `enc.sort` (and so sets the color domain's
  * order), and an axis reads it as ordinal. Colors stay nominal: an ordinal ramp would fade
  * the first category into the background.
  */
 export function category(f: Field, enc: Enc = {}, guide: "axis" | "legend" = "legend"): Enc {
-  const order = orderedCategories(f);
+  const order = sortOrder(f);
   const labels = categoryLabels(f);
   return {
     field: fieldRef(f.name),
@@ -110,8 +122,20 @@ export function category(f: Field, enc: Enc = {}, guide: "axis" | "legend" = "le
 }
 
 /** A marker as a value may hold it: its text, and for a number the number's own text ("-99.0" is -99 once parsed). */
-export function markerForms(markers: string[]): string[] {
-  return [...new Set(markers.flatMap((m) => (m.trim() !== "" && Number.isFinite(Number(m)) ? [m, String(Number(m))] : [m])))];
+export function markerForms(f: Field, markers: string[]): string[] {
+  const numeric = f.type === "integer" || f.type === "number";
+  return [...new Set(markers.flatMap((m) => (numeric && m.trim() !== "" && Number.isFinite(Number(m)) ? [m, String(Number(m))] : [m])))];
+}
+
+/**
+ * A date field's markers that read as dates, compared as instants: Vega-Lite parses a
+ * temporal field before any transform, so its text is gone by the time the filter runs.
+ * `toDate` parses them the way that parse does, in the viewer's browser.
+ */
+function dateMarkerTest(f: Field, markers: string[], value: string): string | null {
+  if (f.profile.kind !== "temporal") return null;
+  const dates = markers.filter((m) => !Number.isNaN(Date.parse(m)));
+  return dates.length ? `indexof([${dates.map((m) => `time(toDate(${JSON.stringify(m)}))`).join(", ")}], time(${value})) < 0` : null;
 }
 
 /**
@@ -122,7 +146,9 @@ export function markerForms(markers: string[]): string[] {
 export function missingFilter(d: Dataset, fields: Field[]): Enc | null {
   const tests = fields.flatMap((f) => {
     const markers = effectiveMissing(d, f);
-    return markers?.length ? [`indexof(${tagged(markerForms(markers))}, ${tag(`datum[${JSON.stringify(f.name)}]`)}) < 0`] : [];
+    if (!markers?.length) return [];
+    const value = `datum[${JSON.stringify(f.name)}]`;
+    return [`indexof(${tagged(markerForms(f, markers))}, ${tag(value)}) < 0`, dateMarkerTest(f, markers, value)].filter((t) => t !== null);
   });
   return tests.length ? { filter: tests.join(" && ") } : null;
 }
@@ -154,7 +180,7 @@ function isId(f: Field): boolean {
 
 export function isYear(f: Field): boolean {
   const p = f.profile;
-  return p.kind === "quantitative" && Number.isInteger(p.min) && p.min >= 1000 && p.max <= 2200 && (YEAR_NAME.test(f.name) || f.type === "integer");
+  return p.kind === "quantitative" && !integerCategory(f) && Number.isInteger(p.min) && p.min >= 1000 && p.max <= 2200 && (YEAR_NAME.test(f.name) || f.type === "integer");
 }
 
 /** Small-range integers (cylinders, ratings, ages in bands) behave like categories, not measures. */

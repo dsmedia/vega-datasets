@@ -16,6 +16,6 @@ export function readRows(d: Dataset): Record<string, unknown>[] {
 
 /** The grid of two fields, without the rows their documented missing-value markers leave out. */
 export function densityOf(d: Dataset, axes: { x: string; y: string }): DensityGrid {
-  const markers = (name: string) => markerForms(d.fields.flatMap((f) => (f.name === name ? (effectiveMissing(d, f) ?? []) : [])));
+  const markers = (name: string) => d.fields.flatMap((f) => (f.name === name ? markerForms(f, effectiveMissing(d, f) ?? []) : []));
   return densityGrid(readRows(d), axes.x, axes.y, DENSITY_BINS, { x: markers(axes.x), y: markers(axes.y) });
 }

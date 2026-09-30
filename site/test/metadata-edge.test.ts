@@ -233,6 +233,65 @@ describe('rounded profile extremes', () => {
   });
 });
 
+test('a text field’s markers match as text: "01" doesn’t make "1" missing', async () => {
+  const kind = nominal('kind', ['01', '1', 'A'], { missingValues: ['01'] });
+  const view = await draw(starterSpec(table([kind, quant(10, 30)]))!, [{ kind: '01', v: 10 }, { kind: '1', v: 20 }, { kind: 'A', v: 30 }]);
+  try {
+    expect(rowsWith(view, 'mean_v').map((r) => r.kind).sort()).toEqual(['1', 'A']);
+  } finally {
+    view.finalize();
+  }
+});
+
+test('a date field’s markers leave the time series even though the dates are parsed first', async () => {
+  const when: Field = {
+    name: 'when', type: 'date', description: null, missingValues: ['1900-01-01'],
+    profile: { kind: 'temporal', min: '2020-01-01T00:00:00Z', max: '2021-01-01T00:00:00Z', missing: 1 },
+  };
+  const view = await draw(starterSpec(table([when, quant(1, 3)]))!, [
+    { when: '1900-01-01', v: 1 }, { when: '2020-01-01', v: 2 }, { when: '2021-01-01', v: 3 },
+  ]);
+  try {
+    expect(new Date(view.scale('x').domain()[0]).getUTCFullYear()).toBe(2020);
+  } finally {
+    view.finalize();
+  }
+});
+
+describe('integer categories, round 2', () => {
+  const grade: Field = {
+    name: 'grade', type: 'integer', description: null, categoriesOrdered: true,
+    categories: [{ value: 3, label: 'High' }, { value: 1, label: 'Low' }, { value: 2, label: 'Mid' }],
+    profile: { kind: 'quantitative', min: 1, max: 3, mean: 2, missing: 0, bins: [1, 1, 1] },
+  };
+
+  test('keep their documented order when a CSV gives them as text', async () => {
+    const spec = starterSpec(table([grade, quant(1, 3)]))!;
+    for (const rows of [[{ grade: '1', v: 1 }, { grade: '2', v: 2 }, { grade: '3', v: 3 }], [{ grade: 1, v: 1 }, { grade: 2, v: 2 }, { grade: 3, v: 3 }]]) {
+      const view = await draw(spec, rows);
+      try {
+        expect(view.scale('y').domain().map(String)).toEqual(['3', '1', '2']);
+      } finally {
+        view.finalize();
+      }
+    }
+  });
+
+  test('in a year-like range are categories, not a time axis', () => {
+    const odd: Field = { ...grade, categoriesOrdered: undefined, categories: [{ value: 1100, label: 'Low' }, { value: 2100, label: 'High' }], profile: { kind: 'quantitative', min: 1100, max: 2100, mean: 1600, missing: 0, bins: [1, 1] } };
+    const spec = starterSpec(table([odd, quant(1, 3)]))!;
+    expect(spec.mark).toEqual({ type: 'bar', tooltip: true });
+    expect(enc(spec).y).toMatchObject({ field: 'grade', type: 'nominal' });
+  });
+
+  test('ordered text categories that name object properties keep the chart drawable', async () => {
+    const values = ['toString', 'b'];
+    const kind = nominal('kind', values, { categories: values, categoriesOrdered: true });
+    const view = await draw(starterSpec(table([kind, quant(1, 2)]))!, [{ kind: 'toString', v: 1 }, { kind: 'b', v: 2 }]);
+    view.finalize();
+  });
+});
+
 describe('date bounds follow the field’s format and the profile’s UTC wall clock', () => {
   const when = (extra: Partial<Field>, min = '2020-01-15T00:00:00Z', max = '2020-03-01T00:00:00Z'): Field => ({
     name: 'when', type: 'date', description: null, profile: { kind: 'temporal', min, max, missing: 0 }, ...extra,

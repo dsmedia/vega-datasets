@@ -83,7 +83,7 @@ function measureLookups(d: Dataset, measures: Field[]) {
   const maxs = ranges.map((r) => r?.max ?? null);
   const lookup = (values: unknown[], param: string) => `${JSON.stringify(values)}[${at(param)}]`;
   const titled = measures.some((m) => m.title);
-  const markers = measures.map((m) => markerForms(effectiveMissing(d, m) ?? []));
+  const markers = measures.map((m) => markerForms(m, effectiveMissing(d, m) ?? []));
   const drop = (param: string) => `indexof([${markers.map(tagged).join(", ")}][${at(param)}], ${tag(`datum[${param}]`)}) < 0`;
   return {
     /** Leaves out the rows whose picked measures hold a documented missing-value marker. */
