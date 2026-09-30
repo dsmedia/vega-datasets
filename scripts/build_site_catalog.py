@@ -654,6 +654,8 @@ def build_dataset(
         entry["correlated"] = correlated
     if points := coordinates(numbers, fields):
         entry["points"] = points
+    if keys := time_keys(df, [f for f in fields if f["name"] in df.columns], numbers):
+        entry["timeKeys"] = keys
     columns = [f["name"] for f in entry["fields"]]
     entry["rows"] = df.height
     entry["preview"] = {"columns": columns, "rows": preview_rows(df, columns)}
@@ -679,6 +681,60 @@ def correlations(numbers: dict[str, pl.Series]) -> list[list[Any]]:
             r = cast("float", both.select(pl.corr("a", "b")).item())
             if r is not None and math.isfinite(r) and abs(r) >= CORRELATED:
                 out.append([a, b, round(r, 3)])
+    return out
+
+
+def time_keys(
+    df: pl.DataFrame, fields: list[dict[str, Any]], numbers: dict[str, pl.Series]
+) -> dict[str, list[str]]:
+    """
+    For each date field (and each integer field of years), the fields that with it identify every row.
+
+    ``[]`` when the time alone does (one row per day); one or two grouping fields when
+    each time holds one row per series (``date`` and ``symbol``), in field order; absent
+    when no such key exists (the times of events, which repeat). Groupings are text or
+    integer fields with at least two values that repeat (at most one per two rows). The
+    site draws a line per series only where this holds, so a line never joins rows of
+    different series.
+    """
+    rows = df.height
+    if rows == 0:
+        return {}
+
+    def years(name: str) -> bool:
+        s = numbers.get(name)
+        if s is None or s.null_count() == s.len():
+            return False
+        lo, hi = cast("float", s.min()), cast("float", s.max())
+        return bool((s.drop_nulls() % 1 == 0).all()) and lo >= 1000 and hi <= 2200
+
+    times = [
+        f["name"]
+        for f in fields
+        if f.get("type") in {"date", "datetime"}
+        or (f.get("type") == "integer" and years(f["name"]))
+    ]
+
+    def grouping(f: dict[str, Any]) -> bool:
+        kind = f.get("type", "string")
+        n = df[f["name"]].n_unique()
+        # Integers with many values are measures (delays, budgets), not series.
+        limit = rows / 2 if kind in {"string", "boolean"} else min(rows / 2, 60)
+        return kind in {"string", "integer", "boolean"} and 2 <= n <= limit
+
+    groups = [f["name"] for f in fields if grouping(f)]
+
+    def unique(columns: list[str]) -> bool:
+        return df.select(pl.struct(columns).n_unique()).item() == rows
+
+    out: dict[str, list[str]] = {}
+    for t in times:
+        others = [g for g in groups if g != t]
+        candidates = [[], *([g] for g in others)]
+        candidates += [[a, b] for i, a in enumerate(others) for b in others[i + 1 :]]
+        key = next((c for c in candidates if unique([t, *c])), None)
+        if key is not None:
+            out[t] = key
     return out
 
 
