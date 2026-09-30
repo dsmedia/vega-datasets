@@ -12,10 +12,12 @@ from PIL import Image
 
 from scripts.build_site_catalog import (
     HIST_BINS,
+    build_dataset,
     data_url,
     editor_spec_url,
     example_slug,
     geo_features,
+    missing_values,
     parse_dates,
     preview_rows,
     profile_field,
@@ -222,3 +224,265 @@ def test_readme_markdown() -> None:
         "const [a](b) = 1;",
         "```",
     ]
+
+
+# ---------------------------------------------------------------------------
+# Standard Data Package properties: copied through when present, absent otherwise
+# ---------------------------------------------------------------------------
+
+FIXTURE_CSV = "id,parent,hp,grade,when\n1,,100,low,2020/01/02 10:00\n2,1,-99,high,2020/01/03 11:00\n3,1,NA,,\n"
+
+
+def _resource(path: Path, **extra: object) -> dict[str, object]:
+    return {
+        "name": "fixture",
+        "path": str(path),
+        "format": ".csv",
+        "type": "table",
+        "bytes": path.stat().st_size,
+        **extra,
+    }
+
+
+def _fixture(tmp_path: Path) -> Path:
+    path = tmp_path / "fixture.csv"
+    path.write_text(FIXTURE_CSV, "utf-8")
+    return path
+
+
+BARE_FIELDS = [
+    {"name": "id", "type": "integer"},
+    {"name": "parent", "type": "integer"},
+    {"name": "hp", "type": "number"},
+    {"name": "grade", "type": "string"},
+    {"name": "when", "type": "datetime"},
+]
+
+
+def test_build_dataset_without_metadata_adds_no_keys(tmp_path: Path) -> None:
+    entry = build_dataset(
+        _resource(_fixture(tmp_path), schema={"fields": BARE_FIELDS}),
+        [],
+        "https://example.invalid/fixture.csv",
+        tmp_path,
+    )
+    assert list(entry) == [
+        "name",
+        "file",
+        "url",
+        "format",
+        "kind",
+        "bytes",
+        "description",
+        "licenses",
+        "sources",
+        "usedBy",
+        "fields",
+        "rows",
+        "preview",
+    ]
+    for field in entry["fields"]:
+        assert list(field) == ["name", "type", "description", "profile"]
+    # Without missingValues only nulls (and text that isn't a number) are missing.
+    hp = next(f for f in entry["fields"] if f["name"] == "hp")
+    assert (hp["profile"]["min"], hp["profile"]["missing"]) == (-99.0, 1)
+
+
+def test_build_dataset_passes_standard_properties_through(tmp_path: Path) -> None:
+    categories = [{"value": "low", "label": "Low"}, {"value": "high", "label": "High"}]
+    foreign_keys = [
+        {"fields": ["parent"], "reference": {"resource": "", "fields": ["id"]}},
+        {"fields": "grade", "reference": {"resource": "grades", "fields": "name"}},
+    ]
+    fields = [
+        {
+            "name": "id",
+            "type": "integer",
+            "title": "Identifier",
+            "constraints": {"required": True, "unique": True},
+        },
+        {"name": "parent", "type": "integer"},
+        {
+            "name": "hp",
+            "type": "number",
+            "title": "Horsepower (hp)",
+            "description": "Engine power.",
+            "constraints": {"minimum": 0, "maximum": 500},
+            "missingValues": ["-99", "NA"],
+        },
+        {
+            "name": "grade",
+            "type": "string",
+            "categories": categories,
+            "categoriesOrdered": True,
+        },
+        {"name": "when", "type": "datetime", "format": "%Y/%m/%d %H:%M"},
+    ]
+    entry = build_dataset(
+        _resource(
+            _fixture(tmp_path),
+            title="A fully described fixture",
+            schema={
+                "fields": fields,
+                "primaryKey": ["id"],
+                "foreignKeys": foreign_keys,
+                "missingValues": ["", "NA"],
+            },
+        ),
+        [],
+        "https://example.invalid/fixture.csv",
+        tmp_path,
+    )
+    assert entry["title"] == "A fully described fixture"
+    assert entry["primaryKey"] == ["id"]
+    assert entry["foreignKeys"] == foreign_keys
+    assert entry["missingValues"] == ["", "NA"]
+    by_name = {f["name"]: f for f in entry["fields"]}
+    assert by_name["id"]["title"] == "Identifier"
+    assert by_name["id"]["constraints"] == {"required": True, "unique": True}
+    assert by_name["hp"]["title"] == "Horsepower (hp)"
+    assert by_name["hp"]["constraints"] == {"minimum": 0, "maximum": 500}
+    assert by_name["hp"]["missingValues"] == ["-99", "NA"]
+    assert by_name["grade"]["categories"] == categories
+    assert by_name["grade"]["categoriesOrdered"] is True
+    assert by_name["when"]["format"] == "%Y/%m/%d %H:%M"
+    assert "missingValues" not in by_name["parent"]
+    # The field's own missingValues replace the schema's: -99 and NA are missing,
+    # so the range is the one real value.
+    assert by_name["hp"]["profile"]["missing"] == 2
+    assert (by_name["hp"]["profile"]["min"], by_name["hp"]["profile"]["max"]) == (
+        100.0,
+        100.0,
+    )
+    # Every field keeps its order: name, type, description, the new keys, profile.
+    assert list(by_name["hp"]) == [
+        "name",
+        "type",
+        "description",
+        "title",
+        "constraints",
+        "missingValues",
+        "profile",
+    ]
+
+
+def test_schema_missing_values_apply_to_fields_without_their_own(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "codes.csv"
+    path.write_text("code,n\nA,1\n-,2\nB,-\nA,3\n", "utf-8")
+    entry = build_dataset(
+        _resource(
+            path,
+            schema={
+                "fields": [
+                    {"name": "code", "type": "string"},
+                    {"name": "n", "type": "integer"},
+                ],
+                "missingValues": [{"value": "-", "label": "Not recorded"}],
+            },
+        ),
+        [],
+        "https://example.invalid/codes.csv",
+        tmp_path,
+    )
+    code, n = entry["fields"]
+    assert (code["profile"]["missing"], code["profile"]["distinct"]) == (1, 2)
+    assert n["profile"]["missing"] == 1
+
+
+def test_missing_values_accepts_strings_and_labelled_values() -> None:
+    assert missing_values(None) == []
+    assert missing_values(["", "NA"]) == ["", "NA"]
+    assert missing_values([{"value": "-99", "label": "Not asked"}, "x"]) == ["-99", "x"]
+
+
+def test_profile_counts_documented_missing_values() -> None:
+    s = pl.Series("x", ["1", "-999", "3", "", None])
+    assert profile_field(s, "number")["missing"] == 2
+    p = profile_field(s, "number", ["-999"])
+    assert (p["missing"], p["min"]) == (3, 1.0)
+    # Nominal fields: the documented value leaves the most common values too.
+    s = pl.Series("c", ["a", "n/a", "n/a", "b"])
+    p = profile_field(s, "string", ["n/a"])
+    assert (p["missing"], p["distinct"]) == (2, 2)
+    # Typed columns (Parquet, Arrow) keep their type.
+    typed = pl.Series("t", [1, -1, 5], dtype=pl.Int64)
+    assert profile_field(typed, "integer", ["-1"])["min"] == 1.0
+
+
+def test_field_missing_values_replace_the_schema_list_not_extend_it(
+    tmp_path: Path,
+) -> None:
+    # Replacing leaves "NA" a value of `code` (2 distinct, 1 missing); a union of the
+    # field's and the schema's markers would count it missing too (1 distinct, 2 missing).
+    path = tmp_path / "codes.csv"
+    path.write_text("code\nA\n-\nNA\n", "utf-8")
+    entry = build_dataset(
+        _resource(
+            path,
+            schema={
+                "fields": [{"name": "code", "type": "string", "missingValues": ["-"]}],
+                "missingValues": ["NA"],
+            },
+        ),
+        [],
+        "https://example.invalid/codes.csv",
+        tmp_path,
+    )
+    profile = entry["fields"][0]["profile"]
+    assert (profile["missing"], profile["distinct"]) == (1, 2)
+    assert profile["top"] == [["A", 1], ["NA", 1]]
+
+
+def test_an_explicit_missing_values_list_replaces_the_empty_string_default(
+    tmp_path: Path,
+) -> None:
+    # Table Schema: missingValues defaults to [""]; an explicit list replaces it, so
+    # with [] an empty string is a value. Without a list, empty text stays missing.
+    path = tmp_path / "rows.json"
+    path.write_text(json.dumps([{"c": ""}, {"c": "A"}]), "utf-8")
+
+    def profile(**field: object) -> dict[str, object]:
+        entry = build_dataset(
+            _resource(
+                path,
+                format=".json",
+                schema={"fields": [{"name": "c", "type": "string", **field}]},
+            ),
+            [],
+            "https://example.invalid/rows.json",
+            tmp_path,
+        )
+        return entry["fields"][0]["profile"]
+
+    assert (profile()["missing"], profile()["distinct"]) == (1, 1)
+    explicit = profile(missingValues=[])
+    assert (explicit["missing"], explicit["distinct"]) == (0, 2)
+    assert profile(missingValues=["A"])["top"] == [["", 1]]
+    both = profile(missingValues=["", "A"])
+    assert (both["missing"], both["distinct"]) == (2, 0)
+
+
+def test_an_explicit_empty_list_keeps_empty_csv_cells_as_values(tmp_path: Path) -> None:
+    # CSV and TSV readers turn an empty cell into null unless told otherwise; with an
+    # explicit list that lacks "", the cell is a value. Without a list, it stays missing.
+    path = tmp_path / "rows.csv"
+    path.write_text("c,n\n,1\nA,2\n", "utf-8")
+
+    def profiles(**schema: object) -> list[dict[str, object]]:
+        fields = [{"name": "c", "type": "string"}, {"name": "n", "type": "integer"}]
+        entry = build_dataset(
+            _resource(path, schema={"fields": fields, **schema}),
+            [],
+            "https://example.invalid/rows.csv",
+            tmp_path,
+        )
+        return [f["profile"] for f in entry["fields"]]
+
+    c, n = profiles()
+    assert (c["missing"], c["distinct"], n["missing"]) == (1, 1, 0)
+    c, n = profiles(missingValues=[])
+    assert (c["missing"], c["distinct"], n["missing"]) == (0, 2, 0)
+    c, _ = profiles(missingValues=["A"])
+    assert (c["missing"], c["top"]) == (1, [["", 1]])

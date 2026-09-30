@@ -72,6 +72,18 @@ export function metaDescription(markdown: string, max = 160): string {
   return clip(plainText(first), max);
 }
 
+/**
+ * A dataset page's meta description: its title (when the metadata has one) followed by
+ * the description's first paragraph, else that paragraph alone, at most 160 characters.
+ */
+export function datasetMetaDescription(d: Dataset): string {
+  const description = d.description || `${d.name} from vega-datasets.`;
+  if (!d.title) return metaDescription(description);
+  // A title is plain text: only the description is Markdown.
+  const title = d.title.trim();
+  return clip(`${title}${/[.!?]$/.test(title) ? "" : "."} ${metaDescription(description, Infinity)}`, 160);
+}
+
 const MIME: Record<string, string> = {
   csv: "text/csv",
   tsv: "text/tab-separated-values",

@@ -51,9 +51,10 @@ function within(v: number, [lo, hi]: [number, number]): boolean {
   return v >= Math.min(lo, hi) && v <= Math.max(lo, hi);
 }
 
-/** Search matches a dataset's name, its field names and its description. */
+/** Search matches a dataset's name, its title, its field names and its description. */
 function matches(d: Dataset, needle: string): boolean {
   return d.name.toLowerCase().includes(needle)
+    || (d.title?.toLowerCase().includes(needle) ?? false)
     || d.fields.some((f) => f.name.toLowerCase().includes(needle))
     || d.description.toLowerCase().includes(needle);
 }
@@ -144,12 +145,12 @@ export function chartRows(c: Catalog, size: (bytes: number) => string): ChartRow
 
 /**
  * The catalog, cut down to what the home page's search, chips, sort and chart read
- * (served as home-index.json): each dataset's name, format, size, row count, description,
- * field names and the examples that use it, and each such example's gallery.
+ * (served as home-index.json): each dataset's name, format, size, row count, title (when it
+ * has one), description, field names and the examples that use it, and each such example's gallery.
  */
 export interface HomeIndex {
   package: CatalogFile["package"];
-  datasets: (Pick<Dataset, "name" | "format" | "kind" | "bytes" | "rows" | "description" | "usedBy"> & { fields: { name: string }[] })[];
+  datasets: (Pick<Dataset, "name" | "title" | "format" | "kind" | "bytes" | "rows" | "description" | "usedBy"> & { fields: { name: string }[] })[];
   examples: Pick<Example, "id" | "gallery">[];
 }
 
@@ -163,6 +164,7 @@ export function homeIndex(c: Catalog): HomeIndex {
       kind: d.kind,
       bytes: d.bytes,
       rows: d.rows,
+      ...(d.title ? { title: d.title } : {}),
       description: d.description,
       usedBy: d.usedBy,
       fields: d.fields.map((f) => ({ name: f.name })),

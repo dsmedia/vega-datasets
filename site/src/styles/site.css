@@ -263,6 +263,7 @@ table.preview tr:last-child td { border-bottom: 0; }
 
 .ds-head { display: flex; flex-direction: column; gap: 14px; padding-top: 20px; }
 .ds-name { font-family: var(--font-mono); font-weight: 400; font-size: 52px; line-height: 1; letter-spacing: -0.02em; color: var(--ink-strong); overflow-wrap: anywhere; }
+.ds-title { font-size: 18px; line-height: 1.4; color: var(--ink-muted); max-width: 46em; }
 .lede { font-size: 1.3em; font-weight: 300; line-height: 1.5; max-width: 46em; }
 .body-md { max-width: 66ch; font-size: 15px; }
 .badges { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -300,8 +301,17 @@ a.tab, a.tab:hover { text-decoration: none; display: inline-block; }
 .dict { border-collapse: collapse; width: 100%; font-size: 14px; }
 .dict th { text-align: left; font-weight: bold; font-size: 12.5px; color: var(--ink-muted); border-bottom: 1px solid var(--rule); padding: 8px 12px 8px 0; }
 .dict td { border-bottom: 1px solid var(--rule-faint); padding: 10px 12px 10px 0; vertical-align: middle; }
+/* Long unbroken values (URLs, list literals) wrap instead of widening the table past its column. */
+.f-sum { overflow-wrap: anywhere; }
+.f-name { overflow-wrap: break-word; }
 .dict code { padding: 0 4px; background: var(--surface-code); border: 1px solid var(--rule-soft); color: var(--ink); font-size: 13px; }
 .f-desc { margin-top: 4px; font-size: 13px; color: var(--ink-muted); max-width: 44ch; }
+/* Schema metadata, when it is filled in: quiet, under the name and beside the type. */
+.f-title { display: block; margin-top: 4px; font-size: 13.5px; color: var(--ink); max-width: 44ch; }
+.f-key { margin-left: 6px; font: 11px var(--font-mono); color: var(--ink-muted); border: 1px solid var(--rule); border-radius: var(--radius-tag); padding: 0 4px; white-space: nowrap; }
+.f-meta { margin-top: 4px; font-size: 12.5px; color: var(--ink-muted); max-width: 44ch; }
+.f-format { display: block; margin-top: 4px; font-size: 11.5px; color: var(--ink-muted); white-space: nowrap; }
+.joins code { font-size: 12.5px; }
 .type {
   font: 11.5px var(--font-mono); color: var(--ink-heading-4); background: var(--surface-code);
   border: 1px solid var(--rule-soft); padding: 1px 6px; border-radius: var(--radius-tag); white-space: nowrap;
@@ -616,7 +626,8 @@ html:not(.js) :is(.filters, .browse-foot .more, #examples .seg, #examples .more,
 
   /* Fields: one block per field */
   .dict thead { display: none; }
-  .dict tr { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 12px; padding: 12px 0; border-bottom: 1px solid var(--rule-faint); }
+  /* Two equal columns: a long name or description no longer squeezes the summary beside it. */
+  .dict tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px 12px; padding: 12px 0; border-bottom: 1px solid var(--rule-faint); }
   .dict td { padding: 0; border: 0; }
   .f-name { grid-column: 1; }
   .f-type { grid-column: 2; justify-self: end; }

@@ -6,7 +6,7 @@
  */
 import type { GetStaticPaths } from "astro";
 import { catalog as c } from "../../prerender/catalog";
-import Sparkline from "../../components/Sparkline.astro";
+import FieldsTable from "../../components/FieldsTable.astro";
 import SnippetTabs from "../../components/SnippetTabs.astro";
 import Thumb from "../../components/Thumb.astro";
 import UsageStack from "../../components/UsageStack.astro";
@@ -22,9 +22,8 @@ import { drawnChart } from "../../prerender/chart-svg";
 import { FORMAT_LABEL, formatBytes, formatCount, plural } from "../../lib/format";
 import { markdownToHtml } from "../../lib/markdown";
 import { hasMotion } from "../../lib/motion";
-import { missingCount, profileSummary, sparkline, typeLabel } from "../../lib/profile";
 import { editorUrl, starterSpec } from "../../lib/starter";
-import { breadcrumbJsonLd, datasetJsonLd, datasetPath, datasetTitle, jsonForScript, metaDescription, REPO } from "../../lib/seo";
+import { breadcrumbJsonLd, datasetJsonLd, datasetMetaDescription, datasetPath, datasetTitle, jsonForScript, REPO } from "../../lib/seo";
 
 export const getStaticPaths = (() => c.datasets.map((d) => ({ params: { name: d.name }, props: { d } }))) satisfies GetStaticPaths;
 
@@ -52,8 +51,7 @@ const examples = d.usedBy.length;
 const license = licenseFamily(d);
 
 // Sections, in page order (the section nav links to the ones that exist).
-const described = d.fields.some((f) => f.description);
-const fields = d.fields.map((f) => ({ f, spark: sparkline(f), miss: missingCount(f, d.rows) }));
+const names = new Set(c.datasets.map((x) => x.name));
 
 const modes = exploreModes(d);
 const sf = scatterFields(d);
@@ -117,7 +115,7 @@ const notSpecified = license === "Not specified";
 const { preview: _preview, ...clientData } = d;
 const title = datasetTitle(d);
 ---
-<Base title={title} description={metaDescription(d.description || `${d.name} from vega-datasets.`)} path={datasetPath(d.name)} section="dataset" jsonLd={[datasetJsonLd(c, d), breadcrumbJsonLd(d)]}>
+<Base title={title} description={datasetMetaDescription(d)} path={datasetPath(d.name)} section="dataset" jsonLd={[datasetJsonLd(c, d), breadcrumbJsonLd(d)]}>
   <Fragment slot="head">
     <link rel="prev" href={page(prev.name)}>
     <link rel="next" href={page(next.name)}>
@@ -138,7 +136,7 @@ const title = datasetTitle(d);
   </div>
 
   <header class="wrap ds-head">
-    <h1 class="ds-name">{d.name}</h1>
+    <h1 class="ds-name">{d.name}</h1>{d.title && <p class="ds-title">{d.title}</p>}
     <div class="lede md" set:html={markdownToHtml(lede)} />
     {rest.length > 0 && <div class="md body-md" set:html={markdownToHtml(rest.join("\n\n"))} />}
     <div class="badges">
@@ -166,21 +164,7 @@ const title = datasetTitle(d);
       {d.fields.length > 0 && (
         <section class="ds-sec" id="fields" aria-labelledby="fields-h">
           <div class="sec-head"><h2 id="fields-h">Fields</h2></div>
-          <table class="dict">
-            <thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Distribution</th><th scope="col">Summary</th><th scope="col" class="f-miss">Missing</th></tr></thead>
-            <tbody>
-              {fields.map(({ f, spark, miss }) => (
-                <tr>
-                  <td class="f-name"><code>{f.name}</code>{f.description && <p class="f-desc">{f.description}</p>}</td>
-                  <td class="f-type"><span class="type">{typeLabel(f)}</span></td>
-                  <td class="f-dist">{spark ? <Sparkline model={spark} /> : f.profile.kind === "nominal" ? `${formatCount(f.profile.distinct)} distinct` : ""}</td>
-                  <td class={`f-sum${f.profile.kind === "nominal" ? "" : " mono"}`}>{profileSummary(f)}</td>
-                  <td class={`f-miss mono${miss.any ? " any" : ""}`}><span class="phone-only">Missing </span>{miss.text}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <p class="sec-note">{d.rows !== null && `Profiled across all ${formatCount(d.rows)} rows. `}{!described && "No field descriptions yet. "}{!described && <a href={METADATA}>Add them</a>}</p>
+          <FieldsTable dataset={d} metadata={METADATA} names={names} />
         </section>
       )}
 

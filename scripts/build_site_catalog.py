@@ -243,14 +243,22 @@ def _cell(value: Any) -> str | None:
     return str(value)
 
 
-def read_table(path: Path, fmt: str) -> pl.DataFrame | None:
-    """Read a tabular resource. CSV and JSON load as strings; the schema decides types."""
+def read_table(
+    path: Path, fmt: str, *, keep_empty: bool = False
+) -> pl.DataFrame | None:
+    """
+    Read a tabular resource. CSV and JSON load as strings; the schema decides types.
+
+    An empty CSV or TSV cell reads as null, unless ``keep_empty`` (a schema that
+    declares ``missingValues`` decides for itself whether empty text is missing).
+    """
     if fmt in {"csv", "tsv"}:
         return pl.read_csv(
             path,
             separator="\t" if fmt == "tsv" else ",",
             infer_schema=False,
             truncate_ragged_lines=True,
+            missing_utf8_is_empty_string=keep_empty,
         )
     if fmt == "parquet":
         return pl.read_parquet(path)
@@ -319,13 +327,35 @@ def _bins(offsets: pl.Series, span: float) -> list[int]:
     return [counts.get(i, 0) for i in range(HIST_BINS)]
 
 
-def profile_field(s: pl.Series, field_type: str) -> dict[str, Any]:
+def missing_values(spec: list[Any] | None) -> list[str]:
+    """
+    The values a Table Schema ``missingValues`` list marks as missing.
+
+    Items are strings, or ``{value, label}`` objects (Table Schema v2).
+    """
+    return [str(m["value"] if isinstance(m, dict) else m) for m in spec or []]
+
+
+def without_missing(s: pl.Series, values: list[str]) -> pl.Series:
+    """``s`` with the cells whose text is one of ``values`` set to null (its type kept)."""
+    mask = s.cast(pl.String, strict=False).is_in(values).fill_null(value=False)
+    return s.zip_with(~mask, pl.Series(s.name, [None] * s.len(), dtype=s.dtype))
+
+
+def profile_field(
+    s: pl.Series, field_type: str, markers: list[str] | None = None
+) -> dict[str, Any]:
     """
     Summarize one column for the Field Guide.
 
     Numbers and dates get range and a histogram; everything else (strings,
-    booleans, lists) gets its most common values.
+    booleans, lists) gets its most common values. Nulls count as missing, and
+    so do the documented missing-value ``markers``; without a list, Table Schema's
+    default (empty text) applies. An explicit list replaces it, so with ``[]``
+    empty text is a value.
     """
+    if markers:
+        s = without_missing(s, markers)
     n = s.len()
     if field_type in {"integer", "number"}:
         num = s.cast(pl.Float64, strict=False)
@@ -363,7 +393,8 @@ def profile_field(s: pl.Series, field_type: str) -> dict[str, Any]:
             profile["bins"] = _bins((valid - lo).dt.total_seconds(), span)
         return profile
     text = s.cast(pl.String, strict=False).drop_nulls()
-    text = text.filter(text.str.len_chars() > 0)
+    if markers is None:
+        text = text.filter(text.str.len_chars() > 0)
     # Break count ties by value so rebuilds produce the same catalog.
     counts = text.value_counts(name="n").sort(
         ["n", text.name], descending=[True, False]
@@ -445,6 +476,24 @@ def geo_features(doc: dict[str, Any], fmt: str) -> dict[str, Any]:
     return {"objects": list(objects), "objectFeatures": counts}
 
 
+# Standard Data Package and Table Schema properties the site shows when they are
+# filled in. Each is copied only when present, so an undescribed dataset's entry
+# stays exactly as it was.
+FIELD_PROPERTIES: Final = (
+    "title",
+    "categories",
+    "categoriesOrdered",
+    "constraints",
+    "format",
+    "missingValues",
+)
+SCHEMA_PROPERTIES: Final = ("primaryKey", "foreignKeys", "missingValues")
+
+
+def _present(d: dict[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
+    return {k: d[k] for k in keys if k in d}
+
+
 def build_dataset(
     resource: dict[str, Any], used_by: list[str], url: str, thumbs: Path
 ) -> dict[str, Any]:
@@ -452,6 +501,7 @@ def build_dataset(
     path = REPO_ROOT / "data" / resource["path"]
     entry: dict[str, Any] = {
         "name": resource["name"],
+        **_present(resource, ("title",)),
         "file": resource["path"],
         "url": url,
         "format": fmt,
@@ -472,20 +522,35 @@ def build_dataset(
             path.read_bytes(), ".png", thumbs / "data" / resource["name"]
         )
         entry["image"] = f"thumbs/data/{name}"
-    df = read_table(path, fmt) if resource["type"] == "table" else None
+    schema = resource.get("schema") or {}
+    declared = "missingValues" in schema or any(
+        "missingValues" in f for f in schema.get("fields") or []
+    )
+    df = (
+        read_table(path, fmt, keep_empty=declared)
+        if resource["type"] == "table"
+        else None
+    )
     if df is None:
         return entry
-    schema = (resource.get("schema") or {}).get("fields", [])
-    fields = schema or [{"name": c, "type": "string"} for c in df.columns]
+    fields = schema.get("fields") or [{"name": c, "type": "string"} for c in df.columns]
     for field in fields:
         if field["name"] not in df.columns:
             continue
+        # A field's own missingValues replace the schema's (Table Schema v2);
+        # neither leaves the default (None: empty text is missing).
+        spec = field.get("missingValues", schema.get("missingValues"))
+        missing = None if spec is None else missing_values(spec)
         entry["fields"].append({
             "name": field["name"],
             "type": field.get("type", "string"),
             "description": field.get("description"),
-            "profile": profile_field(df[field["name"]], field.get("type", "string")),
+            **_present(field, FIELD_PROPERTIES),
+            "profile": profile_field(
+                df[field["name"]], field.get("type", "string"), missing
+            ),
         })
+    entry.update(_present(schema, SCHEMA_PROPERTIES))
     columns = [f["name"] for f in entry["fields"]]
     entry["rows"] = df.height
     entry["preview"] = {"columns": columns, "rows": preview_rows(df, columns)}
