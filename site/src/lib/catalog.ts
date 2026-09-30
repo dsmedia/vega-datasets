@@ -122,6 +122,8 @@ export interface Dataset {
   /** GeoJSON: how many features the file holds, and their geometry types. */
   features?: number;
   geometryTypes?: string[];
+  /** For each date (or year) field that indexes the rows, the fields that with it identify every row ([] for none). */
+  timeKeys?: Record<string, string[]>;
   /** Pairs of number fields that move together (|r| ≥ 0.9), as `[a, b, r]`. */
   correlated?: [string, string, number][];
   /** A table with latitude and longitude columns: the box holding the middle 98% of each, and the share of points in the US. */
