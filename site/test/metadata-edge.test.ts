@@ -7,6 +7,7 @@ import type { Dataset, Field } from '../src/lib/catalog';
 import { defaultAxes, scatterFields, scatterSpec } from '../src/lib/explore-model';
 import { fieldNotes, missingNote } from '../src/lib/field-meta';
 import { densityGrid } from '../src/lib/large-data';
+import { datasetMetaDescription } from '../src/lib/seo';
 import { starterSpec } from '../src/lib/starter';
 import { draw, rowsWith } from './draw';
 import { described, strip } from './fixtures';
@@ -195,6 +196,11 @@ describe('fields table text', () => {
     expect(missingNote(table([own, nominal('d', ['x'])], { missingValues: ['NA'] }))).toBe('“NA” counts as missing, except in fields that list their own markers.');
     expect(missingNote(table([nominal('d', ['x'])], { missingValues: ['NA'] }))).toBe('“NA” counts as missing.');
   });
+});
+
+test('a title is plain text in the meta description, not Markdown', () => {
+  expect(datasetMetaDescription({ ...described(), title: 'CO_2 *measurements*' })).toBe('CO_2 *measurements*. A small table for testing.');
+  expect(datasetMetaDescription({ ...described(), description: 'A **bold** start.' })).toBe('Five cars, fully described. A bold start.');
 });
 
 test('bars with only a positive minimum documented encode as if undescribed', () => {

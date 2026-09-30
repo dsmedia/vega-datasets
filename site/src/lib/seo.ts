@@ -79,8 +79,9 @@ export function metaDescription(markdown: string, max = 160): string {
 export function datasetMetaDescription(d: Dataset): string {
   const description = d.description || `${d.name} from vega-datasets.`;
   if (!d.title) return metaDescription(description);
-  const title = plainText(d.title);
-  return metaDescription(`${title}${/[.!?]$/.test(title) ? "" : "."} ${description.trim()}`);
+  // A title is plain text: only the description is Markdown.
+  const title = d.title.trim();
+  return clip(`${title}${/[.!?]$/.test(title) ? "" : "."} ${metaDescription(description, Infinity)}`, 160);
 }
 
 const MIME: Record<string, string> = {
