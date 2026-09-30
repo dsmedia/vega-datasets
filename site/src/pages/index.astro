@@ -64,19 +64,8 @@ const about = readmeItems.flatMap(([id, title, hint, heading]) => {
       <SnippetTabs id="qs" label="Quick start" snippets={[
         { name: "URL", code: cdnUrl("cars.json") },
         { name: "JavaScript", code: "npm install vega-datasets\n\nimport data from 'vega-datasets';\nconst cars = await data['cars.json']();" },
-        {
-          name: "Vega-Lite",
-          code: [
-            "{",
-            `  "data": {"url": "${cdnUrl("cars.json")}"},`,
-            `  "mark": "point",`,
-            `  "encoding": {`,
-            `    "x": {"field": "Horsepower", "type": "quantitative"},`,
-            `    "y": {"field": "Miles_per_Gallon", "type": "quantitative"}`,
-            "  }",
-            "}",
-          ].join("\n"),
-        },
+        // The data block alone, as on the dataset pages: a whole spec made the box tall.
+        { name: "Vega-Lite", code: `"data": ${JSON.stringify({ url: cdnUrl("cars.json") }, null, 2)}` },
         { name: "Python", code: "from altair.datasets import data\n\ncars = data.cars()" },
       ]} />
       <p class="note">The <code>@{major}</code> URL tracks {major}.x releases, so it gets fixes without breaking changes. To lock a version, use <code>@{c.package.version}</code>. <a href="#about-versioning" data-open-details>Versioning</a></p>
