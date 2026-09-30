@@ -13,6 +13,7 @@ import { chartConfig } from "../lib/vega-theme";
 import { readers, siteDataUri } from "../lib/vega-data";
 import { siteDataBase, siteText } from "./data";
 import { chartInk, token } from "./theme";
+import { dismissTipsOnTouch } from "./tooltip";
 
 export interface VegaModules {
   vegaEmbed: typeof import("vega-embed").default;
@@ -72,6 +73,7 @@ function setUp([embed, interp, vega]: Modules): VegaModules {
  * site.css; canvas charts bake the colors in, so they are drawn again (see onThemeChange).
  */
 export function embedOptions(v: VegaModules, renderer: "svg" | "canvas", actions: EmbedOptions["actions"], onLoadError?: (uri: string, err: unknown) => void): EmbedOptions {
+  dismissTipsOnTouch();
   return {
     config: chartConfig(chartInk(), token("--font-sans")) as EmbedOptions["config"],
     renderer,
