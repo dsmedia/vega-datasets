@@ -486,3 +486,27 @@ def test_an_explicit_empty_list_keeps_empty_csv_cells_as_values(tmp_path: Path) 
     assert (c["missing"], c["distinct"], n["missing"]) == (0, 2, 0)
     c, _ = profiles(missingValues=["A"])
     assert (c["missing"], c["top"]) == (1, [["", 1]])
+
+
+def test_build_dataset_marks_fields_read_from_the_data(tmp_path: Path) -> None:
+    # A table without a schema: its fields come from the file's columns, not the
+    # metadata, so the site doesn't count their missing descriptions as gaps.
+    inferred = build_dataset(
+        _resource(_fixture(tmp_path)), [], "https://example.invalid/f.csv", tmp_path
+    )
+    assert inferred["fieldsInferred"] is True
+    assert [f["name"] for f in inferred["fields"]] == [
+        "id",
+        "parent",
+        "hp",
+        "grade",
+        "when",
+    ]
+    # A declared schema adds no key (today's catalog stays as it was).
+    declared = build_dataset(
+        _resource(_fixture(tmp_path), schema={"fields": BARE_FIELDS}),
+        [],
+        "https://example.invalid/f.csv",
+        tmp_path,
+    )
+    assert "fieldsInferred" not in declared

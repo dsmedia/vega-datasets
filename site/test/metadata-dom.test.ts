@@ -11,7 +11,7 @@ import FieldsTable from '../src/components/FieldsTable.astro';
 import { Catalog, type CatalogFile, type Dataset } from '../src/lib/catalog';
 import { described, strip } from './fixtures';
 
-const METADATA = 'https://github.com/vega/vega-datasets/blob/main/_data/datapackage_additions.toml';
+const METADATA = 'https://github.com/vega/vega-datasets/blob/main/_data/datapackage_additions.toml#L42';
 
 let container: AstroContainer;
 beforeAll(async () => {
@@ -71,8 +71,28 @@ test('without the metadata the table is the markup it always was', async () => {
   expect(doc.querySelector('.f-title, .f-meta, .f-key, .f-format, .joins')).toBeNull();
   expect(doc.querySelectorAll('.sec-note')).toHaveLength(1);
   expect(text(doc.querySelector('.sec-note'))).toBe('Profiled across all 5 rows.');
-  // The markup, sparklines aside (the 6a HTML diff checked every built page against 56ba567).
+  // The markup, sparklines aside (the 6a HTML diff checked every built page against 56ba567),
+  // plus the "Add" link beside each undescribed field (6b).
   expect(html.replace(/<svg[\s\S]*?<\/svg>/g, '<svg/>')).toMatchSnapshot();
+});
+
+test('each undescribed field has a quiet "Add" link to the metadata entry, named for screen readers', async () => {
+  const { doc } = await render(described());
+  const adds = [...doc.querySelectorAll<HTMLAnchorElement>('.f-name a.f-add')];
+  // Visually "Add"; its accessible name says what it adds (the rest is visually hidden).
+  expect(adds.map((a) => text(a))).toEqual(['id', 'mpg', 'grade', 'side', 'origin', 'when'].map((n) => `Add a description for ${n}`));
+  expect(adds.map((a) => a.firstChild?.textContent)).toEqual(Array(6).fill('Add'));
+  expect(adds.every((a) => a.querySelector('.visually-hidden') && a.getAttribute('href') === METADATA)).toBe(true);
+  expect(row(doc, 'hp').querySelector('.f-add')).toBeNull();
+  // With no description at all, the note under the table links to the same entry.
+  const { doc: none } = await render({ ...described(), fields: described().fields.map((f) => ({ ...f, description: '  ' })) });
+  expect(none.querySelectorAll('.f-add')).toHaveLength(8);
+  const note = none.querySelector<HTMLAnchorElement>('.sec-note a')!;
+  expect(text(note)).toBe('Add them');
+  expect(note.getAttribute('href')).toBe(METADATA);
+  // Columns read from the data (no declared schema) aren't the metadata's fields: no "Add" beside them.
+  const { doc: inferred } = await render({ ...described(), fieldsInferred: true, fields: described().fields.map((f) => ({ ...f, description: null })) });
+  expect(inferred.querySelectorAll('.f-add')).toHaveLength(0);
 });
 
 test('a card summarizes the dataset by its title, else by its description', async () => {

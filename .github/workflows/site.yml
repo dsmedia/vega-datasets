@@ -29,6 +29,12 @@ jobs:
 
     name: Build site
 
+    env:
+      # Edit links ("Add", "Edit this dataset's metadata") go to the repository that
+      # built the site: a fork's deploy to the fork, vega's to vega/vega-datasets. Set for
+      # the whole job, so the tests and the link check see what the build used.
+      SITE_REPO: ${{ github.repository }}
+
     steps:
       - uses: actions/checkout@v7
 

@@ -5,6 +5,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test } from 'vitest';
+import { siteRepo } from '../../src/lib/seo';
 import { starterSpec } from '../../src/lib/starter';
 import { REPO, loadCatalog } from '../catalog';
 
@@ -22,8 +23,8 @@ const CONCURRENCY = 12;
 
 /**
  * Fixed links in site/src (layout, pages, components, scripts): literal https URLs, and `${REPO}…` templates
- * with the repository URL filled in. Links built from other values (a dataset's file,
- * an encoded spec) are covered by the catalog loop instead. Fragments are dropped:
+ * with the repository URL filled in (`${EDIT_REPO}…` with the one SITE_REPO names, as the
+ * build does). Links built from other values (a dataset's file, an encoded spec) are covered by the catalog loop instead. Fragments are dropped:
  * a HEAD request can't see them (home.test.ts checks the README anchors).
  */
 function writtenLinks(): string[] {
@@ -36,6 +37,8 @@ function writtenLinks(): string[] {
   const urls = texts.flatMap((t) => [
     ...[...t.matchAll(/https:\/\/[^\s"'`)<>]+/g)].map((m) => m[0]),
     ...[...t.matchAll(/`\$\{REPO\}([^`]*)`/g)].map((m) => repo + m[1]),
+    // Edit links go to the repository this build names (SITE_REPO; a fork's CI sets its own).
+    ...[...t.matchAll(/`\$\{EDIT_REPO\}([^`]*)`/g)].map((m) => siteRepo(process.env) + m[1]),
   ]);
   return [...new Set(urls
     .map((u) => u.split('#')[0]!)
@@ -80,7 +83,8 @@ test('every link target resolves', async () => {
   }
 
   const written = writtenLinks();
-  expect(written).toContain('https://github.com/vega/vega-datasets/blob/main/_data/datapackage_additions.toml');
+  // The edit links' repository as this build configures it (a fork's own, in its CI).
+  expect(written).toContain(`${siteRepo(process.env)}/blob/main/_data/datapackage_additions.toml`);
   for (const url of written) links.set(url, 'link in the page code');
 
   const queue = [...links];

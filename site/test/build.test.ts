@@ -4,9 +4,12 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, test } from 'vitest';
+import { completeness } from '../src/lib/completeness';
 import { chartFeatures } from '../src/lib/explore-model';
 import { type DensityGrid, densityCaption, densityPageSpec, densitySpec } from '../src/lib/large-data';
 import { editorUrl } from '../src/lib/starter';
+import { siteRepo } from '../src/lib/seo';
+import { anchorProblems } from './anchors';
 import { loadCatalog, REPO } from './catalog';
 
 const catalog = loadCatalog();
@@ -82,8 +85,65 @@ test('dataset pages carry Dataset and BreadcrumbList JSON-LD', () => {
 
 test('the sitemap lists every page', () => {
   const xml = readFileSync(path.join(dist, 'sitemap.xml'), 'utf8');
-  expect(xml.match(/<loc>/g)).toHaveLength(catalog.datasets.length + 1);
+  expect(xml.match(/<loc>/g)).toHaveLength(catalog.datasets.length + 2);
   expect(xml).toContain('<loc>https://vega.github.io/vega-datasets/datasets/cars/</loc>');
+  expect(xml).toContain('<loc>https://vega.github.io/vega-datasets/metadata/</loc>');
+});
+
+describe('metadata gaps (DECISIONS D6)', () => {
+  // Edit links go to the repository the build was told about (site.yml sets SITE_REPO for the
+  // whole job, so this test sees what the build saw); vega/vega-datasets by default.
+  const FILE = `${siteRepo(process.env)}/blob/main/_data/datapackage_additions.toml`;
+  const isEntry = (href: string | undefined) => !!href && href.startsWith(`${FILE}#L`) && /^\d+$/.test(href.slice(FILE.length + 2));
+  const status = html(path.join(dist, 'metadata', 'index.html'));
+  const rows = [...status.matchAll(/<tr id="ds-([^"]+)">([\s\S]*?)<\/tr>/g)].map(([, id, body]) => ({ id: id!, body: body! }));
+
+  test('the status page: a row per dataset, most gaps first, ties by name, each linking to its page and entry', () => {
+    expect(status).toContain('<title>Metadata Status · Vega Datasets</title>');
+    expect(rows.map((r) => r.id).sort()).toEqual(catalog.datasets.map((d) => d.name).sort());
+    const gaps = rows.map((r) => ({ id: r.id, n: completeness(catalog.dataset(r.id)!).gaps }));
+    expect(gaps).toEqual([...gaps].sort((a, b) => b.n - a.n || a.id.localeCompare(b.id)));
+    for (const { id, body } of rows) {
+      expect(body, id).toContain(`href="${BASE}datasets/${id}/"`);
+      const hrefs = [...body.matchAll(/href="(https:[^"]+)"/g)].map((m) => m[1]!);
+      expect(hrefs, id).toHaveLength(1);
+      expect(isEntry(hrefs[0]), `${id}: ${hrefs[0]}`).toBe(true);
+    }
+    // Row ids are namespaced ("ds-<name>"), so none collides with the layout's own (main#page, …).
+    const ids = [...status.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]!);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids.filter((i) => i.startsWith('ds-'))).toHaveLength(catalog.datasets.length);
+  });
+
+  test('each entry link points at its [[resources]] header, in the order the parser reads the resources', () => {
+    const text = readFileSync(path.join(REPO, '_data', 'datapackage_additions.toml'), 'utf8');
+    const anchors = new Map(rows.map(({ id, body }) => [catalog.dataset(id)!.file, Number(body.match(/\.toml#L(\d+)"/)![1])] as const));
+    expect(anchorProblems(text, anchors)).toEqual([]);
+  });
+
+  test('dataset pages: an "Add" per undescribed field, and one footer line to the status row when there are gaps', () => {
+    for (const d of catalog.datasets) {
+      const text = html(path.join(dist, 'datasets', d.name, 'index.html'));
+      const s = completeness(d);
+      const adds = [...text.matchAll(/<a class="f-add" href="([^"]+)">Add<span class="visually-hidden"> a description for ([^<]+)<\/span><\/a>/g)];
+      expect(adds.map((m) => m[2]), d.name).toEqual(s.fields?.undescribed ?? []);
+      for (const [, href] of adds) expect(isEntry(href), `${d.name}: ${href}`).toBe(true);
+      const edit = text.match(/<a href="([^"]+)">Edit this dataset's metadata<\/a>/)![1]!;
+      expect(isEntry(edit), `${d.name}: ${edit}`).toBe(true);
+      const line = text.match(/<span class="footer-gaps">This dataset has <a href="([^"]+)">([^<]+)<\/a>\.<\/span>/);
+      if (s.gaps === 0) expect(line, d.name).toBeNull();
+      else {
+        expect(line?.[1], d.name).toBe(`${BASE}metadata/#ds-${d.name}`);
+        expect(line?.[2], d.name).toBe(s.gaps === 1 ? '1 metadata gap' : `${s.gaps.toLocaleString('en-US')} metadata gaps`);
+      }
+    }
+  });
+
+  test('the home page links to the status page from its Contribute box only', () => {
+    const home = html(path.join(dist, 'index.html'));
+    expect(home.match(/href="\/vega-datasets\/metadata\/"/g)).toHaveLength(1);
+    expect(home).toMatch(/<aside class="contribute"[\s\S]*href="\/vega-datasets\/metadata\/"[\s\S]*<\/aside>/);
+  });
 });
 
 test('the home page has every dataset card, and the chart drawn', () => {

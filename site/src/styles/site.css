@@ -74,10 +74,10 @@ a { color: var(--link); text-decoration: none; }
 a:hover { text-decoration: underline; }
 /* In running text a link is underlined too: its color alone doesn't set it apart from the
    words around it (WCAG 1.4.1). Navigation, cards, buttons, tabs and chips stay plain. */
-.md a, .sec-note a, .note a, .f-desc a, .prov dd a, #footer-note a, .about-body a, .load-error a, .contribute p a, .quickstart .note button.link {
+.md a, .sec-note a, .note a, .f-desc a, .prov dd a, #footer-note a, .about-body a, .load-error a, .contribute p a, .status-intro a, .quickstart .note button.link {
   text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.18em;
 }
-.md a:hover, .sec-note a:hover, .note a:hover, .f-desc a:hover, .prov dd a:hover, #footer-note a:hover, .about-body a:hover, .load-error a:hover, .contribute p a:hover, .quickstart .note button.link:hover {
+.md a:hover, .sec-note a:hover, .note a:hover, .f-desc a:hover, .prov dd a:hover, #footer-note a:hover, .about-body a:hover, .load-error a:hover, .contribute p a:hover, .status-intro a:hover, .quickstart .note button.link:hover {
   text-decoration-thickness: 2px;
 }
 
@@ -125,6 +125,8 @@ code, .mono { font-family: var(--font-mono); font-size: 0.85em; }
 .vg-footer { border-top: 1px solid var(--rule-faint); margin-top: 48px; }
 .footer-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 16px; }
 .footer-row p { font-size: 0.9em; color: var(--ink-muted); }
+/* A dataset page with metadata gaps: one quiet line under the edit link, to the status page. */
+.footer-gaps { display: block; margin-top: 4px; }
 .idl-logo img { display: block; height: 40px; width: auto; }
 
 /* --- Gallery identity -------------------------------------------------------- */
@@ -240,6 +242,8 @@ table.preview tr:last-child td { border-bottom: 0; }
     outline: 2px solid Highlight; outline-offset: -2px;
   }
   .hist-bin.active .bar { fill: Highlight; }
+  /* On the cells: the sticky name cell would paint over an outline on the row. */
+  table.status tbody tr:target > * { border-block: 2px solid Highlight; }
   /* !important: the mode's colors must beat every theming rule above, however specific
      (.mark-text.role-mark text, the dataset labels, outranks a plain "svg text"). */
   :is(.catalog-chart, .explore-chart) svg text { fill: CanvasText !important; }
@@ -323,6 +327,35 @@ a.tab, a.tab:hover { text-decoration: none; display: inline-block; }
 td.f-miss { font-size: 12.5px; color: var(--ink-muted); }
 td.f-miss.any { color: var(--missing); }
 .spark { display: block; }
+/* A field without a description: a quiet link to its dataset's entry in the metadata file. */
+.f-add {
+  margin-left: 8px; font-size: 12px; color: var(--ink-muted); white-space: nowrap;
+  text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.18em;
+}
+.f-add:hover { color: var(--link); }
+
+/* --- Metadata status page ------------------------------------------------------------ */
+.status-head { display: flex; flex-direction: column; gap: 10px; padding-top: 20px; }
+.status-head h1 { font-size: 40px; font-weight: 400; line-height: 1.1; color: var(--ink-strong); }
+.status-intro { max-width: 66ch; font-size: 15px; }
+.status-body { display: flex; flex-direction: column; gap: 16px; padding-top: 28px; }
+.kv.status-sum { grid-template-columns: 150px minmax(0, 1fr); max-width: 420px; }
+/* Positioned, so the visually hidden words in its cells (absolutely positioned) scroll with it
+   instead of widening the page. */
+.status-scroll { position: relative; }
+table.status { border-collapse: collapse; min-width: 100%; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+table.status th, table.status td { padding: 7px 12px; text-align: left; white-space: nowrap; vertical-align: top; border-bottom: 1px solid var(--rule-faint); }
+table.status thead th { font-size: 12.5px; color: var(--ink-muted); border-bottom-color: var(--rule); }
+table.status tbody tr:last-child > * { border-bottom: 0; }
+/* The dataset's name stays in view while the table scrolls sideways. */
+table.status tbody th { position: sticky; left: 0; background: var(--surface); font: 13px var(--font-mono); }
+table.status .st-num { text-align: right; }
+.st-ok, .st-note, .st-info { color: var(--ink-muted); }
+.st-gap { color: var(--ink-strong); }
+.st-na { color: var(--ink-faint); }
+table.status td.st-info { white-space: normal; min-width: 16em; }
+/* The row a dataset page's footer links to. */
+table.status tbody tr:target > * { background: var(--selected-bg); }
 
 /* Explore */
 /* vega-embed puts each .vega-bind straight into the element passed as `bind`. */
@@ -652,4 +685,10 @@ html:not(.js) :is(.filters, .browse-foot .more, #examples .seg, #examples .more,
   .ex-name { font-size: 13.5px; }
   .kv.prov { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .kv.prov dd { margin-bottom: 8px; }
+  .f-add { display: inline-block; line-height: 24px; }
+
+  .status-head { padding-top: 8px; }
+  .status-head h1 { font-size: 30px; }
+  .kv.status-sum { grid-template-columns: 140px minmax(0, 1fr); }
+  .status-scroll { margin-inline: -16px; border-inline: 0; }
 }
