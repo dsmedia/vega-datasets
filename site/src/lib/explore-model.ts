@@ -5,7 +5,7 @@
  * Multiples" when it is one panel per group.
  */
 import { type Dataset, documentedRange, effectiveMissing, type Field, fieldTitle } from "./catalog";
-import { correlation, distinctValues, sampled, type ScaleType, scaleFor, scaleType, summable, withScale } from "./chart-rules";
+import { correlation, distinctValues, PALETTE_SIZE, sampled, type ScaleType, scaleFor, scaleType, summable, withScale } from "./chart-rules";
 import { BAND_POLICY, rowBand } from "./large-data";
 import { formatCount } from "./format";
 import { category, categoryAsText, colorable, defaultPair, fieldRef, isMeasure, isYear, markerForms, missingFilter, PANEL_SIZE, starterSpec, tag, tagged, timeField, timeKeyOf, timeYear, titled, TOP, untag } from "./starter";
@@ -35,7 +35,7 @@ export function scatterFields(d: Dataset): ScatterFields | null {
   if (measures.length < 2 || !defaultPair(d, measures)) return null;
   return {
     measures,
-    color: fields.find((f) => colorable(f, 10, fields, d.rows ?? 0)),
+    color: fields.find((f) => colorable(f, PALETTE_SIZE, fields, d.rows ?? 0)),
     label: fields.find((f) => f.profile.kind === "nominal" && f.profile.distinct > 10),
     time: fields.find((f) => f.profile.kind === "temporal" || isYear(f)),
   };
@@ -67,8 +67,8 @@ export function timeFirst(d: Dataset, f: ScatterFields): boolean {
   if (key === null) return false;
   const pair = defaultPair(d, f.measures)!;
   const trend = Math.abs(correlation(d, pair.x.name, pair.y.name) ?? 0) >= 0.9;
-  if (!trend && fields.some((c) => !key.includes(c) && colorable(c, 10, fields, rows))) return false;
-  return key.every((g) => colorable(g, 12, fields, rows) || timeYear(g)) || summable(f.measures[0]!);
+  if (!trend && fields.some((c) => !key.includes(c) && colorable(c, PALETTE_SIZE, fields, rows))) return false;
+  return key.every((g) => colorable(g, PALETTE_SIZE, fields, rows) || timeYear(g)) || summable(f.measures[0]!);
 }
 
 /** The charts Explore offers for a dataset, in switch order; empty when none is possible. */
@@ -297,7 +297,8 @@ export function chartFeatures(spec: Spec): string[] {
   if (has('"bind":{"input"')) out.push("input binding");
   if (has('"bind":"scales"')) out.push("scale binding");
   if (has('"bind":"legend"')) out.push("legend binding");
-  if (out.length > 1) return out;
+  // The scatter plot's pickers say enough; another chart also names its mark and transforms.
+  if (has('"bind":{"input"')) return out;
   // A map's marks are its last layer (over the basemap); small multiples', their inner spec.
   const layers = spec.layer as Spec[] | undefined;
   const unit = (spec.spec as Spec | undefined) ?? layers?.at(-1) ?? spec;

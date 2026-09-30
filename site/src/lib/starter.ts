@@ -9,7 +9,7 @@
  */
 import LZString from "lz-string";
 import { categoryLabels, categoryValues, type Dataset, documentedRange, effectiveMissing, type Field, fieldTitle, orderedCategories } from "./catalog";
-import { balanced, distinctValues, idName, informative, inUs, namedAxes, nearDuplicate, scaleFor, scaleType, summable, timeKey, totalsOf, unique, withScale } from "./chart-rules";
+import { balanced, distinctValues, idName, informative, inUs, namedAxes, nearDuplicate, PALETTE_SIZE, scaleFor, scaleType, summable, TABLEAU10, timeKey, TOTAL_COLOR, totalsOf, unique, withScale } from "./chart-rules";
 
 type Spec = Record<string, unknown>;
 type Enc = Record<string, unknown>;
@@ -273,6 +273,47 @@ export function colorable(f: Field, max: number, fields: Field[], rows: number):
   return nominal(f, max, fields) && informative(f, rows);
 }
 
+/** A category whose values, besides its detected totals, fit the palette, with every value known. */
+function withTotal(d: Dataset, f: Field, m: Field, fields: Field[], rows: number): boolean {
+  const totals = totalsOf(d, f, m);
+  const p = f.profile;
+  if (!totals.length || p.kind !== "nominal" || !p.values || p.missing) return false;
+  return nominal(f, PALETTE_SIZE + totals.length, fields) && informative(f, rows) && p.values.length - totals.length <= PALETTE_SIZE;
+}
+
+/**
+ * A series' color. With a detected total among its values, the parts take tableau10 in
+ * their order and the total a neutral gray, last in the legend: every line keeps its own
+ * color, and the total reads as the sum it is. Otherwise the category's own encoding.
+ */
+function seriesColor(d: Dataset, f: Field, m: Field): Enc {
+  const totals = totalsOf(d, f, m);
+  const p = f.profile;
+  // Every value must be known for the domain: with empty cells (a value of their own) keep the plain encoding.
+  if (!totals.length || p.kind !== "nominal" || !p.values || p.missing) return category(f);
+  const parts = p.values.filter((v) => !totals.includes(v));
+  if (parts.length > PALETTE_SIZE) return category(f);
+  return { ...category(f), scale: { domain: [...parts, ...totals], range: [...TABLEAU10.slice(0, parts.length), ...totals.map(() => TOTAL_COLOR)] } };
+}
+
+/**
+ * A series' line encodings: its color, a dash that sets a detected total apart from the
+ * parts (tableau10's last color is a gray too; the legend shows the dash beside the name),
+ * and legend isolation: click a series to bring it forward, the others fade.
+ */
+function seriesLines(d: Dataset, f: Field, m: Field): { encoding: Enc; params: Spec[] } {
+  const color = seriesColor(d, f, m);
+  const domain = (color.scale as { domain?: string[] } | undefined)?.domain;
+  const totals = totalsOf(d, f, m);
+  const dash = domain
+    ? { strokeDash: { field: fieldRef(f.name), type: "nominal", ...titled(f), scale: { domain, range: domain.map((v) => (totals.includes(v) ? [6, 3] : [1, 0])) } } }
+    : {};
+  return {
+    params: [{ name: "series", select: { type: "point", fields: [fieldRef(f.name)] }, bind: "legend" }],
+    encoding: { color, ...dash, opacity: { condition: { param: "series", empty: true, value: 1 }, value: 0.15 } },
+  };
+}
+
 /** Fields that can group a table's rows: categories (not one value per row) and integers that aren't measures. */
 function groupings(fields: Field[], rows: number): Field[] {
   return fields.filter((f) => {
@@ -487,8 +528,11 @@ function timeSeries(d: Dataset, base: Spec, t: Field, m: Field, fields: Field[])
   const date = t.profile.kind === "temporal";
   const key = timeKeyOf(d, t);
   const unit = date && rows > 1000 ? timeUnit(t) : undefined;
+  // A series the palette can color; a detected total among its values takes a neutral color
+  // of its own (disasters: ten kinds in tableau10, "All natural disasters" in gray).
   const series =
-    key?.find((f) => colorable(f, 12, fields, rows)) ?? fields.find((f) => colorable(f, 12, fields, rows) && SERIES.test(f.name));
+    key?.find((f) => colorable(f, PALETTE_SIZE, fields, rows) || withTotal(d, f, m, fields, rows)) ??
+    fields.find((f) => colorable(f, PALETTE_SIZE, fields, rows) && SERIES.test(f.name));
   const vintage = !series && key?.length === 1 && timeYear(key[0]!) ? key[0] : undefined;
   const exact = key !== null && key.every((f) => f === series || f === vintage);
   // Sum only across the separate groups of one time (people of each age in a year), never
@@ -503,19 +547,21 @@ function timeSeries(d: Dataset, base: Spec, t: Field, m: Field, fields: Field[])
   // Two year fields: the one with more years runs along x, and the other draws a line each.
   const [along, lines] = vintage && (distinctValues(vintage) ?? 0) > (distinctValues(t) ?? 0) ? [vintage, t] : [t, vintage];
   // Values in a narrow band far from zero (CO2 in ppm, air pressure) leave zero off the axis, or the line is flat.
+  const lined = series ? seriesLines(d, series, m) : null;
   const q = m.profile;
   const band = aggregate !== "sum" && q.kind === "quantitative" && q.min > 0 && q.min >= q.max / 2;
   return {
     ...base,
     width: 640,
     height: 300,
+    ...(lined ? { params: lined.params } : {}),
     mark: date ? { type: "line", interpolate: "monotone", tooltip: true } : { type: "line", point: rows <= 60, tooltip: true },
     encoding: {
       x: date
         ? { field: fieldRef(along.name), type: "temporal", ...(unit ? { timeUnit: along.profile.kind === "temporal" && along.profile.utc ? `utc${unit}` : unit } : {}), axis: { ...TIME_AXIS, format: dateFormat(along) }, ...titled(along) }
         : measure(along, { scale: { zero: false }, axis: { format: "d", ...TIME_AXIS } }),
       y: measure(m, aggregate ? { aggregate, ...(band ? { scale: { zero: false } } : {}) } : scaled(m, band ? { zero: false } : {})),
-      ...(series ? { color: category(series) } : {}),
+      ...(lined ? lined.encoding : {}),
       ...(lines
         ? {
             color: { field: fieldRef(lines.name), type: "quantitative", legend: { format: "d" }, ...titled(lines) },
@@ -555,7 +601,7 @@ function starterRule(d: Dataset): Spec | null {
   const rows = d.rows ?? 0;
   const measures = fields.filter((f) => isMeasure(f, fields));
   // Color only by informative categories (G-5); count and compare by categories that group rows, not by labels.
-  const smallCat = fields.find((f) => colorable(f, 10, fields, rows));
+  const smallCat = fields.find((f) => colorable(f, PALETTE_SIZE, fields, rows));
   const cat = fields.find((f) => nominal(f, 60, fields));
   const colorBy = (f: Field | undefined): Enc => (f ? { color: category(f) } : {});
 

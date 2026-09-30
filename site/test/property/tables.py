@@ -118,10 +118,12 @@ def table(rng: random.Random) -> tuple[list[dict], list[dict[str, str]]]:
     cats = rng.sample(CATEGORY_NAMES, rng.randint(1, 2))
     measures = rng.sample(MEASURE_NAMES, rng.randint(1, 3))
     integer_cat = rng.random() < 0.3
+    # Sometimes more series than the palette has colors (eleven to thirteen).
+    width = rng.choice([rng.randint(2, 5), rng.randint(2, 5), rng.randint(11, 13)])
     series = (
-        [str(i) for i in range(1, rng.randint(3, 5))]
+        [str(i) for i in range(1, width + 1)]
         if integer_cat
-        else [f"s{i}" for i in range(rng.randint(2, 5))]
+        else [f"s{i:02}" for i in range(width)]
     )
     with_total = rng.random() < 0.3
     marker = "-99" if rng.random() < 0.3 else None

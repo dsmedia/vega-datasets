@@ -179,6 +179,18 @@ export function idName(f: Field, fields: Field[]): boolean {
   return ID_NAME.test(f.name);
 }
 
+// --- Colors -------------------------------------------------------------------------------------
+
+/**
+ * Vega's default category scheme (tableau10), which the site's --chart-* tokens mirror: a
+ * color encoding may show at most this many values, or two of them share a color. Every
+ * "can this be colored" limit reads it.
+ */
+export const TABLEAU10 = ["#4c78a8", "#f58518", "#e45756", "#72b7b2", "#54a24b", "#eeca3b", "#b279a2", "#ff9da6", "#9d755d", "#bab0ac"] as const;
+export const PALETTE_SIZE = TABLEAU10.length;
+/** A line that is the total of the others: gray, so it reads as the sum, not as one more part (on light and dark grounds). */
+export const TOTAL_COLOR = "#8a8f98";
+
 // --- G-5: informative categories -----------------------------------------------------------
 
 /** Fields that place labels or order marks for a particular chart rather than describe the data. */

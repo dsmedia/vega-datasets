@@ -5,14 +5,16 @@
 //   (b) no double counting: a summed value is the sum of distinct rows of its bucket (no
 //       entity twice in a bucket, no total summed with its parts);
 //   (c) time-zone independence: bucketed values are the same in New York, Tokyo and UTC;
-//   (d) the phone gate: a table over the row or byte limit never loads on a phone without a button.
+//   (d) the phone gate: a table over the row or byte limit never loads on a phone without a button;
+//   (e) distinct colors: a color encoding never has more values than its scheme has colors.
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import * as vega from 'vega';
 import { compile, type TopLevelSpec } from 'vega-lite';
 import { describe, expect, test } from 'vitest';
 import { type Dataset, effectiveMissing, type Field } from '../src/lib/catalog';
-import { starterChart } from '../src/lib/explore-model';
+import { defaultAxes, exploreModes, scatterFields, scatterSpec, starterChart } from '../src/lib/explore-model';
+import { loadCatalog } from './catalog';
 import * as largeData from '../src/lib/large-data';
 import { fieldRef, markerForms } from '../src/lib/starter';
 
@@ -200,5 +202,46 @@ describe(`Explore invariants on ${COUNT} random tables (seed ${SEED})`, () => {
       // A phone never draws a gated table by itself; only the canvas band of a small file draws itself on a desktop.
       if (g.button) expect(g.autoDraw === 'never' || (g.autoDraw === 'desktop' && largeData.rowBand(rows) === 'canvas' && bytes <= LIMIT)).toBe(true);
     }
+  });
+});
+
+/** How many colors a nominal color encoding's scale has: its range, else its scheme (Vega's default, tableau10). */
+function capacity(color: Spec): number {
+  const scale = (color.scale ?? {}) as { range?: unknown[]; scheme?: string };
+  if (Array.isArray(scale.range)) return scale.range.length;
+  return scale.scheme === 'tableau20' || scale.scheme === 'category20' ? 20 : 10;
+}
+
+/** A spec's nominal color encoding, if any (with a condition, the field part). */
+function nominalColor(spec: Spec): Spec | null {
+  const color = encodingOf(spec).color;
+  return color && color.field && (color.type === 'nominal' || color.type === 'ordinal') ? color : null;
+}
+
+describe('(e) distinct colors: never more color values than the scheme has colors', () => {
+  test('in every generated chart', () => {
+    const problems = charts.flatMap((c) => {
+      const color = nominalColor(c.spec);
+      const f = fieldOf(c.dataset, color ?? undefined);
+      if (!color || !f) return [];
+      const values = new Set(c.rows.map((r) => r[f.name]));
+      return values.size > capacity(color) ? [`${c.dataset.name}: ${values.size} values of ${f.name}, ${capacity(color)} colors`] : [];
+    });
+    expect(problems).toEqual([]);
+  });
+
+  test('in every real dataset’s starter and Explore charts', () => {
+    const problems = loadCatalog().datasets.flatMap((d) => {
+      const sf = scatterFields(d);
+      const specs = [starterChart(d), ...(sf && exploreModes(d).includes('scatter') ? [scatterSpec(d, sf, { ...defaultAxes(d, sf), zoom: true, height: 380 })] : [])];
+      return specs.flatMap((spec) => {
+        const color = spec ? nominalColor(spec) : null;
+        const f = fieldOf(d, color ?? undefined);
+        if (!color || !f || f.profile.kind === 'empty') return [];
+        const values = f.profile.kind === 'nominal' ? f.profile.distinct + (f.profile.missing ? 1 : 0) : (f.profile as { distinct?: number }).distinct ?? 0;
+        return values > capacity(color) ? [`${d.name}: ${values} values of ${f.name}, ${capacity(color)} colors`] : [];
+      });
+    });
+    expect(problems).toEqual([]);
   });
 });

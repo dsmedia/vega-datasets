@@ -452,6 +452,18 @@ exports[`time series colored by a series > starter and Explore specs match the c
   },
   "width": 640,
   "height": 300,
+  "params": [
+   {
+    "name": "series",
+    "select": {
+     "type": "point",
+     "fields": [
+      "origin"
+     ]
+    },
+    "bind": "legend"
+   }
+  ],
   "mark": {
    "type": "line",
    "interpolate": "monotone",
@@ -477,6 +489,14 @@ exports[`time series colored by a series > starter and Explore specs match the c
    "color": {
     "field": "origin",
     "type": "nominal"
+   },
+   "opacity": {
+    "condition": {
+     "param": "series",
+     "empty": true,
+     "value": 1
+    },
+    "value": 0.15
    }
   }
  },
@@ -488,6 +508,18 @@ exports[`time series colored by a series > starter and Explore specs match the c
   },
   "width": "container",
   "height": 300,
+  "params": [
+   {
+    "name": "series",
+    "select": {
+     "type": "point",
+     "fields": [
+      "origin"
+     ]
+    },
+    "bind": "legend"
+   }
+  ],
   "mark": {
    "type": "line",
    "interpolate": "monotone",
@@ -513,6 +545,14 @@ exports[`time series colored by a series > starter and Explore specs match the c
    "color": {
     "field": "origin",
     "type": "nominal"
+   },
+   "opacity": {
+    "condition": {
+     "param": "series",
+     "empty": true,
+     "value": 1
+    },
+    "value": 0.15
    }
   },
   "autosize": {

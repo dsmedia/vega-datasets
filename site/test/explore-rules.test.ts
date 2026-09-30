@@ -6,7 +6,7 @@ import { expressionInterpreter } from 'vega-interpreter';
 import { compile, type TopLevelSpec } from 'vega-lite';
 import { describe, expect, test } from 'vitest';
 import type { Dataset, Field } from '../src/lib/catalog';
-import { idName, informative, logTicks, nameTokens, namedAxes, nearDuplicate, scaleFor, scaleType, summable } from '../src/lib/chart-rules';
+import { idName, informative, logTicks, nameTokens, namedAxes, nearDuplicate, scaleFor, scaleType, summable, TABLEAU10, TOTAL_COLOR } from '../src/lib/chart-rules';
 import { chartConfig, tokenInk } from '../src/lib/vega-theme';
 import { chartFeatures, defaultAxes, discreteHeight, exploreModes, mapNote, pickScale, scatterFields, scatterSpec, starterChart } from '../src/lib/explore-model';
 import * as largeData from '../src/lib/large-data';
@@ -580,7 +580,8 @@ describe('Codex round 3', () => {
       // Each month holds one date: 400 regions of 100.
       expect(JSON.parse(out)).toEqual([40000, 40000, 40000]);
     }
-  });
+    // Three child processes (one per zone): under a full, parallel suite they take a while.
+  }, 60_000);
 
   test('#3 the height counts only the categories the missing-value filter leaves', () => {
     const cat = many('cat', 60, regions(6));
@@ -655,5 +656,30 @@ describe('Codex round 4', () => {
   test('#1 a percent sign in brackets or before "of" marks a rate', () => {
     for (const title of ['Deaths (%)', 'Deaths [%]', '% of deaths']) expect(summable(quant('deaths', 0, 100, { title }))).toBe(false);
     expect(nameTokens('Deaths (%)')).toEqual(['Deaths', '(', '%', ')']);
+  });
+});
+
+describe('series colors (TABLEAU10, one palette for every limit)', () => {
+  test('the palette is the site’s --chart-* tokens', async () => {
+    const { readFileSync } = await import('node:fs');
+    const css = readFileSync(fileURLToPath(new URL('../src/styles/site.css', import.meta.url)), 'utf8');
+    const tokens = Array.from({ length: 10 }, (_, i) => css.match(new RegExp(`--chart-${i + 1}: (#[0-9a-f]{6})`))![1]);
+    expect(tokens).toEqual([...TABLEAU10]);
+  });
+
+  test('ten parts and a detected total: the parts in tableau10, the total in gray, last', () => {
+    const kinds = ['Drought', 'Earthquake', 'Epidemic', 'Extreme temperature', 'Extreme weather', 'Flood', 'Landslide', 'Mass movement (dry)', 'Volcanic activity', 'Wildfire'];
+    const all = ['All natural disasters', ...kinds];
+    const entity = { ...nominal('Entity', all.slice(0, 6).map((v) => [v, 10] as [string, number])), profile: { kind: 'nominal' as const, distinct: 11, top: all.slice(0, 6).map((v) => [v, 10] as [string, number]), missing: 0, values: all } };
+    const d = table([quant('Year', 1900, 1909, { type: 'integer' }, { distinct: 10, evenlySpaced: true }), entity, quant('Deaths', 1, 3.7e6, { type: 'integer' })], 110, {
+      timeKeys: { Year: ['Entity'] }, totalValues: { Entity: { Deaths: ['All natural disasters'] } },
+    });
+    const color = enc(starterSpec(d)).color as { field: string; scale: { domain: string[]; range: string[] } };
+    expect(color.field).toBe('Entity');
+    expect(color.scale.domain).toEqual([...kinds, 'All natural disasters']);
+    expect(color.scale.range).toEqual([...TABLEAU10, TOTAL_COLOR]);
+    // Without the total, eleven kinds are more than the palette: no color at all.
+    const eleven = { ...d, totalValues: {} };
+    expect(enc(starterSpec(eleven)).color).toBeUndefined();
   });
 });

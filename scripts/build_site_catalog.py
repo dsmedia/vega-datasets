@@ -57,6 +57,8 @@ THUMB_WIDTH: Final = 480
 PREVIEW_ROWS: Final = 6
 HIST_BINS: Final = 24
 TOP_VALUES: Final = 6
+# Categories with at most this many values list them all in their profile.
+ALL_VALUES: Final = 20
 # Pairs of number fields at least this correlated are recorded (the site never opens
 # a scatter plot on a near-duplicate pair), over at least this many rows.
 CORRELATED: Final = 0.9
@@ -485,6 +487,12 @@ def profile_field(
         "distinct": counts.height,
         "top": [[str(v), int(c)] for v, c in counts.head(TOP_VALUES).iter_rows()],
         "missing": n - text.len(),
+        # Every value of a small category, in order: a chart can give each its color.
+        **(
+            {"values": sorted(str(v) for v in counts[text.name].to_list())}
+            if counts.height <= ALL_VALUES
+            else {}
+        ),
     }
 
 

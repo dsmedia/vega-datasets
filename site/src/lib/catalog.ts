@@ -45,6 +45,8 @@ export interface NominalProfile {
   distinct: number;
   top: [string, number][];
   missing: number;
+  /** Every value, sorted, for a category of at most 20 values. */
+  values?: string[];
 }
 
 export interface EmptyProfile {
