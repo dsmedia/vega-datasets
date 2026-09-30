@@ -19,7 +19,8 @@ import { parseArgs } from 'node:util';
 const { values: args } = parseArgs({ options: { port: { type: 'string', default: '8125' } } });
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '..', '..', '..');
-const base = `http://localhost:${args.port}/vega-datasets/`;
+// The server's URL: its default port, or the free one it falls back to when that is taken.
+let base = `http://localhost:${args.port}/vega-datasets/`;
 const chrome = process.env.CHROME_PATH ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 
 async function loadPuppeteer() {
@@ -32,7 +33,13 @@ async function loadPuppeteer() {
 function serve() {
   const child = spawn(process.execPath, [path.join(repo, 'site', 'scripts', 'serve.mjs'), '--port', args.port], { stdio: ['ignore', 'pipe', 'inherit'] });
   return new Promise((resolve, reject) => {
-    child.stdout.on('data', (b) => { if (String(b).includes('Field Guide at')) resolve(child); });
+    child.stdout.on('data', (b) => {
+      const url = String(b).match(/Field Guide at (http:\S+)/)?.[1];
+      if (!url) return;
+      base = url;
+      console.log(`Serving at ${url}`);
+      resolve(child);
+    });
     child.on('exit', (code) => reject(new Error(`The preview server exited (${code})`)));
   });
 }

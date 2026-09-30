@@ -305,5 +305,5 @@ describe('overviews drawn when the site is built', () => {
       expect(warnings).toEqual([]);
     }
     expect((densitySpec(d, grid, 380).data as { url: string }).url).toBe(d.url);
-  });
+  }, 30_000); // Bins 200,000 rows: about 0.4 s alone, past 5 s on a loaded machine.
 });

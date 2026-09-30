@@ -64,6 +64,9 @@ ALL_VALUES: Final = 20
 CORRELATED: Final = 0.9
 CORRELATION_ROWS: Final = 5
 # The names (or titles) the site's map rule reads as coordinates (site/src/lib/starter.ts).
+# Where vega-datasets' detailed basemaps reach, (longitude, latitude) ranges: as the site's
+# DETAILED_BASEMAPS (site/src/lib/starter.ts) draws them.
+BASEMAP_BOXES: Final = {"london_boroughs": ((-0.52, 0.34), (51.28, 51.7))}
 LAT_NAME: Final = re.compile(r"^(lat|latitude)$", re.IGNORECASE)
 LON_NAME: Final = re.compile(r"^(lon|lng|long|longitude)$", re.IGNORECASE)
 # The United States as boxes of (west, east, south, north): the lower 48, Alaska
@@ -274,13 +277,15 @@ def read_table(
     declares ``missingValues`` decides for itself whether empty text is missing).
     """
     if fmt in {"csv", "tsv"}:
-        return pl.read_csv(
+        df = pl.read_csv(
             path,
             separator="\t" if fmt == "tsv" else ",",
             infer_schema=False,
             truncate_ragged_lines=True,
             missing_utf8_is_empty_string=keep_empty,
         )
+        # polars keeps a quoted header's doubled quotes ("say ""hi"""): the name is say "hi".
+        return df.rename({c: c.replace('""', '"') for c in df.columns if '""' in c})
     if fmt == "parquet":
         return pl.read_parquet(path)
     if fmt == "arrow":
@@ -490,7 +495,12 @@ def profile_field(
             )
         )
         return {**profile, **_spacing(valid), **({"utc": True} if iso else {})}
-    text = s.cast(pl.String, strict=False).drop_nulls()
+    raw = s.cast(pl.String, strict=False)
+    # The blank values a chart's color domain gets as values of their own: null, and empty
+    # text unless it is a documented missing value (JSON can hold both: two values, two colors).
+    empty = bool((raw.str.len_chars() == 0).any()) and "" not in (markers or [])
+    blanks = int(raw.null_count() > 0) + int(empty)
+    text = raw.drop_nulls()
     if markers is None:
         text = text.filter(text.str.len_chars() > 0)
     # Break count ties by value so rebuilds produce the same catalog.
@@ -502,6 +512,7 @@ def profile_field(
         "distinct": counts.height,
         "top": [[str(v), int(c)] for v, c in counts.head(TOP_VALUES).iter_rows()],
         "missing": n - text.len(),
+        **({"blanks": blanks} if blanks else {}),
         # Every value of a small category, in order: a chart can give each its color.
         **(
             {"values": sorted(str(v) for v in counts[text.name].to_list())}
@@ -1138,16 +1149,18 @@ def _shapes(
     out: dict[tuple[str, str], dict[str, Any]] = {}
     for r in measured.iter_rows(named=True):
         span = r["__hi__"] - r["__lo__"]
-        # A flat measure (a span within rounding error of its values) has no shape to judge.
-        if span <= 1e-9 * max(abs(r["__hi__"]), abs(r["__lo__"])) or r["__n__"] < 3:
+        if r["__n__"] < 3:
             continue
         shape: dict[str, Any] = {
             "gaps": bool(r["__gap__"]),
             "perSeries": _nice(r["__per__"]),
         }
-        if r["__step__"] is not None:
+        # A flat measure (a span within rounding error of its values) keeps its gaps and
+        # times (its line breaks like any other, S3); only its jaggedness has nothing to judge.
+        flat = span <= 1e-9 * max(abs(r["__hi__"]), abs(r["__lo__"]))
+        if r["__step__"] is not None and not flat:
             shape["jag"] = round(r["__step__"] / span, 3)
-        if r["__logstep__"] is not None and r["__lo__"] > 0:
+        if r["__logstep__"] is not None and r["__lo__"] > 0 and not flat:
             shape["jagLog"] = round(
                 r["__logstep__"] / ((r["__loghi__"] - r["__loglo__"]) or 1.0), 3
             )
@@ -1231,7 +1244,9 @@ def coordinate_pair(
     """
     The latitude and longitude columns, if the table has a pair.
 
-    By name or title (latitude/lat, longitude/lon/lng/long), or a centroid's ``cx``/``cy``;
+    By name or title (latitude/lat, longitude/lon/lng/long), or a centroid's ``cx``/``cy``
+    with geographic evidence (described as longitude/latitude or a centroid, or every value
+    inside a detailed basemap's box, ``BASEMAP_BOXES``);
     a plain ``x``/``y`` only when their descriptions say longitude and latitude. Every value must lie in range
     (longitude -180 to 360, latitude -90 to 90): a pair named so but holding other numbers
     (a chart's x and y) is no map.
@@ -1250,11 +1265,25 @@ def coordinate_pair(
             pattern.match(f["name"]) or pattern.match(str(f.get("title", "")))
         )
 
+    def geographic(f: dict[str, Any], axis: str) -> bool:
+        # A centroid's cx/cy with evidence it is on the Earth: its title or description says
+        # so, or every value lies where a detailed basemap does (London's boroughs). Values
+        # merely in range could be pixels.
+        words = text(f).lower()
+        if axis in words or "centroid" in words:
+            return True
+        s = numbers[f["name"]].drop_nulls()
+        i = 0 if axis == "longitude" else 1
+        return s.len() > 0 and any(
+            cast("float", s.min()) >= box[i][0] and cast("float", s.max()) <= box[i][1]
+            for box in BASEMAP_BOXES.values()
+        )
+
     candidates = [
         (first(named(LAT_NAME)), first(named(LON_NAME))),
         (
-            first(lambda f: f["name"].lower() == "cy"),
-            first(lambda f: f["name"].lower() == "cx"),
+            first(lambda f: f["name"].lower() == "cy" and geographic(f, "latitude")),
+            first(lambda f: f["name"].lower() == "cx" and geographic(f, "longitude")),
         ),
         (
             first(lambda f: f["name"].lower() == "y" and "latitude" in text(f).lower()),

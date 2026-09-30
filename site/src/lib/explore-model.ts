@@ -5,7 +5,7 @@
  * Multiples" when it is one panel per group.
  */
 import { categoryLabels, categoryValues, type Dataset, documentedRange, effectiveMissing, type Field, fieldTitle } from "./catalog";
-import { correlation, distinctValues, legendsOnTop, PALETTE_SIZE, sampled, type ScaleType, scaleFor, scaleType, summable, withScale } from "./chart-rules";
+import { correlation, distinctValues, legendsOnTop, PALETTE_SIZE, readable, sampled, type ScaleType, scaleFor, scaleType, summable, withScale } from "./chart-rules";
 import { BAND_POLICY, rowBand } from "./large-data";
 import { formatCount } from "./format";
 import { category, categoryAsText, colorable, defaultPair, fieldRef, isMeasure, isYear, markerForms, missingFilter, PANEL_SIZE, starterSpec, tag, totalOf, totalSpec, tagged, timeField, timeKeyOf, timeYear, titled, TOP, untag } from "./starter";
@@ -29,7 +29,7 @@ export interface ScatterFields {
 
 export function scatterFields(d: Dataset): ScatterFields | null {
   if (d.kind !== "table" || d.format === "parquet" || d.format === "arrow") return null;
-  const fields = d.fields.filter((f) => f.type !== "array");
+  const fields = d.fields.filter((f) => f.type !== "array" && readable(f));
   const measures = fields.filter((f) => isMeasure(f, fields));
   // No scatter plot when every pair is a near-duplicate (G-3): it would draw one line.
   if (measures.length < 2 || !defaultPair(d, measures)) return null;
@@ -59,7 +59,7 @@ function isTimeSeries(spec: Spec | null): boolean {
  * counts things, which add up to a total.
  */
 export function timeFirst(d: Dataset, f: ScatterFields): boolean {
-  const fields = d.fields.filter((x) => x.type !== "array");
+  const fields = d.fields.filter((x) => x.type !== "array" && readable(x));
   const rows = d.rows ?? 0;
   const t = timeField(fields);
   if (!t || !sampled(t)) return false;

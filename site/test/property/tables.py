@@ -12,7 +12,12 @@ draw every chart the rules choose. The tables mix what has broken the rules befo
 - time columns as ISO dates (some cells empty), datetimes with and without offsets, or
   integer years; panels (one row per time and series) and event logs.
 
-Usage: uv run --group site python site/test/property/tables.py --seed 7 --count 200
+After them, ``--kin`` tables of several measures of one stated unit over years (S17's
+fold): deaths from a few causes, some with missing-value markers of their own, gaps in the
+years, two measures titled alike, names a lookup can't carry (``constructor``, ``__proto__``,
+a backslash) or that need escaping (quotes, a dot), and sometimes a measure of another unit.
+
+Usage: uv run --group site python site/test/property/tables.py --seed 7 --count 200 --kin 40
 """
 
 from __future__ import annotations
@@ -178,22 +183,78 @@ def table(rng: random.Random) -> tuple[list[dict], list[dict[str, str]]]:
     return fields, rows
 
 
+KIN_NAMES = [
+    "disease",
+    "wounds",
+    "other",
+    "fever",
+    "constructor",
+    "__proto__",
+    'say "hi"',
+    "it's",
+    "a.b",
+    "back\\slash",
+]
+
+
+def kin_table(rng: random.Random) -> tuple[list[dict], list[dict[str, str]]]:
+    """Several measures of one stated unit, one row per year (a fold), with what has broken folds."""
+    start = rng.randint(1900, 2000)
+    years = list(range(start, start + rng.randint(6, 30)))
+    if rng.random() < 0.6:
+        # A gap: some years missing, then more much later.
+        years = years[: len(years) // 2] + [y + 15 for y in years[len(years) // 2 :]]
+    names = rng.sample(KIN_NAMES, rng.randint(2, 5))
+    duplicate = rng.random() < 0.3
+    fields: list[dict] = [{"name": "year", "type": "integer"}]
+    for i, n in enumerate(names):
+        field = {"name": n, "type": "integer", "description": f"Deaths from cause {i}"}
+        if duplicate and i < 2:
+            field["title"] = "Deaths"
+        if rng.random() < 0.4:
+            field["missingValues"] = ["NA"]
+        fields.append(field)
+    if rng.random() < 0.3:
+        fields.append({
+            "name": "rain",
+            "type": "integer",
+            "description": "Monthly rainfall (mm)",
+        })
+    # Each measure a trend with some noise (lines, mostly; a few jagged enough for points).
+    trends = {
+        f["name"]: (rng.randint(0, 500), rng.randint(-10, 20), rng.choice([2, 5, 200]))
+        for f in fields[1:]
+    }
+    rows = []
+    for i, y in enumerate(years):
+        row = {"year": str(y)}
+        for f in fields[1:]:
+            base, slope, noise = trends[f["name"]]
+            marker = "missingValues" in f and rng.random() < 0.15
+            value = max(0, base + slope * i + rng.randint(-noise, noise))
+            row[f["name"]] = "NA" if marker else str(value)
+        rows.append(row)
+    return fields, rows
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--count", type=int, default=200)
+    parser.add_argument("--kin", type=int, default=0)
     args = parser.parse_args()
     rng = random.Random(args.seed)
     out = []
     with tempfile.TemporaryDirectory() as tmp:
-        for i in range(args.count):
-            fields, rows = table(rng)
+        kin = random.Random(args.seed + 1)
+        tables = [(f"t{i:03}", table(rng)) for i in range(args.count)]
+        tables += [(f"k{i:03}", kin_table(kin)) for i in range(args.kin)]
+        for name, (fields, rows) in tables:
             columns = [f["name"] for f in fields]
             text = io.StringIO()
             writer = csv.DictWriter(text, fieldnames=columns, lineterminator="\n")
             writer.writeheader()
             writer.writerows([{c: r.get(c, "") for c in columns} for r in rows])
-            name = f"t{i:03}"
             path = Path(tmp) / f"{name}.csv"
             path.write_text(text.getvalue(), "utf-8")
             resource = {

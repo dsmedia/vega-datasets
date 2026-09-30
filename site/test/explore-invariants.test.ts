@@ -32,20 +32,20 @@ interface Case { dataset: Dataset; csv: string }
 
 const SEED = 7;
 const COUNT = 240;
+/** Tables of several measures of one stated unit (S17's fold), after the random ones. */
+const KIN = 40;
 const COVERAGE = { filtered: 40, unaggregated: 40, rows: 800, colored: 80, nearLimit: 5 };
 const here = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
 const cases: Case[] = JSON.parse(
-  execFileSync('uv', ['run', '--group', 'site', 'python', here('./property/tables.py'), '--seed', String(SEED), '--count', String(COUNT)], {
+  execFileSync('uv', ['run', '--group', 'site', 'python', here('./property/tables.py'), '--seed', String(SEED), '--count', String(COUNT), '--kin', String(KIN)], {
     maxBuffer: 1 << 28,
   }).toString(),
 );
 
 function parseCsv(text: string): Row[] {
-  const [head, ...lines] = text.trimEnd().split('\n');
-  const columns = head!.split(',');
-  // The generator writes no quoted commas (its names avoid them).
-  return lines.map((l) => Object.fromEntries(l.split(',').map((v, i) => [columns[i]!, v])));
+  // As text, unparsed (names with quotes are quoted in the header).
+  return vega.read(text, { type: 'csv' }) as Row[];
 }
 
 /** The spec's unit specs (a layer's, a facet's, or itself) and every filter in it. */
@@ -62,6 +62,15 @@ function allowed(d: Dataset, filter: string): boolean {
   if (total && filter === `indexof(${JSON.stringify(total.totals.map((v) => `v:${v}`))}, "v:" + datum[${JSON.stringify(total.series.name)}]) < 0`) return true;
   // The top twenty: a chart of the largest groups, by its own rank (its title says so).
   if (/^datum\["[^"]*"\] <= \d+$/.test(filter)) return true;
+  // A fold's missing values, per measure after the fold: only markers that measure's metadata declares.
+  const folded = [...filter.matchAll(/\(datum\["[^"]*"\] === ("(?:[^"\\]|\\.)*") && indexof\((\[[^\]]*\]), toString\(datum\["[^"]*"\]\)\) >= 0\)/g)];
+  if (folded.length && filter.startsWith('!(')) {
+    return folded.every(([, name, list]) => {
+      const f = d.fields.find((x) => x.name === JSON.parse(name!));
+      const markers = f ? markerForms(f, effectiveMissing(d, f) ?? []) : [];
+      return (JSON.parse(list!) as string[]).every((v) => markers.includes(v));
+    });
+  }
   // A missing-value filter lists only markers the metadata declares, per field.
   const lists = [...filter.matchAll(/indexof\((\[[^\]]*\]), "v:" \+ datum\[("(?:[^"\\]|\\.)*")\]\)/g)];
   if (!lists.length) return false;
@@ -148,6 +157,17 @@ describe(`Explore invariants on ${COUNT} random tables (seed ${SEED})`, () => {
     let rowsChecked = 0;
     for (const c of charts) {
       const enc = encodingOf(c.spec);
+      const folded = foldOf(c.spec);
+      if (folded) {
+        // A fold: every plottable value of every measure, one point each (S17, round 6 #3).
+        const expected = [...drawnSeries(c.dataset, c.spec, c.rows as Datum[])!.series.values()].reduce((n, s) => n + s.length, 0);
+        const { view, source } = await run(c.spec, c.csv);
+        const values = source ? (view.data(source) as Datum[]).filter((r) => Number.isFinite(Number(r[String(enc.y?.field)]))).length : 0;
+        view.finalize();
+        seenFolds.dataLoss++;
+        if (values !== expected) problems.push(`${c.dataset.name}: the fold drew ${values} values, the rows hold ${expected}`);
+        continue;
+      }
       if (Object.values(enc).some((e) => e.aggregate || e.timeUnit || e.bin) || c.spec.facet || c.spec.layer) continue;
       const encoded = Object.values(enc).map((e) => fieldOf(c.dataset, e)).filter((f): f is Field => !!f);
       // Rows of a detected total are drawn in the Total mode instead (S2).
@@ -306,6 +326,36 @@ describe('(e) distinct colors: never more color values than the scheme has color
 
 type Datum = Record<string, unknown>;
 
+/** A spec's folded measures (S17), by name, or null. */
+function foldOf(spec: Spec): string[] | null {
+  const fold = ((spec.transform as Spec[] | undefined) ?? []).find((t) => t.fold)?.fold as string[] | undefined;
+  return fold ? fold.map((n) => n.replace(/\\(.)/g, '$1')) : null;
+}
+
+/**
+ * A fold's lines as drawn, from the rows (independently of the builder): a series per
+ * measure (by its field's name), its value at each time where the time reads and the value
+ * is a number and not a marker that measure's metadata declares.
+ */
+function foldedDrawn(d: Dataset, t: Field, measures: string[], rows: Datum[]) {
+  const series = new Map<string, [number, number][]>();
+  for (const name of measures) {
+    const m = d.fields.find((f) => f.name === name)!;
+    const markers = markerForms(m, effectiveMissing(d, m) ?? []);
+    const points: [number, number][] = [];
+    for (const r of rows) {
+      const tv = Number(r[t.name]);
+      const raw = r[name];
+      if (!Number.isFinite(tv) || raw === null || raw === undefined || String(raw).trim() === '' || markers.includes(String(raw))) continue;
+      const v = Number(raw);
+      if (Number.isFinite(v)) points.push([tv, v]);
+    }
+    series.set(name, points.sort((a, b) => a[0] - b[0]));
+  }
+  const times = [...new Set([...series.values()].flat().map(([tv]) => tv))].sort((a, b) => a - b);
+  return { series, whole: series, times, log: false };
+}
+
 /**
  * A time chart's series as drawn, computed here from the rows (independently of the
  * builder): per series (the color field's value, or one), the times in order (bucketed by
@@ -317,6 +367,8 @@ function drawnSeries(d: Dataset, spec: Spec, rows: Datum[]): { series: Map<strin
   const x = enc.x;
   const y = enc.y;
   const t = fieldOf(d, x);
+  const folded = foldOf(spec);
+  if (folded && t) return foldedDrawn(d, t, folded, rows);
   const m = fieldOf(d, y);
   if (!x || !y || !t || !m || y.type !== 'quantitative' || !['temporal', 'quantitative'].includes(String(x.type))) return null;
   const color = enc.color?.type === 'nominal' ? fieldOf(d, enc.color) : undefined;
@@ -383,6 +435,8 @@ const quantileLow = (xs: number[], q: number) => {
 
 /** How often each standard's case came up (a coverage guard: a property that never runs proves nothing). */
 const seen = { lines: 0, colored: 0, gapped: 0, segmented: 0, pointsForJagged: 0, fewPoints: 0 };
+/** Folded charts (S17) among the cases each invariant checked, and what they held. */
+const seenFolds = { dataLoss: 0, lines: 0, markers: 0, gapped: 0, duplicateTitles: 0, quoted: 0, unfoldedUnsafe: 0 };
 
 /** The standards' problems in one time chart, from its rows. */
 function standardsProblems(name: string, d: Dataset, spec: Spec, rows: Datum[], phone: boolean): string[] {
@@ -402,6 +456,7 @@ function standardsProblems(name: string, d: Dataset, spec: Spec, rows: Datum[], 
     return [];
   }
   seen.lines++;
+  if (foldOf(spec)) seenFolds.lines++;
   const problems: string[] = [];
   // S8: straight segments (a curve invents peaks and troughs), and the values marked when a line has few.
   const markSpec = (typeof unit.mark === 'object' ? unit.mark : {}) as { interpolate?: string; point?: unknown };
@@ -449,6 +504,44 @@ describe('chart standards (site/CHART-STANDARDS.md)', () => {
     expect(seen.pointsForJagged).toBeGreaterThan(5);
     expect(seen.fewPoints).toBeGreaterThan(20);
   }, 60_000); // Renders every chart twice (wide, phone): about 2 s alone.
+
+  test('S17 on the generated folds: one stated unit, no sum, hostile names never folded into a broken chart', async () => {
+    const problems: string[] = [];
+    const unsafe = (n: string) => ['constructor', '__proto__'].includes(n) || /[\\"]/.test(n);
+    for (const c of charts.filter((x) => x.dataset.name.startsWith('k'))) {
+      const d = c.dataset;
+      const folded = foldOf(c.spec);
+      const names = d.fields.filter((f) => f.description?.startsWith('Deaths from')).map((f) => f.name);
+      if (!folded) {
+        // Not folded: a name no lookup can carry (or one measure): the chart still draws.
+        if (names.some(unsafe)) seenFolds.unfoldedUnsafe++;
+        const { view } = await run(c.spec, c.csv);
+        view.finalize();
+        continue;
+      }
+      if (folded.some((n) => !names.includes(n))) problems.push(`${d.name}: folds ${folded.join(', ')}, not all of one stated unit`);
+      if (folded.some(unsafe)) problems.push(`${d.name}: folds a name a lookup can't carry`);
+      if (encodingOf(c.spec).y?.aggregate) problems.push(`${d.name}: a fold sums or averages across measures`);
+      const fields = folded.map((n) => d.fields.find((f) => f.name === n)!);
+      if (fields.some((f) => f.missingValues)) seenFolds.markers++;
+      if (new Set(fields.map((f) => f.title).filter(Boolean)).size < fields.filter((f) => f.title).length || fields.filter((f) => f.title === 'Deaths').length > 1) seenFolds.duplicateTitles++;
+      if (folded.some((n) => /['.]/.test(n))) seenFolds.quoted++;
+      if (JSON.stringify(c.spec.transform ?? []).includes('"op":"lag"')) seenFolds.gapped++;
+      // Two measures titled alike stay two series: the color domain is the fields' names.
+      const domain = ((encodingOf(c.spec).color?.scale as { domain?: string[] } | undefined)?.domain) ?? [];
+      if (JSON.stringify(domain) !== JSON.stringify(folded)) problems.push(`${d.name}: series ${JSON.stringify(domain)}, not the measures ${JSON.stringify(folded)}`);
+    }
+    expect(problems).toEqual([]);
+    // Coverage: folds came up, with missing values, gaps, duplicate titles and quoted names,
+    // and unsafe names came up unfolded; the invariants above checked folds too.
+    expect(seenFolds.markers).toBeGreaterThanOrEqual(5);
+    expect(seenFolds.gapped).toBeGreaterThanOrEqual(5);
+    expect(seenFolds.duplicateTitles).toBeGreaterThanOrEqual(3);
+    expect(seenFolds.quoted).toBeGreaterThanOrEqual(3);
+    expect(seenFolds.unfoldedUnsafe).toBeGreaterThanOrEqual(3);
+    expect(seenFolds.dataLoss).toBeGreaterThanOrEqual(15);
+    expect(seenFolds.lines).toBeGreaterThanOrEqual(15);
+  }, 120_000);
 
   test('S1, S3, S5 on every real dataset’s Explore charts, wide and on a phone', () => {
     const problems = loadCatalog().datasets.flatMap((d) => {

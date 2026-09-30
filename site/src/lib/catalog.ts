@@ -47,6 +47,8 @@ export interface NominalProfile {
   distinct: number;
   top: [string, number][];
   missing: number;
+  /** How many blank forms reach a chart's color domain as values of their own (null, and empty text in JSON): 1 or 2. */
+  blanks?: number;
   /** Every value, sorted, for a category of at most 20 values. */
   values?: string[];
 }

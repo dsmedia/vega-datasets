@@ -9,7 +9,7 @@
  */
 import LZString from "lz-string";
 import { categoryLabels, categoryValues, type Dataset, documentedRange, effectiveMissing, type Field, fieldTitle, orderedCategories } from "./catalog";
-import { balanced, distinctValues, idName, informative, inUs, JAGGED, namedAxes, mostlyZero, nearDuplicate, PALETTE_SIZE, POWER_LABEL, scaleFor, scaleType, SERIES_LIMIT, summable, TABLEAU10, timeKey, totalsOf, unique, withScale } from "./chart-rules";
+import { balanced, distinctValues, idName, informative, inUs, JAGGED, namedAxes, mostlyZero, nearDuplicate, PALETTE_SIZE, POWER_LABEL, readable, scaleFor, scaleType, SERIES_LIMIT, summable, TABLEAU10, timeKey, totalsOf, unique, withScale } from "./chart-rules";
 
 type Spec = Record<string, unknown>;
 type Enc = Record<string, unknown>;
@@ -19,7 +19,8 @@ const SCHEMA = "https://vega.github.io/schema/vega-lite/v6.json";
 
 /** Vega-Lite treats `.` and `[ ]` in field names as nested access; escape them. */
 export function fieldRef(name: string): string {
-  return name.replace(/([.[\]])/g, "\\$1");
+  // Quotes too: Vega-Lite reads a quote in a field reference as the start of a quoted path.
+  return name.replace(/([.[\]"'])/g, "\\$1");
 }
 
 // What a field's metadata adds to an encoding of it. Each addition needs its property,
@@ -186,7 +187,10 @@ function withMetadata(d: Dataset, spec: Spec | null): Spec | null {
   if (!encoding) return spec;
   // Fields the encodings show, the facet splits by, and the chart's own transforms read (a sum per group).
   const used = new Set([...Object.values(encoding).map((e) => e.field), (spec.facet as Enc | undefined)?.field, ...transformFields(spec)]);
-  const fields = d.fields.filter((f) => used.has(fieldRef(f.name)));
+  // A fold's measures filter their own missing values after the fold, one measure at a time
+  // (a marker in one leaves the others' values on that row, S17): not the whole row here.
+  const folded = new Set(((spec.transform as Enc[] | undefined) ?? []).flatMap((t) => (t.fold as string[] | undefined) ?? []));
+  const fields = d.fields.filter((f) => used.has(fieldRef(f.name)) && !folded.has(fieldRef(f.name)));
   const dates = fields.filter((f) => f.profile.kind === "temporal" && effectiveMissing(d, f)?.length);
   const transform = [
     missingFilter(d, fields),
@@ -272,8 +276,9 @@ export function nominal(f: Field, max: number, fields: Field[] = [f]): boolean {
 
 /** A category worth a color: at most `max` values, and informative (G-5: not a helper, not nearly all one value). */
 export function colorable(f: Field, max: number, fields: Field[], rows: number): boolean {
-  // Empty cells reach the color domain as a value of their own (Codex round 5, #3).
-  const empty = f.profile.kind === "nominal" && f.profile.missing > 0 ? 1 : 0;
+  // Blank cells reach the color domain as values of their own (Codex round 5, #3): null and
+  // empty text are two in a JSON file (round 6, #1); the builder counts the forms present.
+  const empty = f.profile.kind === "nominal" ? (f.profile.blanks ?? (f.profile.missing > 0 ? 1 : 0)) : 0;
   return nominal(f, max - empty, fields) && informative(f, rows);
 }
 
@@ -516,7 +521,7 @@ export function starterSpec(d: Dataset, phone = false): Spec | null {
 
 /** The "Total" mode's chart: a detected total's own line (CHART-STANDARDS.md S2); null without one. */
 export function totalSpec(d: Dataset, phone = false): Spec | null {
-  const fields = d.fields.filter((f) => f.type !== "array");
+  const fields = d.fields.filter((f) => f.type !== "array" && readable(f));
   const t = timeField(fields);
   const m = fields.find((f) => isMeasure(f, fields));
   if (!t || !m || !totalOf(d)) return null;
@@ -568,7 +573,7 @@ function onlyTotals(f: Field, totals: string[]): Spec[] {
  * disasters"), or null when its series has none.
  */
 export function totalOf(d: Dataset): { series: Field; totals: string[] } | null {
-  const fields = d.fields.filter((f) => f.type !== "array");
+  const fields = d.fields.filter((f) => f.type !== "array" && readable(f));
   const t = timeField(fields);
   const m = fields.find((f) => isMeasure(f, fields));
   if (!t || !m || d.kind !== "table" || d.format === "parquet" || d.format === "arrow") return null;
@@ -582,7 +587,7 @@ export function totalOf(d: Dataset): { series: Field; totals: string[] } | null 
  * run of times without a gap, per series, for `detail`, so the line breaks there. Built from
  * the builder's widest regular gap (1.5 times the 90th percentile); null when there is none.
  */
-function segments(d: Dataset, t: Field, series: Field | undefined, fields: Field[]): { transform: Spec[]; field: string } | null {
+function segments(d: Dataset, t: Field, series: Field | string | undefined, fields: Field[]): { transform: Spec[]; field: string } | null {
   const steps = d.timeSteps?.[t.name];
   if (!steps) return null;
   const taken = new Set(fields.map((f) => f.name));
@@ -592,7 +597,8 @@ function segments(d: Dataset, t: Field, series: Field | undefined, fields: Field
   const ms = t.profile.kind === "temporal" ? 1000 : 1;
   const limit = steps.breakAt * ms;
   const value = (expr: string) => `toNumber(${expr})`;
-  const groupby = series ? [fieldRef(series.name)] : [];
+  // A series field, or a computed one by its name (a fold's measure key).
+  const groupby = series ? [typeof series === "string" ? series : fieldRef(series.name)] : [];
   return {
     field: run,
     transform: [
@@ -692,14 +698,10 @@ function timeSeries(d: Dataset, base: Spec, t: Field, m: Field, fields: Field[],
         color: (() => {
           const c = measure(hue, aggregate ? { aggregate: hue === m ? aggregate : "mean" } : {});
           // S10: a log color's legend labels its decades, not only its ends.
-          // Only decades inside the data: a value past the scale's end is drawn past the gradient's, onto the title.
-          const q = hue.profile as { min?: number; max?: number };
-          const inside = (v: number) => (q.min === undefined || v >= q.min) && (q.max === undefined || v <= q.max);
-          const ticks = s.scale.type ? ((s.axis.values as number[] | undefined) ?? []).filter(inside) : [];
-          const decades = ticks.filter((v) => v === 0 || Number.isInteger(Math.log10(Math.abs(v))));
-          // The decades, or with fewer than three inside the data (prices of 6 to 800), the axis's 1-2-5 steps.
-          const values = decades.length >= 3 ? decades : ticks;
-          const legend = values.length >= 3 ? { legend: { values, labelExpr: POWER_LABEL, gradientLength: 200, labelOverlap: "greedy" } } : {};
+          // The legend's ticks are Vega's, from the scale's own domain: the range of the drawn
+          // cells (bucket means or sums), not the raw values, whose decades may all lie outside
+          // it (round 6, #2). A log legend spanning three decades or more labels only its decades.
+          const legend = s.scale.type ? { legend: { labelExpr: decadeLabels("color"), gradientLength: 200, labelOverlap: "greedy" } } : {};
           return { ...c, scale: { ...(c.scale as Enc | undefined), ...(s.scale.type ? { type: s.scale.type } : {}), ...(s.scale.type === "symlog" ? { constant: s.scale.constant } : {}), scheme: "blues" }, ...legend };
         })(),
       },
@@ -816,38 +818,81 @@ function timeSeriesHolds(d: Dataset, t: Field, m: Field, fields: Field[], phone:
   return per === undefined || per >= 3;
 }
 
-/** The words that name a measure's kind ("Deaths from Wounds", "Deaths from Disease"): its description's first two words. */
-function kindOf(f: Field): string | null {
+/** Words for a count of things (the head of "Deaths from …"), and the prepositions that follow them. */
+const COUNT_NOUN = /^(deaths|cases|people|persons|number|count|admissions|injuries|births|arrivals|visitors)$/;
+const PREPOSITION = /^(from|of|by|due|in|for|with|among)$/;
+
+/**
+ * The unit a measure's metadata states, for drawing measures on one axis (S17), or null.
+ * Explicit only: a unit in parentheses or brackets ending its title or description ("(mm)",
+ * "[USD]"), or a description that opens with a count and a preposition ("Deaths from …":
+ * each row counts deaths). Two words in common ("Average monthly …") say nothing about units.
+ */
+function statedUnit(f: Field): string | null {
+  for (const text of [f.title, f.description]) {
+    const unit = text?.trim().match(/[([]\s*([^()[\]]{1,12}?)\s*[)\]]$/)?.[1];
+    if (unit && !/\s{1}\S+\s/.test(unit)) return `unit:${unit.toLowerCase()}`;
+  }
   const words = (f.description ?? "").toLowerCase().match(/[a-z]+/g) ?? [];
-  return words.length >= 3 ? words.slice(0, 2).join(" ") : null;
+  return words.length >= 3 && COUNT_NOUN.test(words[0]!) && PREPOSITION.test(words[1]!) ? `count:${words[0]} ${words[1]}` : null;
 }
 
 /**
- * Measures of one kind, drawn together (S17): two to SERIES_LIMIT of them (four on a phone)
- * whose descriptions open with the same two words ("Deaths from …"), all non-negative
- * integers, in a table with one row per time (crimea: deaths from disease, wounds and other
- * causes each month, Nightingale's classic view). The first measure's kind decides; the
- * rule is conservative on purpose: a shared unit is claimed only where the metadata says so.
+ * Measures of one stated unit, drawn together (S17): two to SERIES_LIMIT of them (four on a
+ * phone), all non-negative integers or all numbers of that unit, in a table with one row per
+ * time (crimea: deaths from disease, wounds and other causes each month, Nightingale's view).
+ * A wrong fold is worse than none (one axis claims one unit): the first measure's unit
+ * decides, and without an explicit one, or with a name a series key can't carry, nothing folds.
  */
 function sameKind(d: Dataset, t: Field, measures: Field[], phone: boolean): Field[] | null {
-  const kind = measures[0] ? kindOf(measures[0]) : null;
-  if (!kind || timeKeyOf(d, t)?.length !== 0) return null;
-  const kin = measures.filter((m) => m !== t && kindOf(m) === kind && m.type === "integer" && m.profile.kind === "quantitative" && m.profile.min >= 0);
-  return kin.length >= 2 && kin.length <= (phone ? SERIES_LIMIT.phone : SERIES_LIMIT.wide) ? kin : null;
+  const unit = measures[0] ? statedUnit(measures[0]) : null;
+  if (!unit || timeKeyOf(d, t)?.length !== 0) return null;
+  const kin = measures.filter((m) => m !== t && statedUnit(m) === unit && m.profile.kind === "quantitative" && m.profile.min >= 0);
+  // A backslash in a name is read two ways along a fold's path (as a field reference, and as data): in doubt, no fold.
+  if (kin.some((m) => !readable(m) || m.name.includes("\\"))) return null;
+  // Counts are whole numbers: a count-worded measure that isn't (a rate among counts) stays out.
+  const counted = unit.startsWith("count:") ? kin.filter((m) => m.type === "integer") : kin;
+  return counted.length >= 2 && counted.length <= (phone ? SERIES_LIMIT.phone : SERIES_LIMIT.wide) ? counted : null;
 }
 
-/** Several measures of one kind over time (S17): folded into one colored line each, on one axis, with legend isolation. */
+/**
+ * Several measures of one unit over time (S17): folded into one line each, on one axis,
+ * colored by measure, with legend isolation. Each series is keyed by its field's name (two
+ * measures titled alike stay two series); the legend shows the title. Missing values are
+ * left out per measure after the fold (S17, round 6 #3), and the lines break at gaps (S3).
+ */
 function foldedSeries(d: Dataset, base: Spec, t: Field, kin: Field[]): Spec {
   const taken = new Set(d.fields.map((f) => f.name));
   const free = (name: string): string => (taken.has(name) ? free(`_${name}`) : name);
   const [key, value] = [free("measure"), free("value")];
+  taken.add(key);
+  taken.add(value);
   const date = t.profile.kind === "temporal";
   const x = date
     ? { field: fieldRef(t.name), type: "temporal", axis: { ...TIME_AXIS, format: dateFormat(t) }, ...titled(t) }
     : measure(t, { scale: { zero: false, nice: false }, axis: { format: "d", ...TIME_AXIS } });
-  const title = (f: Field) => fieldTitle(f);
-  // The axis names the kind by its first word ("Deaths").
-  const kind = (kindOf(kin[0]!) ?? "value").split(" ")[0]!;
+  const str = (v: string) => JSON.stringify(v);
+  const k = `datum[${str(key)}]`;
+  const v = `datum[${str(value)}]`;
+  // Each measure's documented missing values, matched on the value's text after the fold.
+  const missing = kin.flatMap((m) => {
+    const forms = markerForms(m, effectiveMissing(d, m) ?? []);
+    return forms.length ? [`(${k} === ${str(m.name)} && indexof(${JSON.stringify(forms)}, toString(${v})) >= 0)`] : [];
+  });
+  // Legend labels: the title, or with two measures titled alike, the title and the field's name.
+  const titles = kin.map((m) => fieldTitle(m));
+  const labels = kin.map((m, i) => (titles.filter((x) => x === titles[i]).length > 1 ? `${titles[i]} (${m.name})` : titles[i]!));
+  const labelExpr = kin.reduceRight((rest, m, i) => `datum.label === ${str(m.name)} ? ${str(labels[i]!)} : ${rest}`, "datum.label");
+  // S3: the lines break where a measure skips (the builder's gaps per measure along the time).
+  const skips = kin.some((m) => {
+    const shapes = d.lineShapes?.[t.name]?.[m.name];
+    return (shapes?.[""] ?? shapes?.["*"])?.gaps ?? false;
+  });
+  const jumpy = kin.some((m) => jagged(d, t, m, undefined, true));
+  const gaps = skips && !jumpy ? segments(d, t, key, [...d.fields, { name: key } as Field, { name: value } as Field]) : null;
+  // The unit names the axis: a count's noun ("Deaths"), or the stated unit ("mm").
+  const unit = statedUnit(kin[0]!)!;
+  const axisTitle = unit.startsWith("count:") ? unit.slice(6).split(" ")[0]! : unit.slice(5);
   return {
     ...base,
     width: 640,
@@ -855,18 +900,35 @@ function foldedSeries(d: Dataset, base: Spec, t: Field, kin: Field[]): Spec {
     usermeta: { chart: "time" },
     transform: [
       { fold: kin.map((m) => fieldRef(m.name)), as: [key, value] },
-      // The legend names each measure by its title.
-      ...(kin.some((m) => title(m) !== m.name) ? [{ calculate: `${JSON.stringify(Object.fromEntries(kin.map((m) => [m.name, title(m)])))}[datum[${JSON.stringify(key)}]]`, as: key }] : []),
+      ...(missing.length ? [{ filter: `!(${missing.join(" || ")})` }] : []),
+      { calculate: `toNumber(${v})`, as: value },
+      ...(gaps ? gaps.transform : []),
     ],
     params: [{ name: "series", select: { type: "point", fields: [key] }, bind: "legend" }],
-    mark: { type: "line", tooltip: true, ...(timesAlong(t, undefined) <= FEW_POINTS ? { point: { size: date ? 16 : 24 } } : {}) },
+    // S5: a measure too jagged for a line makes the chart points; else lines, marked when few or broken (S8, S3).
+    mark: jumpy
+      ? { type: "point", filled: true, size: 24, tooltip: true }
+      : { type: "line", tooltip: true, ...(gaps || timesAlong(t, undefined) <= FEW_POINTS ? { point: { size: date ? 16 : 24 } } : {}) },
     encoding: {
       x,
-      y: { field: value, type: "quantitative", title: kind.charAt(0).toUpperCase() + kind.slice(1) },
-      color: { field: key, type: "nominal", title: null, scale: { domain: kin.map(title) } },
+      y: { field: value, type: "quantitative", title: axisTitle.charAt(0).toUpperCase() + axisTitle.slice(1) },
+      color: { field: key, type: "nominal", title: null, scale: { domain: kin.map((m) => m.name) }, legend: { labelExpr } },
       opacity: { condition: { param: "series", empty: true, value: 1 }, value: 0.15 },
+      ...(gaps ? { detail: { field: gaps.field, type: "nominal" } } : {}),
     },
   };
+}
+
+/**
+ * Labels for a log or symlog legend's ticks (S10): Vega picks the ticks from the scale's
+ * domain; over three decades or more, only the decades are labeled (the 2 to 9 between crowd),
+ * within less, every tick (thinned where they would overlap), so a legend has more than two labels. An expression on the rendered scale, not on a list of values.
+ */
+function decadeLabels(scale: string): string {
+  const d = `domain(${JSON.stringify(scale)})`;
+  const decades = `abs(log(${d}[1]) - log(max(${d}[0], 1e-300))) / LN10 >= 3`;
+  const decade = "abs(log(abs(datum.value)) / LN10 - round(log(abs(datum.value)) / LN10)) < 1e-6";
+  return `${decades} ? (${decade} ? (${POWER_LABEL}) : '') : (${POWER_LABEL})`;
 }
 
 /** A line marks its values when it has at most this many (S8). */
@@ -907,7 +969,7 @@ function starterRule(d: Dataset, phone = false): Spec | null {
   if (d.kind !== "table" || d.fields.length === 0) return null;
   if (d.format === "parquet" || d.format === "arrow") return null; // Vega-Lite needs extra loaders for these.
 
-  const fields = d.fields.filter((f) => f.type !== "array");
+  const fields = d.fields.filter((f) => f.type !== "array" && readable(f));
   const rows = d.rows ?? 0;
   const measures = fields.filter((f) => isMeasure(f, fields));
   // Color only by informative categories (G-5); count and compare by categories that group rows, not by labels.

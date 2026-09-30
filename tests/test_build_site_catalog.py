@@ -963,7 +963,7 @@ def test_coordinate_pair_by_name_centroid_or_described_xy() -> None:
         return coordinate_pair({names[0]: lon, names[1]: lat}, fields)
 
     assert pair(("longitude", "latitude")) == ("latitude", "longitude")
-    # A centroid's cx and cy (london_centroids), in range.
+    # A centroid's cx and cy (london_centroids): inside a detailed basemap's box.
     assert pair(("cx", "cy")) == ("cy", "cx")
     # A plain x and y only when described as longitude and latitude.
     assert pair(("x", "y")) == (None, None)
@@ -1009,3 +1009,39 @@ def test_coordinates_frame_leaves_out_outliers_only() -> None:
     assert -118.0 < east < -117.3
     assert south < 33.8
     assert north > 34.28
+
+
+def test_cx_cy_need_geographic_evidence() -> None:
+    # Codex round 6, #8: pixel positions in range are no map.
+    px = {"cx": pl.Series([10.0, 20.0, 30.0]), "cy": pl.Series([10.0, 20.0, 30.0])}
+    pixels = [
+        {"name": "cx", "description": "Horizontal pixel position"},
+        {"name": "cy", "description": "Vertical pixel position"},
+    ]
+    assert coordinate_pair(px, pixels) == (None, None)
+    described = [
+        {"name": "cx", "description": "Longitude of the centroid"},
+        {"name": "cy", "description": "Latitude of the centroid"},
+    ]
+    assert coordinate_pair(px, described) == ("cy", "cx")
+
+
+def test_flat_measure_keeps_its_gaps() -> None:
+    # Codex round 6, #7: a constant measure over 2000-2008 and 2020 still breaks at the gap.
+    years = [*range(2000, 2009), 2020]
+    values = pl.DataFrame({"year": years, "v": [20.0] * len(years)})
+    _, shapes = line_shapes(
+        {"year": values["year"], "v": values["v"]}, {"year": []}, values
+    )
+    shape = shapes["year"]["v"][""]
+    assert shape["gaps"] is True
+    assert "jag" not in shape
+
+
+def test_profile_counts_blank_forms_a_color_domain_gets() -> None:
+    # Codex round 6, #1: null and empty text are two values in a JSON file's color domain.
+    s = pl.Series("c", ["a", "b", None, ""])
+    assert profile_field(s, "string")["blanks"] == 2
+    # Empty text documented as missing is filtered out: only null reaches the domain.
+    assert profile_field(s, "string", [""])["blanks"] == 1
+    assert "blanks" not in profile_field(pl.Series("c", ["a", "b"]), "string")

@@ -13,7 +13,7 @@ import * as largeData from '../src/lib/large-data';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { basemapUrl, starterSpec, totalSpec } from '../src/lib/starter';
-import { draw, rowsWith } from './draw';
+import { draw, legendLabelsOutside, rowsWith } from './draw';
 import { described, strip } from './fixtures';
 
 type Spec = Record<string, unknown>;
@@ -642,7 +642,9 @@ describe('Codex round 3', () => {
 });
 
 describe('field names with dots, brackets and backslashes draw in every chart kind (Codex round 3, #4)', () => {
-  const odd = { cat: 'g.roup', m: 'm[0]', m2: 'w\\v', t: 'd.ate' };
+  // An apostrophe, not a backslash or a double quote: Vega-Lite can't read a field whose name
+  // has one of those (a chart leaves it out, round 6).
+  const odd = { cat: 'g.roup', m: 'm[0]', m2: "w'v", t: 'd.ate' };
   const cats = ['a', 'b', 'c', 'd'];
   const cat = nominal(odd.cat, cats.map((c) => [c, 6] as [string, number]));
   const kinds: [string, Dataset, Record<string, unknown>[]][] = [
@@ -746,5 +748,146 @@ describe('Visual standards review (site/CHART-STANDARDS.md)', () => {
     const y = enc(starterSpec(d)).y as { aggregate?: string; scale?: { type?: string } };
     expect(y.aggregate).toBe('mean');
     expect(y.scale?.type).toBe('log');
+  });
+});
+// Codex round 6: each test on Codex's input, failing on fbd9102 before the fix.
+describe('Codex round 6', () => {
+  const deaths = (name: string, cause: string, extra: Partial<Field> = {}, min = 0, max = 90): Field => quant(name, min, max, { type: 'integer', description: `Deaths from ${cause}`, ...extra });
+  const years = (n: number, first = 2000) => quant('year', first, first + n - 1, { type: 'integer' }, { distinct: n, evenlySpaced: true });
+  const yearly = (fields: Field[], rows: number, extra: Partial<Dataset> = {}) => table(fields, rows, { timeKeys: { year: [] }, ...extra });
+  const colorsOf = (view: vega.View) => (view.scale('color') as unknown as { domain(): unknown[] }).domain();
+  /** The points a view draws (its symbols' data) with a finite `value`. */
+  const drawnValues = (view: vega.View) => {
+    type Item = { marktype?: string; items?: Item[]; datum?: Record<string, unknown> };
+    const out: Record<string, unknown>[] = [];
+    const walk = (n: Item, type?: string) => (n.items ?? []).forEach((i) => {
+      const t = i.marktype ?? type;
+      if (t === 'symbol' && i.datum && Number.isFinite(Number(i.datum.value))) out.push(i.datum);
+      walk(i, t);
+    });
+    walk((view.scenegraph() as unknown as { root: Item }).root);
+    return out;
+  };
+
+  test('#1 null and empty text are two colors: nine categories and both leave too few for a legend', async () => {
+    const nine = Array.from({ length: 9 }, (_, i) => [`c${i}`, 10] as [string, number]);
+    const cause = (blanks: number): Field => ({ ...nominal('cause', nine), profile: { kind: 'nominal', distinct: 9, top: nine, missing: 4, blanks, values: nine.map(([v]) => v) } });
+    const d = (blanks: number) => table([quant('x', 1, 90), quant('y', 5, 70), cause(blanks)], 94);
+    expect(scatterFields(d(2))!.color).toBeUndefined();
+    // With one blank form, ten values: colored, and the rendered domain has ten.
+    const one = d(1);
+    const sf = scatterFields(one)!;
+    expect(sf.color?.name).toBe('cause');
+    const rows = [...nine.flatMap(([c], i) => Array.from({ length: 10 }, (_, j) => ({ x: i * 10 + j, y: j + 5, cause: c }))), { x: 1, y: 6, cause: null }, { x: 2, y: 7, cause: null }];
+    const view = await draw(scatterSpec(one, sf, { ...defaultAxes(one, sf), zoom: false, height: 300 }), rows);
+    try {
+      expect(colorsOf(view).length).toBeLessThanOrEqual(10);
+    } finally {
+      view.finalize();
+    }
+  });
+
+  test('#2 a heatmap legend labels the drawn cells, within its gradient', async () => {
+    // Raw values 1 to 140,000, but the cells (one per series and year) 50,000 to 70,000.
+    const kinds = Array.from({ length: 7 }, (_, i) => [`s${i}`, 10] as [string, number]);
+    const series = { ...nominal('series', kinds), profile: { kind: 'nominal' as const, distinct: 7, top: kinds, missing: 0, values: kinds.map(([v]) => v) } };
+    const d = table([years(10), series, quant('count', 1, 140_000, { type: 'integer' }, { bins: bins(40, 1) })], 70, { timeKeys: { year: ['series'] } });
+    const spec = starterSpec(d)!;
+    expect(spec.mark).toMatchObject({ type: 'rect' });
+    const rows = kinds.flatMap(([s], i) => Array.from({ length: 10 }, (_, j) => ({ year: 2000 + j, series: s, count: 50_000.5 + i * 3_000 + j * 100 })));
+    for (const width of [640, 288]) {
+      const view = await draw({ ...spec, width }, rows);
+      try {
+        expect(legendLabelsOutside(view)).toEqual([]);
+      } finally {
+        view.finalize();
+      }
+    }
+  });
+
+  test('#3 a missing value in one folded measure leaves the others on its row', async () => {
+    const d = yearly([years(10), deaths('a', 'disease', { missingValues: ['NA'] }), deaths('b', 'wounds')], 10);
+    const spec = starterSpec(d)!;
+    expect(JSON.stringify(spec)).toContain('"fold"');
+    const rows = Array.from({ length: 10 }, (_, i) => ({ year: 2000 + i, a: i === 4 ? 'NA' : 10 + i, b: 50 + i }));
+    const view = await draw(spec, rows);
+    try {
+      expect(drawnValues(view).length).toBe(19);
+    } finally {
+      view.finalize();
+    }
+  });
+
+  test('#4 two opening words are no shared unit; an explicit one is', () => {
+    const rain = quant('rain', 20, 38, { type: 'integer', description: 'Average monthly rainfall (mm)' });
+    const revenue = quant('revenue', 50_000, 77_000, { type: 'integer', description: 'Average monthly revenue (USD)' });
+    expect(JSON.stringify(starterSpec(yearly([years(10), rain, revenue], 10)))).not.toContain('"fold"');
+    const snow = quant('snow', 0, 40, { type: 'integer', description: 'Average monthly snowfall (mm)' });
+    expect(JSON.stringify(starterSpec(yearly([years(10), rain, snow], 10)))).toContain('"fold"');
+  });
+
+  test('#5 two measures titled alike stay two series', async () => {
+    const d = yearly([years(10), deaths('a', 'disease', { title: 'Deaths' }), deaths('b', 'wounds', { title: 'Deaths' })], 10);
+    const rows = Array.from({ length: 10 }, (_, i) => ({ year: 2000 + i, a: 10 + i, b: 50 + i }));
+    const view = await draw(starterSpec(d)!, rows);
+    try {
+      expect(colorsOf(view)).toEqual(['a', 'b']);
+      const svg = await view.toSVG();
+      expect(svg).toContain('>Deaths (a)<');
+      expect(svg).toContain('>Deaths (b)<');
+    } finally {
+      view.finalize();
+    }
+  });
+
+  test('#6 folded lines break at gaps', async () => {
+    const at = [2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2020];
+    const year = quant('year', 2000, 2020, { type: 'integer' }, { distinct: 10 });
+    const shape = { gaps: true, perSeries: 10, jag: 0.1 };
+    const d = yearly([year, deaths('a', 'disease'), deaths('b', 'wounds')], 10, {
+      timeSteps: { year: { step: 1, breakAt: 1.5, unit: 'none' } },
+      lineShapes: { year: { a: { '': shape, '*': shape }, b: { '': shape, '*': shape } } },
+    });
+    const spec = starterSpec(d)!;
+    const rows = at.map((y, i) => ({ year: y, a: 10 + i, b: 50 + i }));
+    const view = await draw(spec, rows);
+    try {
+      // Each measure's line: two runs, 2000-2008 and 2020, never one path across the twelve years.
+      expect(JSON.stringify(spec)).toContain('"lag"');
+      const segments = new Set(drawnValues(view).map((r) => `${r.measure}|${r.segment}`));
+      expect(segments.size).toBe(4);
+    } finally {
+      view.finalize();
+    }
+  });
+
+  test('#9 names no lookup can carry: never folded into a broken chart (constructor, __proto__, a backslash); quotes fold', async () => {
+    const rows = Array.from({ length: 10 }, (_, i) => ({ year: 2000 + i, a: 10 + i, constructor: 5 + i, __proto__x: 1 }));
+    const hostile = yearly([years(10), deaths('a', 'disease', { title: 'Deaths' }), deaths('constructor', 'wounds', { title: 'Deaths' })], 10);
+    const spec = starterSpec(hostile)!;
+    expect(JSON.stringify(spec)).not.toContain('"fold"');
+    const view = await draw(spec, rows);
+    view.finalize();
+    const proto = yearly([years(10), deaths('a', 'disease'), deaths('__proto__', 'wounds')], 10);
+    expect(JSON.stringify(starterSpec(proto))).not.toContain('"fold"');
+    // A backslash: read two ways along a fold's path, so in doubt, no fold; the chart still draws.
+    const slash = yearly([years(10), deaths('a', 'disease'), deaths('back' + String.fromCharCode(92) + 'slash', 'wounds')], 10);
+    const unfolded = starterSpec(slash)!;
+    expect(JSON.stringify(unfolded)).not.toContain('"fold"');
+    (await draw(unfolded, rows)).finalize();
+    // A double quote: left out like a backslash. An apostrophe and a dot fold, each its own series.
+    const dq = yearly([years(10), deaths('a', 'disease'), deaths('say "hi"', 'wounds')], 10);
+    expect(JSON.stringify(starterSpec(dq))).not.toContain('"fold"');
+    const odd = ["it's", 'a.b'];
+    const quoted = yearly([years(10), deaths(odd[0]!, 'disease'), deaths(odd[1]!, 'wounds')], 10);
+    const folded = starterSpec(quoted)!;
+    expect(JSON.stringify(folded)).toContain('"fold"');
+    const view2 = await draw(folded, Array.from({ length: 10 }, (_, i) => ({ year: 2000 + i, [odd[0]!]: 10 + i, [odd[1]!]: 50 + i })));
+    try {
+      expect(colorsOf(view2)).toEqual(odd);
+      expect(drawnValues(view2).length).toBe(20);
+    } finally {
+      view2.finalize();
+    }
   });
 });

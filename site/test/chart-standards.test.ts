@@ -11,6 +11,7 @@ import { mostlyZero } from '../src/lib/chart-rules';
 import { exploreModes, mapNote, modeChart } from '../src/lib/explore-model';
 import { themeConfig } from '../src/lib/vega-theme';
 import { loadCatalog, readDataUrl } from './catalog';
+import { legendLabelsOutside } from './draw';
 
 type Spec = Record<string, unknown>;
 type Enc = Record<string, unknown>;
@@ -187,23 +188,28 @@ describe('chart standards, pass 2 (site/CHART-STANDARDS.md)', () => {
     expect(checked).toBeGreaterThanOrEqual(2);
   }, 60_000);
 
-  test('S10: a log or symlog color legend labels its decades', () => {
-    const problems = [false, true].flatMap((phone) =>
-      datasets.flatMap((d) =>
-        exploreModes(d)
-          .filter((m) => m !== 'scatter')
-          .flatMap((mode) => {
-            const spec = modeChart(d, mode, phone);
-            const c = spec ? encodingOf(spec).color : undefined;
-            const type = (c?.scale as { type?: string } | undefined)?.type;
-            if (!c || c.type !== 'quantitative' || !type || type === 'linear') return [];
-            const values = (c.legend as { values?: number[] } | undefined)?.values ?? [];
-            return values.length >= 3 ? [] : [`${d.name} ${mode}${phone ? ' (phone)' : ''}: a ${type} color legend labels ${values.length} values`];
-          }),
-      ),
-    );
+  test('S10: a color legend labels its gradient (rendered: every label within it), with more than its ends', async () => {
+    const problems: string[] = [];
+    let checked = 0;
+    for (const phone of [false, true]) {
+      for (const d of datasets) {
+        for (const mode of exploreModes(d).filter((m) => m !== 'scatter')) {
+          const spec = modeChart(d, mode, phone);
+          const c = spec ? encodingOf(spec).color : undefined;
+          if (!spec || !c || c.type !== 'quantitative') continue;
+          const view = await render({ ...spec, width: phone ? 288 : 640 });
+          try {
+            checked++;
+            for (const p of legendLabelsOutside(view)) problems.push(`${d.name} ${mode}${phone ? ' (phone)' : ''}: ${p}`);
+          } finally {
+            view.finalize();
+          }
+        }
+      }
+    }
     expect(problems).toEqual([]);
-  });
+    expect(checked).toBeGreaterThanOrEqual(6);
+  }, 120_000);
 
   test('S10: a band axis across keeps its labels upright (Vega-Lite would turn them on their side)', () => {
     // Canvas charts (football's 2,600 rows) can't be measured in the browser test: this holds them.
@@ -294,14 +300,28 @@ describe('chart standards, pass 2 (site/CHART-STANDARDS.md)', () => {
     expect(datasets.some((d) => d.fields.some(mostlyZero))).toBe(true);
   });
 
-  test('S17: measures of one kind over time are drawn together', () => {
-    // One kind: descriptions that open with the same two words, non-negative integers, one row per time.
-    const kindOf = (f: Field) => ((f.description ?? '').toLowerCase().match(/[a-z]+/g) ?? []).slice(0, 2).join(' ');
+  test('S17: measures of one stated unit over time are drawn together, and only those', () => {
+    // A stated unit: in parentheses or brackets ending a title or description, or a
+    // description opening with a count and a preposition ("Deaths from ...").
+    const unitOf = (f: Field): string | null => {
+      for (const text of [f.title, f.description]) {
+        const u = text?.trim().match(/[([]\s*([^()[\]]{1,12}?)\s*[)\]]$/)?.[1];
+        if (u) return `unit:${u.toLowerCase()}`;
+      }
+      const w = (f.description ?? '').toLowerCase().match(/[a-z]+/g) ?? [];
+      return w.length >= 3 && /^(deaths|cases|people|persons|number|count|admissions|injuries|births|arrivals|visitors)$/.test(w[0]!) && /^(from|of|by|due|in|for|with|among)$/.test(w[1]!) ? `count:${w[0]} ${w[1]}` : null;
+    };
     const problems = charts.flatMap(({ d, mode, spec }) => {
       if (!isTime(spec) || markOf(spec) === 'rect') return [];
+      const fold = ((spec.transform as Spec[] | undefined) ?? []).find((t) => t.fold)?.fold as string[] | undefined;
+      if (fold) {
+        const ms = fold.map((n) => d.fields.find((f) => f.name === n.replace(/\\(.)/g, '$1'))!);
+        const units = new Set(ms.map(unitOf));
+        return units.size === 1 && !units.has(null) && ms.length >= 2 ? [] : [`${d.name} ${mode}: folds ${fold.join(', ')} without one stated unit`];
+      }
       const y = fieldOf(d, encodingOf(spec).y);
-      if (!y || !kindOf(y) || d.timeKeys?.[fieldOf(d, encodingOf(spec).x)?.name ?? ''] === undefined) return [];
-      const kin = d.fields.filter((f) => f !== y && f.type === 'integer' && kindOf(f) === kindOf(y) && f.profile.kind === 'quantitative' && f.profile.min >= 0);
+      if (!y || !unitOf(y) || d.timeKeys?.[fieldOf(d, encodingOf(spec).x)?.name ?? ''] === undefined) return [];
+      const kin = d.fields.filter((f) => f !== y && f.profile.kind === 'quantitative' && unitOf(f) === unitOf(y) && f.profile.min >= 0);
       return kin.length ? [`${d.name} ${mode}: ${y.name} alone, not with ${kin.map((f) => f.name).join(', ')}`] : [];
     });
     expect(problems).toEqual([]);

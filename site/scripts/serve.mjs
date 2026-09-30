@@ -3,7 +3,7 @@
 // the rest resolve as in production. As on Pages, text is gzipped, directories redirect to
 // their trailing-slash URL, and missing pages get the site's 404 page (so a local
 // Lighthouse run measures what visitors download).
-// Usage: npm run site:serve [-- --port 8000]
+// Usage: npm run site:serve [-- --port 8000] (a port in use falls back to a free one, printed)
 import { createReadStream, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import path from 'node:path';
@@ -65,7 +65,7 @@ function send(req, res, status, file) {
   (gzip ? stream.pipe(createGzip()) : stream).pipe(res);
 }
 
-createServer((req, res) => {
+const server = createServer((req, res) => {
   let pathname;
   try {
     pathname = decodeURIComponent(new URL(req.url ?? '/', 'http://localhost').pathname);
@@ -83,6 +83,16 @@ createServer((req, res) => {
   if (found?.redirect) res.writeHead(301, { Location: found.redirect }).end();
   else if (found?.file) send(req, res, 200, found.file);
   else send(req, res, 404, path.join(dist, '404.html'));
-}).listen(Number(values.port), () => {
-  console.log(`Field Guide at http://localhost:${values.port}${BASE}`);
+});
+// A port another run holds (a second worktree's checks) falls back to a free one; the line
+// below says which, and the browser checks read their URL from it.
+let fallback = false;
+server.on('error', (err) => {
+  if (err.code !== 'EADDRINUSE' || fallback) throw err;
+  fallback = true;
+  console.error(`Port ${values.port} is taken: serving on a free port instead.`);
+  server.listen(0);
+});
+server.listen(Number(values.port), () => {
+  console.log(`Field Guide at http://localhost:${server.address().port}${BASE}`);
 });

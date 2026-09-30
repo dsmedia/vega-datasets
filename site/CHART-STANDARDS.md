@@ -18,7 +18,8 @@ A line chart colors at most six series on a wide screen and at most four on a ph
 across, one row per series, the measure as a sequential color (Vega-Lite's `blues`),
 on a log scale when the measure's positive values span three decades or more (S4). A
 series value that is the total of the others is left out of the count and out of the
-chart (S2). Empty cells count: they reach the color domain as a value of their own.
+chart (S2). Blank cells count: they reach the color domain as values of their own, and a
+JSON file's null and empty text are two (the builder counts the forms present, `blanks`).
 The choice depends only on the data: the same table always gets the same chart.
 
 Why: telling lines apart by hue alone works for a handful of them. Few puts the limit
@@ -164,9 +165,11 @@ axis), with 5% to spare on each side, so no point sits on the edge: London's out
 are the edge of the data, not outliers, and all 33 show. Outliers left out are said below
 the chart, as the Albers USA map says its rows outside the 50 states (la_riots: one death
 recorded 40 km east of the rest). The builder finds the
-coordinate columns (`coordinate_pair`): named latitude and longitude, a centroid's `cx`
-and `cy`, or `x` and `y` only when their descriptions say longitude and latitude, with
-every value in range.
+coordinate columns (`coordinate_pair`): named latitude and longitude; a centroid's `cx`
+and `cy` only with geographic evidence (described as longitude and latitude or a centroid,
+or every value inside a detailed basemap's box, as London's centroids are); `x` and `y`
+only when their descriptions say longitude and latitude. Every value must be in range, and
+values in range alone are no evidence: pixel positions stay a scatter plot.
 
 Why: points with no map are a scatter plot with no place in it (la_riots' deaths across
 Los Angeles; london_centroids drawn as x and y). The outline is what makes a position a
@@ -181,15 +184,19 @@ note, and no point but an outlier outside the frame, from the data files),
 No two axis labels overlap (`labelOverlap`, with room between them), no label is turned on
 its side when it fits upright, date labels match the span (`dateFormat`), an integer's
 histogram bins step and are labeled by whole numbers (4, not 4.0), a log or symlog
-color legend labels its decades inside the data (or its 1-2-5 steps, when fewer than three
-decades are), not only its two ends, and no legend's title sits on its labels (a vertical
-gradient's end labels reach half a line past its ends; the title keeps clear of them).
+color legend labels the scale as drawn: Vega picks its ticks from the rendered domain (a
+heatmap's bucket means or sums, not the raw values, whose decades may all lie outside it),
+and over three decades or more only the decades are labeled. Every label lies within its
+gradient, and no legend's title sits on its labels (a vertical gradient's end labels reach
+half a line past its ends; the title keeps clear of them).
 
 Why: a label that overlaps another, or has to be read sideways, is a label the reader
 skips. Knaflic's advice for axes is that they be easy to read at a glance.
 
 Tests: `browser/labels.mjs` (the rendered label and legend-title boxes of every dataset's
-Explore chart in every mode, at 1360 and 390 px), `chart-standards.test.ts` (integer bins, legend decades).
+Explore chart in every mode, at 1360 and 390 px), `chart-standards.test.ts` and
+`explore-rules.test.ts` (every rendered legend label within its gradient, on the real
+charts wide and on a phone and on a heatmap whose cells span a fraction of the raw range), `chart-standards.test.ts` (integer bins, legend decades).
 
 ## S11. A time axis ends at the data
 
@@ -248,12 +255,36 @@ average daily rainfall) is a quantity worth a line, so the decades condition kee
 
 Tests: `chart-standards.test.ts` (S16).
 
-## S17. Measures of one kind over time are drawn together
+## S17. Measures of one stated unit over time are drawn together
 
-Two to six measures (four on a phone) whose descriptions open with the same two words, all
-non-negative integers, in a table with one row per time, are one chart: a line each, on one
-axis, colored by measure (crimea's deaths from disease, wounds and other causes,
-Nightingale's view of the data). The rule claims a shared unit only where the metadata says
-so, and is deterministic: the first measure's kind decides.
+Two to six measures (four on a phone) whose metadata states one unit, all non-negative, in
+a table with one row per time, are one chart: a line each, on one axis, colored by measure
+(crimea's deaths from disease, wounds and other causes, Nightingale's view of the data).
+A wrong fold is worse than none: one axis says the measures share a unit. So the rule
+folds only on explicit evidence, the first measure's decides, and in doubt nothing folds:
 
-Tests: `chart-standards.test.ts` (S17).
+- a unit in parentheses or brackets ending each title or description, the same for all
+  ("(mm)", "[USD]"): "Average monthly rainfall (mm)" and "Average monthly revenue (USD)"
+  don't fold, however many words they share;
+- or descriptions that open with a count and a preposition, the same for all ("Deaths
+  from …": each row counts deaths), for whole numbers only. Crimea's say "Deaths from
+  Zymotic Diseases", "Deaths from \"Wounds and Injuries\" …" and "Deaths from All Other
+  Causes"; `army_size` ("Estimated Average Monthly Strength of the Army") stays out.
+
+Each line is keyed by its field's name, so two measures titled alike stay two series (the
+legend says "Deaths (a)", "Deaths (b)"); the titles are labels only, compared as escaped
+strings, never looked up by name. Each measure's documented missing values are left out
+after the fold, measure by measure (a marker in one keeps the others' values on its row).
+The lines break at gaps (S3), are marked when few (S8), and give way to points when a
+measure is too jagged (S5).
+
+A field Vega can't read by name is left out of every chart (`readable`): one named for an
+Object property (`constructor`, `toString`, `__proto__`) breaks Vega's dataflow wherever it
+is read, a backslash in a name is read as an escape however many are written, and a double
+quote breaks Vega-Lite's tooltip expression. The chart draws the rest.
+
+Tests: `chart-standards.test.ts` (S17 on the real datasets), `explore-invariants.test.ts`
+(40 generated fold tables: S1, S3, S5, S8, no data loss per measure, no sum across measures,
+one stated unit, series keyed by name, and unsafe names never folded, with coverage guards
+for missing values, gaps, duplicate titles and names that need escaping),
+`explore-rules.test.ts` (Codex round 6).

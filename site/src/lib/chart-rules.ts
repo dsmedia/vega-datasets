@@ -385,3 +385,19 @@ export function mostlyZero(f: Field): boolean {
   const values = p.bins.reduce((a, b) => a + b, 0);
   return values > 0 && p.zeros / values > 0.5 && scaleType(f) !== "linear";
 }
+
+// --- Names Vega can't read ------------------------------------------------------------------
+
+/**
+ * A field Vega can read by name. A column named for one of Object's own properties
+ * (`constructor`, `toString`, `__proto__`) breaks Vega's dataflow wherever it is read ("Operator
+ * not defined"), in an encoding or an expression alike: charts leave such a field out
+ * (Codex round 6, #9), and draw the rest.
+ */
+export function readable(f: Field): boolean {
+  // A backslash or a double quote, too: Vega-Lite reads a backslash as an escape in a field
+  // reference however many are written (another field: nothing drawn), and writes a double
+  // quote unescaped into its tooltip's expression (a parse error).
+  return !UNREADABLE.has(f.name) && !/[\\"]/.test(f.name);
+}
+const UNREADABLE = new Set([...Object.getOwnPropertyNames(Object.prototype), "__proto__"]);
