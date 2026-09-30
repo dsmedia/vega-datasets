@@ -673,13 +673,15 @@ def structure(
         for f in fields
         if f.get("type") in {"integer", "number"}
     }
-    keys = time_keys(df, fields, numbers)
+    # Parsed once for the three checks that compare values as the chart reads them.
+    values = parsed_values(df, fields, numbers)
+    keys = time_keys(df, fields, numbers, values)
     found = {
         "correlated": correlations(numbers),
         "points": coordinates(numbers, fields),
         "timeKeys": keys,
-        "timeKeyBuckets": time_key_buckets(df, fields, numbers, keys),
-        "totalValues": total_values(df, fields, numbers, keys),
+        "timeKeyBuckets": time_key_buckets(df, fields, numbers, keys, values),
+        "totalValues": total_values(df, fields, numbers, keys, values),
         "presentCategories": present_categories(df, fields, schema),
     }
     return {k: v for k, v in found.items() if v}
@@ -708,7 +710,10 @@ def correlations(numbers: dict[str, pl.Series]) -> list[list[Any]]:
 
 
 def time_keys(
-    df: pl.DataFrame, fields: list[dict[str, Any]], numbers: dict[str, pl.Series]
+    df: pl.DataFrame,
+    fields: list[dict[str, Any]],
+    numbers: dict[str, pl.Series],
+    values: pl.DataFrame | None = None,
 ) -> dict[str, list[str]]:
     """
     For each date field (and each integer field of years), the fields that with it identify every row.
@@ -723,7 +728,7 @@ def time_keys(
     rows = df.height
     if rows == 0:
         return {}
-    values = parsed_values(df, fields, numbers)
+    values = parsed_values(df, fields, numbers) if values is None else values
     times = [
         f["name"]
         for f in fields
@@ -799,6 +804,7 @@ def total_values(
     fields: list[dict[str, Any]],
     numbers: dict[str, pl.Series],
     keys: dict[str, list[str]],
+    values: pl.DataFrame | None = None,
 ) -> dict[str, list[str]]:
     """
     Per grouping column, its values that are the sum of the column's other values.
@@ -809,48 +815,51 @@ def total_values(
     groups, the value is a total, and the site leaves it out wherever it adds rows up.
     """
     fields = [f for f in fields if f["name"] in df.columns]
-    values = parsed_values(df, fields, numbers)
+    values = parsed_values(df, fields, numbers) if values is None else values
     out: dict[str, list[str]] = {}
     for t, key in keys.items():
         for g in key:
             if values[g].dtype != pl.String or g in out:
                 continue
+            if values[g].drop_nulls().n_unique() > TOTAL_MAX_VALUES:
+                continue
             context = [t, *(k for k in key if k != g)]
             measures = [m for m in numbers if m not in context and m != g]
-            distinct = values[g].drop_nulls().unique().sort().to_list()
-            if len(distinct) > TOTAL_MAX_VALUES:
-                continue
-            if hits := [
-                v for v in distinct if _adds_up(values, g, v, context, measures)
-            ]:
+            hits = sorted({
+                v for m in measures for v in _totals_by(values, g, m, context)
+            })
+            if hits:
                 out[g] = hits
     return out
 
 
-def _adds_up(
-    values: pl.DataFrame, g: str, v: str, context: list[str], measures: list[str]
-) -> bool:
-    """Whether value ``v`` of ``g`` is the sum of the others for some measure, group by group."""
-    mine = values.filter(pl.col(g) == v)
-    rest = values.filter(pl.col(g) != v)
-    for m in measures:
-        others = rest.group_by(context).agg(
-            pl.col(m).sum().alias("others"), pl.len().alias("n")
+def _totals_by(values: pl.DataFrame, g: str, m: str, context: list[str]) -> list[str]:
+    """
+    The values of ``g`` that are the sum of the other values for measure ``m``, in one pass.
+
+    Each row is compared with the sum of its group (the rows of the same time and series):
+    a total satisfies 2 x value = group sum, here |2v - s| <= 1% of the others (s - v).
+    A value counts when that holds in at least 90% of the (at least three) groups where it
+    has a value beside at least two others.
+    """
+    rows = values.select([*context, g, m]).with_columns(
+        pl.col(m).sum().over(context).alias("_sum"),
+        pl.len().over(context).alias("_rows"),
+    )
+    candidates = rows.filter(
+        pl.col(g).is_not_null() & pl.col(m).is_not_null() & (pl.col("_rows") >= 3)
+    )
+    others = pl.col("_sum") - pl.col(m)
+    close = (pl.col(m) - others).abs() <= TOTAL_TOLERANCE * others.abs() + 1e-9
+    found = (
+        candidates.group_by(g)
+        .agg(pl.len().alias("_groups"), close.sum().alias("_close"))
+        .filter(
+            (pl.col("_groups") >= TOTAL_MIN_KEYS)
+            & (pl.col("_close") >= TOTAL_SHARE * pl.col("_groups"))
         )
-        pairs = (
-            mine.select([*context, m])
-            .join(others, on=context, how="inner")
-            .drop_nulls()
-        )
-        pairs = pairs.filter(pl.col("n") >= 2)
-        if pairs.height < TOTAL_MIN_KEYS:
-            continue
-        close = (pl.col(m) - pl.col("others")).abs() <= TOTAL_TOLERANCE * pl.col(
-            "others"
-        ).abs() + 1e-9
-        if pairs.select(close.mean()).item() >= TOTAL_SHARE:
-            return True
-    return False
+    )
+    return found[g].to_list()
 
 
 def present_categories(
@@ -897,6 +906,7 @@ def time_key_buckets(
     fields: list[dict[str, Any]],
     numbers: dict[str, pl.Series],
     keys: dict[str, list[str]],
+    values: pl.DataFrame | None = None,
 ) -> dict[str, list[str]]:
     """
     For each date field with a key, the time units (Vega-Lite's) whose buckets still hold one row per key.
@@ -906,7 +916,7 @@ def time_key_buckets(
     January), a sum would count it twice.
     """
     fields = [f for f in fields if f["name"] in df.columns]
-    values = parsed_values(df, fields, numbers)
+    values = parsed_values(df, fields, numbers) if values is None else values
     out: dict[str, list[str]] = {}
     for t, key in keys.items():
         if values[t].dtype != pl.Datetime and not isinstance(
