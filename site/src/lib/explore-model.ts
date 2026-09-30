@@ -222,14 +222,19 @@ export function hasDensity(d: Dataset): boolean {
 
 /**
  * What a map leaves out, said under it: Albers USA has no place for points outside the 50
- * states (Puerto Rico, Guam), so the starter drops them, and the page says how many; null
- * when it drops none.
+ * states (Puerto Rico, Guam), so the starter drops them; a world map fitted to the middle
+ * 98% of the points clips the rest. The page says how many; null when none is left out.
  */
 export function mapNote(d: Dataset): string | null {
-  const spec = starterSpec(d);
-  const n = d.points?.outsideUs ?? 0;
-  if ((spec?.projection as Spec | undefined)?.type !== "albersUsa" || !n || !d.points || d.rows === null) return null;
-  return `The map leaves out ${formatCount(n)} of ${formatCount(d.rows)} rows, outside the 50 states: the Albers USA projection has no place for them.`;
+  const projection = starterSpec(d)?.projection as Spec | undefined;
+  if (!projection || !d.points || d.rows === null) return null;
+  if (projection.type === "albersUsa") {
+    const n = d.points.outsideUs ?? 0;
+    return n ? `The map leaves out ${formatCount(n)} of ${formatCount(d.rows)} rows, outside the 50 states: the Albers USA projection has no place for them.` : null;
+  }
+  // A world map fitted to the middle 98% of the points clips the rest.
+  const n = projection.fit ? (d.points.outsideBox ?? 0) : 0;
+  return n ? `The map frames the middle 98% of the points; ${formatCount(n)} of ${formatCount(d.rows)} rows ${n === 1 ? "lies" : "lie"} outside the frame.` : null;
 }
 
 /** The starter chart, sized to its column; small multiples keep two columns of fixed panels, smaller on a phone. */

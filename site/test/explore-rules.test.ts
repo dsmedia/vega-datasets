@@ -176,7 +176,7 @@ describe('G-4: series stay apart', () => {
 
   test('a series value that totals the others is left out', () => {
     const entity = nominal('Entity', [['All natural disasters', 10], ['Drought', 10], ['Flood', 10]]);
-    const d = table([quant('Year', 1900, 1909, { type: 'integer' }, { distinct: 10, evenlySpaced: true }), entity, quant('Deaths', 1, 3.7e6, { type: 'integer' })], 30, { timeKeys: { Year: ['Entity'] } });
+    const d = table([quant('Year', 1900, 1909, { type: 'integer' }, { distinct: 10, evenlySpaced: true }), entity, quant('Deaths', 1, 3.7e6, { type: 'integer' })], 30, { timeKeys: { Year: ['Entity'] }, totalValues: { Entity: ['All natural disasters'] } });
     expect(JSON.stringify(starterSpec(d)!.transform)).toContain('All natural disasters');
   });
 });
@@ -356,7 +356,7 @@ describe('Codex round 1', () => {
   });
 
   test('#3 a rate named for what it counts is not summed', () => {
-    expect(nameTokens('deaths_per_100k')).toEqual(['deaths', 'per', '100k']);
+    expect(nameTokens('deaths_per_100k')).toEqual(['deaths', 'per', '100', 'k']);
     expect(nameTokens('avgDeaths')).toEqual(['avg', 'Deaths']);
     expect(summable(quant('deaths_per_100k', 0, 100))).toBe(false);
     expect(summable(quant('pct_total', 0, 1))).toBe(false);
@@ -427,5 +427,120 @@ describe('Codex round 1', () => {
     const facet = starterSpec(table([severity, quant('X', 1, 9), quant('Y', 1, 9)], 12))!.facet as Record<string, unknown>;
     expect(facet.sort).toEqual(levels);
     expect(JSON.stringify(facet.header)).toContain('Low severity');
+  });
+});
+
+// Codex round 2: each test on Codex's input, shown failing on cd70a5b before the fix.
+describe('Codex round 2', () => {
+  const regions = (n: number, prefix = 'r') => Array.from({ length: n }, (_, i) => [`${prefix}${String(i).padStart(2, '0')}`, 3] as [string, number]);
+  const year = quant('year', 2000, 2002, { type: 'integer' }, { distinct: 3, evenlySpaced: true });
+  const many = (name: string, distinct: number, top: [string, number][]) => ({ ...nominal(name, top), profile: { kind: 'nominal' as const, distinct, top, missing: 0 } });
+
+  test('#1 rate names with digits or a percent sign are never summed', () => {
+    expect(nameTokens('deaths_per100k')).toEqual(['deaths', 'per', '100', 'k']);
+    expect(summable(quant('deaths_per100k', 0, 100))).toBe(false);
+    expect(summable(quant('deaths_%', 0, 100))).toBe(false);
+    expect(summable(quant('deathsPer1000', 0, 100))).toBe(false);
+    const d = table([year, many('country', 13, regions(6)), quant('deaths_per100k', 100, 100)], 39, { timeKeys: { year: ['country'] }, totalValues: {} });
+    expect(enc(starterSpec(d)).y).toMatchObject({ aggregate: 'mean' });
+  });
+
+  test('#2 a bucket where an entity repeats is averaged, not summed', () => {
+    const days: Field = { name: 'date', type: 'date', description: null, profile: { kind: 'temporal', min: '2019-01-02T00:00:00Z', max: '2021-01-03T00:00:00Z', missing: 0, distinct: 3 } };
+    const region = many('region', 400, regions(6));
+    const rows = 1200;
+    // The builder records the buckets in which (bucket, key) still names one row: none here (Jan 2019 holds two dates).
+    const d = table([days, region, quant('population', 100, 100)], rows, { timeKeys: { date: ['region'] }, timeKeyBuckets: { date: [] }, totalValues: {} });
+    // 1,200 rows keep the time unit on: the monthly bucket merges the 2nd and 3rd of January.
+    expect(enc(starterSpec(d)).y).toMatchObject({ aggregate: 'mean' });
+    // Where every bucket holds one row per region, the sum stands.
+    const once = { ...d, timeKeyBuckets: { date: ['yearmonthdate', 'yearmonth', 'year'] } };
+    expect(enc(starterSpec(once)).y).toMatchObject({ aggregate: 'sum' });
+  });
+
+  test('#3 a total among more than sixty groups is left out of the sum', async () => {
+    const region = many('region', 61, regions(6, 'Region'));
+    const d = table([year, region, quant('count', 10, 600)], 183, { timeKeys: { year: ['region'] }, totalValues: { region: ['Total'] } });
+    const rows = [2000, 2001, 2002].flatMap((y) => [...Array.from({ length: 60 }, (_, i) => ({ year: y, region: `Region${String(i).padStart(2, '0')}`, count: 10 })), { year: y, region: 'Total', count: 600 }]);
+    const view = await draw(starterSpec(d)!, rows);
+    try {
+      expect(new Set(rowsWith(view, 'sum_count').map((r) => r.sum_count))).toEqual(new Set([600]));
+    } finally {
+      view.finalize();
+    }
+  });
+
+  test('#4 a column named field (or groupby) still gets its missing-value filter', async () => {
+    const origin = many('origin', 61, regions(6));
+    const field = quant('field', 1, 10, { title: 'Count', missingValues: ['-99'] });
+    const d = table([origin, many('destination', 61, regions(6)), field], 122, { totalValues: {} });
+    const rows = Array.from({ length: 61 }, (_, i) => [{ origin: `o${i}`, field: 10 }, { origin: `o${i}`, field: -99 }]).flat();
+    // The name alone must make it summable here: title Count.
+    const view = await draw(starterSpec(d)!, rows);
+    try {
+      expect(new Set(rowsWith(view, 'total').map((r) => r.total))).toEqual(new Set([10]));
+    } finally {
+      view.finalize();
+    }
+  });
+
+  test('#6 documented log bounds are the domain, exactly', () => {
+    const f = quant('v', 0.01, 800, { constraints: { minimum: 0.002, maximum: 900 } });
+    const s = scaleFor(f);
+    expect(s.scale).toMatchObject({ type: 'log', domainMin: 0.002, domainMax: 900 });
+    for (const v of s.axis.values as number[]) expect(v >= 0.002 && v <= 900).toBe(true);
+  });
+
+  test('#7 points either side of 180° draw side by side', async () => {
+    const d = table([quant('latitude', -17, -17), quant('longitude', -179, 179)], 100, {
+      points: { latitude: 'latitude', longitude: 'longitude', box: { longitude: [179, 181], latitude: [-17, -17] }, us: 0, outsideUs: 100 },
+    });
+    const spec = starterChart(d)!;
+    // A third group 7° north of one: drawn on the right geography, the 2° across 180 is
+    // shorter than those 7°; drawn across the whole world, the two sides are the width apart.
+    const rows = [
+      ...Array.from({ length: 50 }, () => ({ latitude: -17, longitude: 179 })),
+      ...Array.from({ length: 50 }, () => ({ latitude: -17, longitude: -179 })),
+      { latitude: -10, longitude: 179 },
+    ];
+    const view = await draw({ ...spec, width: 880 }, rows);
+    try {
+      const at = (lon: number, lat: number) => rowsWith(view, 'x').find((r) => r.longitude === lon && r.latitude === lat)! as { x: number; y: number };
+      const across = Math.abs(at(179, -17).x - at(-179, -17).x);
+      const north = Math.abs(at(179, -17).y - at(179, -10).y);
+      expect(across).toBeLessThan(north);
+    } finally {
+      view.finalize();
+    }
+  });
+
+  test('#8 facet headers show the documented labels (rendered)', async () => {
+    const levels = ['low', 'medium', 'high'];
+    const severity = nominal('severity', [['high', 4], ['low', 4], ['medium', 4]], {
+      categories: levels.map((value) => ({ value, label: `${value[0]!.toUpperCase()}${value.slice(1)} severity` })), categoriesOrdered: true,
+    });
+    const spec = starterSpec(table([severity, quant('X', 1, 9), quant('Y', 1, 9)], 12))!;
+    const rows = levels.flatMap((s) => [1, 2, 3, 4].map((x) => ({ severity: s, X: x, Y: x })));
+    const view = await draw(spec, rows);
+    try {
+      const svg = await view.toSVG();
+      for (const label of ['Low severity', 'Medium severity', 'High severity']) expect(svg).toContain(`>${label}<`);
+    } finally {
+      view.finalize();
+    }
+  });
+
+  test('#10 a remainder category ("All other causes") is a series, not a total', () => {
+    const cause = nominal('cause', [['All other causes', 3], ['Cancer', 3], ['Heart disease', 3]]);
+    const d = table([year, cause, quant('deaths', 1, 900)], 9, { timeKeys: { year: ['cause'] } });
+    expect(starterSpec(d)!.transform).toBeUndefined();
+  });
+
+  test('#11 a fitted world map says how many points it leaves outside the frame', () => {
+    const d = table([quant('latitude', 0, 60), quant('longitude', 0, 120)], 100, {
+      points: { latitude: 'latitude', longitude: 'longitude', box: { longitude: [0, 20], latitude: [0, 20] }, us: 0, outsideUs: 100, outsideBox: 1 },
+    });
+    expect((starterSpec(d)!.projection as Record<string, unknown>).fit).toBeDefined();
+    expect(mapNote(d)).toBe('The map frames the middle 98% of the points; 1 of 100 rows lies outside the frame.');
   });
 });

@@ -66,8 +66,9 @@ const first = modes[0];
 // themselves, on a desktop-class device only (the client decides), or when asked; and
 // whether they may zoom (a band that allows it only on desktop-class devices shows the
 // hint until the client knows the device).
-// Whichever mode opens first (a table that opens on Over Time loads the same file).
-const band = modes.includes("scatter") ? tableBand(d) : null;
+// By the table's size, whichever chart opens first (a bar chart of 12,000 rows loads the same file);
+// a map follows the map rule instead.
+const band = modes.length && !starterSpec(d)?.projection ? tableBand(d) : null;
 const policy = band ? BAND_POLICY[band] : null;
 const zoomable = !policy || policy.zoom !== "never";
 const specFor = (mode: string, phone: boolean) =>

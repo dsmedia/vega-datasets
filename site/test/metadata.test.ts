@@ -21,7 +21,7 @@ const d = described();
 const field = (name: string) => d.fields.find((f) => f.name === name)!;
 const enc = (spec: Spec | null) => (spec as { encoding: Enc }).encoding;
 
-const GRADE_LABELS = 'indexof(["v:low","v:mid","v:high"], "v:" + datum.label) < 0 ? datum.label : slice(["v:Low","v:Medium","v:High"][indexof(["v:low","v:mid","v:high"], "v:" + datum.label)], 2)';
+const GRADE_LABELS = 'indexof(["v:low","v:mid","v:high"], "v:" + (datum.label)) < 0 ? (datum.label) : slice(["v:Low","v:Medium","v:High"][indexof(["v:low","v:mid","v:high"], "v:" + (datum.label))], 2)';
 const draw = (spec: Spec, signals: Record<string, unknown> = {}) => drawRows(spec, ROWS, signals);
 
 describe('catalog helpers normalize the Table Schema forms', () => {

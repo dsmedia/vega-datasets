@@ -107,12 +107,15 @@ export function scaleFor(f: Field): { scale: Enc; axis: Enc } {
     // Metadata first: documented bounds that the data fits set the domain (a log scale's
     // bounds are positive here: a documented minimum at or below zero made it symlog).
     const r = documentedRange(f);
-    const [lo, hi] = [r?.fits && r.min !== undefined ? r.min : p.min, r?.fits && r.max !== undefined ? r.max : p.max];
-    const ticks = logTicks(lo, hi);
+    const [docMin, docMax] = [r?.fits ? r.min : undefined, r?.fits ? r.max : undefined];
+    const steps = logTicks(docMin ?? p.min, docMax ?? p.max);
+    // Documented bounds are the domain exactly; the steps around the data otherwise.
+    const [lo, hi] = [docMin ?? steps[0]!, docMax ?? steps.at(-1)!];
+    const ticks = steps.filter((v) => v >= lo && v <= hi);
     // The domain ends at the steps around the data (5 to 1,000 for prices of 6 to 800), not at a
     // power of ten far below it; ticks, and so grid lines, only at those steps.
     return {
-      scale: { type: "log", domainMin: ticks[0], domainMax: ticks.at(-1), nice: false },
+      scale: { type: "log", domainMin: lo, domainMax: hi, nice: false },
       axis: { values: ticks, labelExpr: POWER_LABEL },
     };
   }
@@ -244,12 +247,15 @@ export function sampled(t: Field): boolean {
 
 const COUNT_NAME = /(^|[_\s])(count|counts|people|population|pop|deaths|cases|number|total|votes|visitors|passengers|jobs)($|[_\s])/i;
 const COUNT_DESC = /^(the )?(total )?(number|count) of\b/i;
-/** Name parts that make a measure a rate or a summary (`deaths_per_100k`, `avgPrice`, `pct`), whatever else the name says. */
-const RATE_TOKEN = /^(per|rate|rates|ratio|pct|percent|percentage|share|avg|average|mean|median|index|perc|proportion|density)$/i;
+/** Name parts that make a measure a rate or a summary (`deaths_per100k`, `avgPrice`, `pct`, `%`), whatever else the name says. */
+const RATE_TOKEN = /^(per|rate|rates|ratio|ratios|pct|percent|percentage|share|shares|avg|average|mean|median|index|perc|proportion|density|%)$/i;
 
-/** A field name's parts: split at underscores, hyphens, spaces, dots and camelCase humps. */
+/** A field name's parts: split at underscores, hyphens, spaces, dots, camelCase humps, and between letters, digits and symbols (`per100k`: per, 100, k). */
 export function nameTokens(name: string): string[] {
-  return name.replace(/([a-z\d])([A-Z])/g, "$1 $2").split(/[_\-\s.]+/).filter(Boolean);
+  return name
+    .replace(/([a-z\d])([A-Z])/g, "$1 $2")
+    .split(/[_\-\s.]+/)
+    .flatMap((part) => part.match(/[A-Za-z]+|\d+|[^A-Za-z\d]+/g) ?? []);
 }
 /** Words that make a count a rate or an average, which don't add up ("number of children per woman"). */
 const NOT_A_TOTAL = /\b(per|rate|ratio|average|mean|median|share|percent|percentage)\b|%/i;
@@ -296,15 +302,11 @@ export function namedAxes(measures: Field[]): { x: Field; y: Field } | null {
 
 // --- Totals ----------------------------------------------------------------------------------
 
-const TOTAL_VALUE = /^(all|total)\b/i;
-
 /**
- * A category's values that stand for all the others ("All natural disasters", "Total"): as
- * the builder found them among every value, else (a table the builder didn't read) among the
- * profile's most common values.
+ * A category's values that stand for all the others ("Total", "All natural disasters"), as
+ * the catalog builder found them among every value (`is_total` there keeps the names); none
+ * for a table the builder didn't read.
  */
 export function totalsOf(d: Dataset, f: Field): string[] {
-  if (d.totalValues) return d.totalValues[f.name] ?? [];
-  const p = f.profile;
-  return p.kind === "nominal" ? p.top.map(([v]) => v).filter((v) => TOTAL_VALUE.test(v.trim())) : [];
+  return d.totalValues?.[f.name] ?? [];
 }

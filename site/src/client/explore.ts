@@ -112,6 +112,8 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
   };
 
   let result: import("vega-embed").Result | undefined;
+  /** The picker (0 x, 1 y) to focus once the next draw has put new ones in place. */
+  let refocus: number | null = null;
   let queue: Promise<void> = Promise.resolve();
   const draw = async () => {
     const v = await loadVega();
@@ -142,6 +144,8 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
       name();
       select.addEventListener("change", name);
     });
+    if (refocus !== null) binds.querySelectorAll("select")[refocus]?.focus();
+    refocus = null;
     const view = result.view;
     const source = state.mode === "scatter" && !density ? pointSource(result.vgSpec as never) : null;
     const recount = () => {
@@ -156,6 +160,8 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
         // A field on a log scale (or leaving one, or to another log field's domain and ticks)
         // needs a new chart: a scale's type, fitted domain and ticks can't follow a param.
         if (scaleOf(state[axis]) !== before) {
+          // The redraw replaces the pickers: the one in use gets focus back.
+          refocus = axis === "x" ? 0 : 1;
           void render();
           return;
         }

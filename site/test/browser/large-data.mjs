@@ -130,7 +130,8 @@ const browser = await puppeteer.launch({ executablePath: chrome, headless: true 
 try {
   // A phone (touch, coarse pointer): nothing heavy loads before a click.
   // jobs opens on Over Time (G-1): the same gate holds for whichever mode opens first.
-  for (const name of ['flights_200k_json', 'flights_20k', 'zipcodes', 'us_10m', 'jobs']) {
+  // species opens on a bar chart (no scatter plot at all): the gate follows the file, not the modes.
+  for (const name of ['flights_200k_json', 'flights_20k', 'zipcodes', 'us_10m', 'jobs', 'species']) {
     const { ctx, requests, errors, state } = await openPage(browser, name, PHONE);
     check(`phone ${name}: no data file before a click`, requests.length === 0 && state.drawButton !== null && errors.length === 0, { requests, errors, ...state });
     await ctx.close();
@@ -250,6 +251,7 @@ try {
     const { ctx, page, errors } = await openPage(browser, 'burtin', DESKTOP, { settle: 1500 });
     await exploreHeights(page);
     const draws = await page.$eval('#explore', (s) => Number(s.dataset.draws ?? 0));
+    await page.focus('#explore .binds select');
     await page.select('#explore .binds select', 'Penicillin');
     // A redraw is expected; without one (the old behavior) the points are measured as they are.
     const redrawn = await page.waitForFunction((n) => Number(document.querySelector('#explore').dataset.draws ?? 0) > n, { timeout: 10_000 }, draws).then(() => true, () => false);
@@ -262,6 +264,9 @@ try {
       return { points: points.length, outside: points.filter((x) => x < lo - 1 || x > hi + 1).length, lo: Math.round(lo), hi: Math.round(hi) };
     });
     check('desktop burtin: a picked log field redraws on its own domain (no point cut off)', redrawn && r.points === 16 && r.outside === 0 && errors.length === 0, { ...r, redrawn, errors });
+    // The redraw replaces the picker: focus goes back to it, so the keyboard carries on.
+    const focus = await page.evaluate(() => ({ tag: document.activeElement?.tagName ?? null, inBinds: Boolean(document.activeElement?.closest('#explore .binds')), value: document.activeElement?.value ?? null }));
+    check('desktop burtin: the picker keeps focus through a redraw', focus.inBinds && focus.tag === 'SELECT' && focus.value === 'Penicillin', focus);
     await ctx.close();
   }
 

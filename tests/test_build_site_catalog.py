@@ -29,6 +29,7 @@ from scripts.build_site_catalog import (
     readme_markdown,
     shortest_arc,
     thumbnail_urls,
+    time_key_buckets,
     time_keys,
     total_values,
     us_land,
@@ -291,6 +292,7 @@ def test_build_dataset_without_metadata_adds_no_keys(tmp_path: Path) -> None:
         "preview",
         # Structure read from the data, not metadata: `when` is unique per row.
         "timeKeys",
+        "timeKeyBuckets",
     ]
     for field in entry["fields"]:
         assert list(field) == ["name", "type", "description", "profile"]
@@ -704,12 +706,59 @@ def test_time_keys_compare_parsed_values() -> None:
 def test_total_values_read_every_value_of_a_category() -> None:
     regions = [f"r{i:02}" for i in range(12)]
     df = pl.DataFrame({
-        "region": [*regions, "Total"],
-        "title": ["All About Eve", *regions],
+        "region": [*regions, "Total"] * 2,
+        "title": ["All About Eve", *regions] * 2,
     })
     fields = [{"name": "region", "type": "string"}, {"name": "title", "type": "string"}]
-    assert total_values(df, fields) == {"region": ["Total"], "title": ["All About Eve"]}
-    many = pl.DataFrame({
-        "title": ["All the King's Men", *[f"t{i}" for i in range(70)]]
+    # "All About Eve" is a name, not a total: only whole names and "All <noun>" count.
+    assert total_values(df, fields) == {"region": ["Total"]}
+    titles = pl.DataFrame({"title": ["All Industries", *[f"t{i}" for i in range(70)]]})
+    # Values that don't repeat are names, not groups.
+    assert total_values(titles, [{"name": "title", "type": "string"}]) == {}
+
+
+# Codex round 2
+
+
+def test_total_values_scan_every_group_and_match_whole_values() -> None:
+    regions = [f"Region{i:02}" for i in range(60)]
+    df = pl.DataFrame({"region": [*regions, "Total"] * 2})
+    assert total_values(df, [{"name": "region", "type": "string"}]) == {
+        "region": ["Total"]
+    }
+    causes = pl.DataFrame({
+        "cause": ["Cancer", "Heart disease", "All other causes"] * 3
     })
-    assert total_values(many, [{"name": "title", "type": "string"}]) == {}
+    assert total_values(causes, [{"name": "cause", "type": "string"}]) == {}
+    world = pl.DataFrame({"area": ["World", "Asia", "Europe"] * 2})
+    assert total_values(world, [{"name": "area", "type": "string"}]) == {
+        "area": ["World"]
+    }
+
+
+def test_time_key_buckets_notice_an_entity_repeating_within_a_month() -> None:
+    dates = ["2019-01-02", "2019-01-03", "2021-01-03"]
+    df = pl.DataFrame({
+        "date": [d for d in dates for _ in range(400)],
+        "region": [f"r{i}" for _ in dates for i in range(400)],
+        "population": ["100"] * 1200,
+    })
+    fields = [
+        {"name": "date", "type": "date"},
+        {"name": "region", "type": "string"},
+        {"name": "population", "type": "number"},
+    ]
+    numbers = {"population": numeric_values(df["population"])}
+    assert time_keys(df, fields, numbers) == {"date": ["region"]}
+    assert time_key_buckets(df, fields, numbers, {"date": ["region"]}) == {
+        "date": ["yearmonthdate"]
+    }
+
+
+def test_coordinates_count_rows_outside_the_fitted_box() -> None:
+    fields = [{"name": "lat", "type": "number"}, {"name": "lon", "type": "number"}]
+    lat = pl.Series([0.0] * 98 + [20.0, 60.0])
+    lon = pl.Series([0.0] * 98 + [20.0, 120.0])
+    points = coordinates({"lat": lat, "lon": lon}, fields)
+    assert points is not None
+    assert points["outsideBox"] >= 1

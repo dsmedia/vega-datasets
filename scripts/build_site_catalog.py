@@ -665,10 +665,12 @@ def structure(
         for f in fields
         if f.get("type") in {"integer", "number"}
     }
+    keys = time_keys(df, fields, numbers)
     found = {
         "correlated": correlations(numbers),
         "points": coordinates(numbers, fields),
-        "timeKeys": time_keys(df, fields, numbers),
+        "timeKeys": keys,
+        "timeKeyBuckets": time_key_buckets(df, fields, numbers, keys),
         "totalValues": total_values(df, fields),
     }
     return {k: v for k, v in found.items() if v}
@@ -774,28 +776,91 @@ def parsed_values(
     return pl.DataFrame({f["name"]: parsed(f) for f in fields})
 
 
-TOTAL_VALUE: Final = re.compile(r"^(all|total)\b", re.IGNORECASE)
+# Values that stand for all the others in a grouping column: the whole value, never a
+# prefix ("All other causes" is a remainder, a series of its own). "All" followed by a
+# plural noun of up to three words ("All natural disasters", "All industries") is a
+# total too, unless it names what is left over; titles ("All About Eve") are not. The one place these names are kept; the site reads the
+# values found (`totalValues`).
+TOTAL_NAMES: Final = frozenset({
+    "all",
+    "total",
+    "totals",
+    "grand total",
+    "overall",
+    "world",
+    "sum",
+    "all categories",
+    "all countries",
+    "all regions",
+})
+_ALL_NOUN: Final = re.compile(
+    r"^all\s+(?!(other|others|else|remaining|rest|the|a|an|about|of|in|at|on|for|to|my|your|our|we|you|i)\b)"
+    r"[a-z-]+(\s[a-z-]+){0,2}s$"
+)
+_REMAINDER: Final = re.compile(r"\b(other|others|else|remaining|rest)\b")
+
+
+def is_total(value: str) -> bool:
+    """Whether a category's value names the total of the others ("Total", "World", "All industries")."""
+    v = " ".join(value.lower().split())
+    if v in TOTAL_NAMES:
+        return True
+    return bool(_ALL_NOUN.match(v)) and not _REMAINDER.search(v)
 
 
 def total_values(
     df: pl.DataFrame, fields: list[dict[str, Any]]
 ) -> dict[str, list[str]]:
     """
-    Text values that stand for all the others ("All natural disasters", "Total"), per field.
+    The values of each grouping column that stand for all the others (`is_total`).
 
-    Every distinct value is read, so the site can leave them out wherever it adds up
-    rows (a sum over a total counts everything twice).
+    Every value of the column is read (a total among sixty regions is still found).
+    Only columns whose values repeat are groupings; names and titles ("All About Eve")
+    are not.
     """
     out: dict[str, list[str]] = {}
     for f in fields:
         if f.get("type", "string") != "string" or f["name"] not in df.columns:
             continue
-        distinct = df[f["name"]].cast(pl.String).drop_nulls().unique().sort().to_list()
-        # A category, not names or titles ("All the King's Men").
-        if len(distinct) > 60:
+        values = df[f["name"]].cast(pl.String).drop_nulls()
+        distinct = values.unique().sort().to_list()
+        if len(distinct) > values.len() / 2:
             continue
-        if hits := [v for v in distinct if TOTAL_VALUE.match(v.strip())]:
+        if hits := [v for v in distinct if is_total(v)]:
             out[f["name"]] = hits
+    return out
+
+
+BUCKETS: Final = {"yearmonthdate": "1d", "yearmonth": "1mo", "year": "1y"}
+
+
+def time_key_buckets(
+    df: pl.DataFrame,
+    fields: list[dict[str, Any]],
+    numbers: dict[str, pl.Series],
+    keys: dict[str, list[str]],
+) -> dict[str, list[str]]:
+    """
+    For each date field with a key, the time units (Vega-Lite's) whose buckets still hold one row per key.
+
+    A chart that buckets dates by such a unit may add up the key's groups; where an
+    entity repeats within a bucket (a population counted on the 2nd and the 3rd of
+    January), a sum would count it twice.
+    """
+    fields = [f for f in fields if f["name"] in df.columns]
+    values = parsed_values(df, fields, numbers)
+    out: dict[str, list[str]] = {}
+    for t, key in keys.items():
+        if values[t].dtype != pl.Datetime and not isinstance(
+            values[t].dtype, pl.Datetime
+        ):
+            continue
+        kept = []
+        for unit, every in BUCKETS.items():
+            bucketed = values.with_columns(pl.col(t).dt.truncate(every))
+            if bucketed.select(pl.struct([t, *key]).n_unique()).item() == df.height:
+                kept.append(unit)
+        out[t] = kept
     return out
 
 
@@ -840,16 +905,28 @@ def coordinates(
     def quantiles(s: pl.Series) -> list[float]:
         return [_nice(cast("float", s.quantile(q, "linear"))) for q in (0.01, 0.99)]
 
-    west, east = quantiles(shortest_arc(both["lon"]))
+    shifted = shortest_arc(both["lon"])
+    west, east = quantiles(shifted)
+    south, north = quantiles(both["lat"])
+    # Rows outside the box a fitted map frames: it clips them, and the site says how many.
+    outside_box = cast(
+        "int",
+        pl.DataFrame({"lon": shifted, "lat": both["lat"]})
+        .select(
+            (
+                ~pl.col("lon").is_between(west, east)
+                | ~pl.col("lat").is_between(south, north)
+            ).sum()
+        )
+        .item(),
+    )
     if west >= 180:
         west, east = _nice(west - 360), _nice(east - 360)
     return {
         "latitude": lat,
         "longitude": lon,
-        "box": {
-            "longitude": [west, east],
-            "latitude": quantiles(both["lat"]),
-        },
+        "box": {"longitude": [west, east], "latitude": [south, north]},
+        "outsideBox": outside_box,
         "us": round(us / both.height, 3),
         "outsideUs": outside,
     }

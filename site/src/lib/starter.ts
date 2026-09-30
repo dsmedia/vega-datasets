@@ -56,8 +56,9 @@ export function untag(expr: string): string {
  * arrays (no object literal), so any value is safe and the CSP-safe interpreter reads it.
  */
 export function labelExpr(labels: [string, string][]): string {
-  const at = `indexof(${tagged(labels.map(([v]) => v))}, ${tag("datum.label")})`;
-  return `${at} < 0 ? datum.label : ${untag(`${tagged(labels.map(([, l]) => l))}[${at}]`)}`;
+  // Parenthesized: a facet header's Vega-Lite puts an expression of its own in place of datum.label.
+  const at = `indexof(${tagged(labels.map(([v]) => v))}, ${tag("(datum.label)")})`;
+  return `${at} < 0 ? (datum.label) : ${untag(`${tagged(labels.map(([, l]) => l))}[${at}]`)}`;
 }
 
 type Range = ReturnType<typeof documentedRange>;
@@ -159,6 +160,21 @@ export function missingFilter(d: Dataset, fields: Field[]): Enc | null {
  * (`parse: null`) and parsed after the filter (`toDate`, as Vega-Lite's own parse does).
  * These go before the chart's own transforms. Without such metadata the spec is unchanged.
  */
+/** The source fields a spec's transforms read (aggregate and window fields, groupings, sorts), not the ones they compute. */
+function transformFields(spec: Spec): string[] {
+  const computed = new Set<string>();
+  const read: string[] = [];
+  for (const t of (spec.transform as Enc[] | undefined) ?? []) {
+    const ops = [...((t.aggregate as Enc[] | undefined) ?? []), ...((t.window as Enc[] | undefined) ?? [])];
+    for (const op of ops) if (typeof op.field === "string" && !computed.has(op.field)) read.push(op.field);
+    for (const g of (t.groupby as string[] | undefined) ?? []) if (!computed.has(g)) read.push(g);
+    for (const s of (t.sort as Enc[] | undefined) ?? []) if (typeof s.field === "string" && !computed.has(s.field)) read.push(s.field);
+    for (const op of ops) if (typeof op.as === "string") computed.add(op.as);
+    if (typeof t.as === "string") computed.add(t.as);
+  }
+  return read;
+}
+
 function withMetadata(d: Dataset, spec: Spec | null): Spec | null {
   if (!spec) return spec;
   // A map's points are its last layer (the basemap has its own data); small multiples encode in their inner spec.
@@ -167,9 +183,7 @@ function withMetadata(d: Dataset, spec: Spec | null): Spec | null {
   const encoding = ((spec.spec as Spec | undefined)?.encoding ?? spec.encoding) as Record<string, Enc> | undefined;
   if (!encoding) return spec;
   // Fields the encodings show, the facet splits by, and the chart's own transforms read (a sum per group).
-  const read = JSON.stringify(spec.transform ?? []).match(/"(?:field|groupby)":(?:"[^"]*"|\[[^\]]*\])/g) ?? [];
-  const inTransforms = read.flatMap((m) => [...m.matchAll(/"([^"]*)"/g)].map((x) => x[1]!)).filter((n) => n !== "field" && n !== "groupby");
-  const used = new Set([...Object.values(encoding).map((e) => e.field), (spec.facet as Enc | undefined)?.field, ...inTransforms.map(fieldRef)]);
+  const used = new Set([...Object.values(encoding).map((e) => e.field), (spec.facet as Enc | undefined)?.field, ...transformFields(spec).map(fieldRef)]);
   const fields = d.fields.filter((f) => used.has(fieldRef(f.name)));
   const dates = fields.filter((f) => f.profile.kind === "temporal" && effectiveMissing(d, f)?.length);
   const transform = [
@@ -282,12 +296,6 @@ function spanYears(f: Field): number {
   const p = f.profile;
   if (p.kind !== "temporal") return 0;
   return (new Date(p.max).getTime() - new Date(p.min).getTime()) / (365.25 * 864e5);
-}
-
-/** How many buckets of `unit` the time's span covers (days, months or years). */
-function buckets(t: Field, unit: string): number {
-  const span = spanYears(t);
-  return Math.floor(unit === "yearmonthdate" ? span * 365.25 : unit === "yearmonth" ? span * 12 : span) + 1;
 }
 
 /** The unit a long daily or hourly series is averaged into: days for up to two years, months up to forty, else years. */
@@ -453,7 +461,10 @@ function pointMap(d: Dataset, base: Spec, lat: Field, lon: Field, color: Field |
         : color ? { color: category(color) } : {}),
     },
   };
-  const frame: Spec = { ...base, width: 600, height: 380, projection: { type: us ? "albersUsa" : "equalEarth", ...fit } };
+  // Points either side of 180° (the box's east edge past it): the world turns to put them in the middle.
+  const across = !us && !!box && box.longitude[1] > 180;
+  const rotate = across ? { rotate: [-(box!.longitude[0] + box!.longitude[1]) / 2, 0, 0] } : {};
+  const frame: Spec = { ...base, width: 600, height: 380, projection: { type: us ? "albersUsa" : "equalEarth", ...rotate, ...fit } };
   if (!wide) return { ...frame, ...points };
   const { data, ...rest } = frame;
   return { ...rest, layer: [basemap(d, us), { data, ...points }] };
@@ -483,7 +494,7 @@ function timeSeries(d: Dataset, base: Spec, t: Field, m: Field, fields: Field[])
   // Sum only across the separate groups of one time (people of each age in a year), never
   // across times merged into one bucket (a daily population is not a monthly one); totals
   // among the groups are left out, or they'd count everything twice.
-  const merges = !!unit && (distinctValues(t) ?? Infinity) > buckets(t, unit);
+  const merges = !!unit && !(d.timeKeyBuckets?.[t.name] ?? []).includes(unit);
   const sums = !exact && key !== null && !merges && summable(m);
   const aggregate = unit || !exact ? (sums ? "sum" : "mean") : undefined;
   // Two year fields: the one with more years runs along x, and the other draws a line each.
