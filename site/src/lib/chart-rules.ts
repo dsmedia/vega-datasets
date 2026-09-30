@@ -4,8 +4,8 @@
  * profiles and the pairwise correlations the catalog builder records. No dataset names:
  * every rule reads structure, so a table added tomorrow gets the same treatment.
  *
- * The visual standards the rules meet (series limit, totals, gaps, log axes, jagged series,
- * phone widths), with their rationale and the tests that hold them: site/CHART-STANDARDS.md.
+ * The visual standards the rules meet (S1 to S17: series limits, totals, gaps, log axes, lines,
+ * maps, labels, time axes), with their rationale and the tests that hold them: site/CHART-STANDARDS.md.
  */
 import { categoryValues, type Dataset, documentedRange, type Field, orderedCategories } from "./catalog";
 
@@ -76,7 +76,7 @@ function symlogTicks(f: Field): number[] {
  * A log or symlog tick's label, each on its own: SI prefixes from a thousand up ("10k", "1M"),
  * plain numbers below ("0.001", not "1m"). A shared axis format would give every label one prefix ("0.1M").
  */
-const POWER_LABEL = "abs(datum.value) >= 1000 ? format(datum.value, '~s') : format(datum.value, '~g')";
+export const POWER_LABEL = "abs(datum.value) >= 1000 ? format(datum.value, '~s') : format(datum.value, '~g')";
 
 /**
  * A log axis's steps from just below `min` to just above `max`: 1, 2 and 5 times each power of
@@ -336,7 +336,7 @@ export function totalsOf(d: Dataset, f: Field, m: Field): string[] {
 const LEGEND_CHANNELS = ["color", "strokeDash", "shape", "size"] as const;
 
 /** A phone legend's room across (px): the Explore column (288 px at 320) past a y axis's labels. */
-const LEGEND_ROOM = 250;
+const LEGEND_ROOM = 230;
 /** A legend label's width per character (px, at the theme's 11 px), and an entry's symbol, gap and column padding. */
 const LEGEND_CHAR = 6.5;
 const LEGEND_ENTRY = 36;
@@ -352,7 +352,8 @@ const LEGEND_ENTRY = 36;
 export function legendsOnTop(spec: Record<string, unknown>, labels: string[] = [], offset = 6): Record<string, unknown> {
   const longest = Math.max(0, ...labels.map((l) => l.length));
   const columns = Math.max(1, Math.min(4, Math.floor(LEGEND_ROOM / (LEGEND_ENTRY + longest * LEGEND_CHAR))));
-  const top = { orient: "top", direction: "horizontal", columns, columnPadding: 10, offset };
+  // Room for a few labels besides the ends (S10), and no more than the narrowest column leaves beside a heatmap's row labels.
+  const top = { orient: "top", direction: "horizontal", columns, columnPadding: 10, offset, gradientLength: 150, tickCount: 5 };
   const unit = (u: Record<string, unknown>): Record<string, unknown> => {
     const encoding = u.encoding as Record<string, Record<string, unknown>> | undefined;
     if (!encoding) return u;
@@ -368,4 +369,19 @@ export function legendsOnTop(spec: Record<string, unknown>, labels: string[] = [
   if (layers) return { ...spec, layer: layers.map(unit) };
   if (spec.spec) return { ...spec, spec: unit(spec.spec as Record<string, unknown>) };
   return unit(spec);
+}
+
+// --- S16: mostly-zero measures -------------------------------------------------------------
+
+/**
+ * More than half a measure's values are exactly zero and the rest span decades (the costs of
+ * bird strikes: most cost nothing, a few millions). Its mean over a bucket is then a few rare
+ * rows, a spike train. Rain (zero on most days, millimetres on the rest) is not: its monthly
+ * mean is the month's average daily rainfall, a quantity worth a line.
+ */
+export function mostlyZero(f: Field): boolean {
+  const p = f.profile;
+  if (p.kind !== "quantitative" || !p.zeros) return false;
+  const values = p.bins.reduce((a, b) => a + b, 0);
+  return values > 0 && p.zeros / values > 0.5 && scaleType(f) !== "linear";
 }

@@ -40,7 +40,7 @@ iowa_electricity: starter
 jobs: time, scatter x=perc y=count color=sex
 la_riots: starter
 london_boroughs: starter
-london_centroids: scatter x=cx y=cy
+london_centroids: starter x=cx y=cy
 london_tube_lines: starter
 lookup_groups: none
 lookup_people: starter
@@ -52,7 +52,7 @@ obesity: starter
 ohlc: time, scatter x=high y=open color=signal
 penguins: scatter x=Beak Depth (mm) y=Beak Length (mm) color=Species
 platformer_terrain: scatter x=x y=y color=name
-political_contributions: scatter, time x=Total_Disbursements y=Total_Receipts color=Incumbent_Challenger_Status
+political_contributions: scatter x=Total_Disbursements y=Total_Receipts color=Incumbent_Challenger_Status
 population: starter
 population_engineers_hurricanes: scatter x=engineers y=population
 seattle_weather: scatter, time x=temp_max y=precipitation color=weather
@@ -82,14 +82,14 @@ exports[`starter chart choices 1`] = `
 annual_precip: none
 anscombe: point x=X y=Y facet=Series
 barley: point x=mean(yield) y=site color=year
-birdstrikes: line x=utcyearmonth(Flight Date) y=symlog(mean(Cost Other))
+birdstrikes: line x=utcyearmonth(Flight Date) y=count()
 budget: bar x=count() y=Source category name
 budgets: line x=forecastYear y=value color=budgetYear detail=budgetYear
 burtin: point x=log(Penicillin) y=log(Streptomycin) color=Gram_Staining
 cars: line x=Year y=mean(Miles_per_Gallon) color=Origin detail=segment transformed
 co2_concentration: line x=Date y=CO2 detail=segment transformed
 countries: line x=year y=mean(fertility)
-crimea: line x=date y=wounds
+crimea: line x=date y=value color=measure transformed
 disasters: rect x=Year y=Entity color=log(Deaths) transformed
 driving: line x=year y=miles
 earthquakes: geoshape over basemap equalEarth
@@ -115,10 +115,10 @@ icon_7zip: none
 income: point x=pct y=total color=region
 iowa_electricity: line x=year y=net_generation color=source
 jobs: line x=year y=sum(count) color=sex detail=segment transformed
-la_riots: circle latitude=latitude longitude=longitude color=race albersUsa transformed
+la_riots: circle latitude=latitude longitude=longitude color=race over basemap mercator fitted
 london_boroughs: geoshape mercator
-london_centroids: point x=cx y=cy
-london_tube_lines: geoshape color=id mercator unfilled
+london_centroids: circle latitude=cy longitude=cx over basemap mercator fitted
+london_tube_lines: geoshape mercator unfilled
 lookup_groups: none
 lookup_people: bar x=mean(height) y=name
 miserables: none
@@ -129,7 +129,7 @@ obesity: bar x=mean(rate) y=state
 ohlc: line x=date y=open
 penguins: point x=Beak Length (mm) y=Beak Depth (mm) color=Species
 platformer_terrain: point x=x y=y color=name
-political_contributions: rect x=yearmonthdate(Coverage_End_Date) y=Candidate_State color=symlog(sum(Total_Receipts))
+political_contributions: point x=symlog(Total_Receipts) y=symlog(Total_Disbursements) color=Incumbent_Challenger_Status
 population: line x=year y=sum(people) detail=segment transformed
 population_engineers_hurricanes: point x=population y=engineers
 seattle_weather: line x=utcyearmonth(date) y=mean(precipitation)
@@ -140,7 +140,7 @@ species: bar x=mean(habitat_yearround_pct) y=common_name
 stocks: line x=date y=log(price) color=symbol
 udistrict: none
 unemployment: bar x=rate y=count()
-unemployment_across_industries: rect x=utcyearmonth(date) y=series color=log(mean(count))
+unemployment_across_industries: rect x=utcyearmonth(date) y=series color=mean(rate)
 uniform_2d: point x=u y=v
 us_10m: geoshape albersUsa
 us_employment: line x=month y=nonfarm

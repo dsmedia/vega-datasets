@@ -39,7 +39,7 @@ function withArticle(word: string): string {
   return `${/^[aeiou]/i.test(word) ? "an" : "a"} ${word}`;
 }
 
-export function enhanceExplore(section: HTMLElement, d: Dataset): void {
+export function enhanceExplore(section: HTMLElement, d: Dataset, o: { drawNow?: boolean } = {}): void {
   const modes = exploreModes(d);
   if (!modes.length) return;
   const phone = matchMedia(PHONE);
@@ -300,6 +300,7 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
     void render();
   }, { once: true });
   // A mid-size table's button (data-auto-draw="desktop") stands aside on a desktop-class device.
-  if (!drawButton || (drawButton.dataset.autoDraw === "desktop" && desktop)) void render();
+  // `drawNow`: the reader pressed Draw before this code arrived.
+  if (!drawButton || (drawButton.dataset.autoDraw === "desktop" && desktop) || o.drawNow) void render();
   else drawButton.addEventListener("click", () => void render(), { once: true });
 }

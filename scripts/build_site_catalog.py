@@ -440,6 +440,9 @@ def profile_field(
                 if lo <= 0 < hi
                 else {}
             ),
+            # How many values are exactly zero, when some are: a measure mostly zero (costs
+            # of bird strikes, most of which cost nothing) has no mean worth charting.
+            **({"zeros": zeros} if (zeros := int((num == 0).sum())) else {}),
         }
     if field_type in {"date", "datetime"}:
         if s.dtype == pl.Date or isinstance(s.dtype, pl.Datetime):
@@ -553,8 +556,8 @@ def geo_features(doc: dict[str, Any], fmt: str) -> dict[str, Any]:
     """
     How many shapes a geographic file holds, for the site's map rule (heavy maps open on a picture).
 
-    TopoJSON: the object names, and the features each one becomes (a GeometryCollection's
-    geometries, else one). GeoJSON: the FeatureCollection's features.
+    TopoJSON: the object names, the features each one becomes (a GeometryCollection's
+    geometries, else one) and their distinct ids. GeoJSON: the FeatureCollection's features.
     """
     if fmt == "geojson":
         features = doc.get("features")
@@ -573,12 +576,20 @@ def geo_features(doc: dict[str, Any], fmt: str) -> dict[str, Any]:
             else [obj]
         )
 
+    ids = {
+        name: n
+        for name, obj in objects.items()
+        if (n := len({g["id"] for g in members(obj) if "id" in g}))
+    }
     return {
         "objects": list(objects),
         "objectFeatures": {name: len(members(obj)) for name, obj in objects.items()},
         "objectGeometryTypes": {
             name: _geometry_types(members(obj)) for name, obj in objects.items()
         },
+        # How many distinct ids each object's features carry (tube lines: 13 lines in 394
+        # pieces), for coloring by id only within the palette's colors.
+        **({"objectIds": ids} if ids else {}),
     }
 
 
@@ -961,7 +972,9 @@ def line_shapes(
     name), bucketed by the unit: ``jag``, the median absolute step within a series over the
     range, as the median across series (``jagLog`` on log10 values, for positive values);
     and ``gaps``, whether some series skips (a bucket of the unit, or more than ``breakAt``)
-    where the measure has no value. CHART-STANDARDS.md S3 and S5 read these.
+    where the measure has no value; ``perSeries``, the median number of times a series
+    has (a time chart of series with one or two times each is no time chart, S15).
+    CHART-STANDARDS.md S3 and S5 read these.
     """
     steps: dict[str, dict[str, Any]] = {}
     shapes: dict[str, dict[str, dict[str, dict[str, Any]]]] = {}
@@ -1105,6 +1118,7 @@ def _shapes(
             pl.col("__step__").median(),
             pl.col("__logstep__").median(),
             pl.col("__gap__").any(),
+            pl.col("__n__").median().alias("__per__"),
             pl.col("__n__").sum(),
             pl.col("__lo__").min(),
             pl.col("__hi__").max(),
@@ -1119,7 +1133,10 @@ def _shapes(
         # A flat measure (a span within rounding error of its values) has no shape to judge.
         if span <= 1e-9 * max(abs(r["__hi__"]), abs(r["__lo__"])) or r["__n__"] < 3:
             continue
-        shape: dict[str, Any] = {"gaps": bool(r["__gap__"])}
+        shape: dict[str, Any] = {
+            "gaps": bool(r["__gap__"]),
+            "perSeries": _nice(r["__per__"]),
+        }
         if r["__step__"] is not None:
             shape["jag"] = round(r["__step__"] / span, 3)
         if r["__logstep__"] is not None and r["__lo__"] > 0:
@@ -1200,30 +1217,71 @@ def time_key_buckets(
     return out
 
 
+def coordinate_pair(
+    numbers: dict[str, pl.Series], fields: list[dict[str, Any]]
+) -> tuple[str | None, str | None]:
+    """
+    The latitude and longitude columns, if the table has a pair.
+
+    By name or title (latitude/lat, longitude/lon/lng/long), or a centroid's ``cx``/``cy``;
+    a plain ``x``/``y`` only when their descriptions say longitude and latitude. Every value must lie in range
+    (longitude -180 to 360, latitude -90 to 90): a pair named so but holding other numbers
+    (a chart's x and y) is no map.
+    """
+
+    def text(f: dict[str, Any]) -> str:
+        return f"{f.get('title', '')} {f.get('description', '')}"
+
+    def first(test: Callable[[dict[str, Any]], bool]) -> str | None:
+        return next(
+            (f["name"] for f in fields if f["name"] in numbers and test(f)), None
+        )
+
+    def named(pattern: re.Pattern[str]) -> Callable[[dict[str, Any]], bool]:
+        return lambda f: bool(
+            pattern.match(f["name"]) or pattern.match(str(f.get("title", "")))
+        )
+
+    candidates = [
+        (first(named(LAT_NAME)), first(named(LON_NAME))),
+        (
+            first(lambda f: f["name"].lower() == "cy"),
+            first(lambda f: f["name"].lower() == "cx"),
+        ),
+        (
+            first(lambda f: f["name"].lower() == "y" and "latitude" in text(f).lower()),
+            first(
+                lambda f: f["name"].lower() == "x" and "longitude" in text(f).lower()
+            ),
+        ),
+    ]
+
+    def within(name: str, low: float, high: float) -> bool:
+        s = numbers[name].drop_nulls()
+        return (
+            s.len() > 0
+            and cast("float", s.min()) >= low
+            and cast("float", s.max()) <= high
+        )
+
+    for lat, lon in candidates:
+        if lat and lon and within(lat, -90, 90) and within(lon, -180, 360):
+            return lat, lon
+    return None, None
+
+
 def coordinates(
     numbers: dict[str, pl.Series], fields: list[dict[str, Any]]
 ) -> dict[str, Any] | None:
     """
     Where a table's points lie, when it has latitude and longitude columns.
 
-    The columns are found by name or title. The box holds the middle 98% of each
+    The columns are found by ``coordinate_pair``. The box holds the middle 98% of each
     coordinate, and ``us`` is the share of points in the United States (``US_BOXES``).
     The site fits its map to the box and picks the Albers USA projection when nearly
     every point is in the US.
     """
-
-    def find(pattern: re.Pattern[str]) -> str | None:
-        return next(
-            (
-                f["name"]
-                for f in fields
-                if f["name"] in numbers
-                and (pattern.match(f["name"]) or pattern.match(str(f.get("title", ""))))
-            ),
-            None,
-        )
-
-    lat, lon = find(LAT_NAME), find(LON_NAME)
+    lat, lon = coordinate_pair(numbers, fields)
     if lat is None or lon is None:
         return None
     both = pl.DataFrame({"lat": numbers[lat], "lon": numbers[lon]}).drop_nulls()

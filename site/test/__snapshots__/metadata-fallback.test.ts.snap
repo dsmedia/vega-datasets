@@ -469,7 +469,6 @@ exports[`time series colored by a series > starter and Explore specs match the c
   ],
   "mark": {
    "type": "line",
-   "interpolate": "monotone",
    "tooltip": true
   },
   "encoding": {
@@ -481,6 +480,8 @@ exports[`time series colored by a series > starter and Explore specs match the c
       "expr": "ceil(width / 90)"
      },
      "labelOverlap": "greedy",
+     "labelSeparation": 8,
+     "labelFlush": true,
      "format": "%b %d"
     }
    },
@@ -529,7 +530,6 @@ exports[`time series colored by a series > starter and Explore specs match the c
   ],
   "mark": {
    "type": "line",
-   "interpolate": "monotone",
    "tooltip": true
   },
   "encoding": {
@@ -541,6 +541,8 @@ exports[`time series colored by a series > starter and Explore specs match the c
       "expr": "ceil(width / 90)"
      },
      "labelOverlap": "greedy",
+     "labelSeparation": 8,
+     "labelFlush": true,
      "format": "%b %d"
     }
    },

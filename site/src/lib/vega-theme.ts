@@ -109,7 +109,8 @@ export function chartConfig(c: ChartInk, font: string): Config {
     font,
     view: { stroke: null },
     range: { heatmap: [...heatmapRamp(c.surface)] },
-    axis: { ...guide, domainColor: c.rule, tickColor: c.rule, gridColor: c.grid, gridWidth: 1 },
+    // Room between labels (S10): Vega-Lite drops a label that comes closer to its neighbor than this.
+    axis: { ...guide, domainColor: c.rule, tickColor: c.rule, gridColor: c.grid, gridWidth: 1, labelSeparation: 4 },
     // The base colors draw a legend's symbols when no color scale does (size, shape).
     legend: { ...guide, symbolBaseStrokeColor: c.rule },
     // Small multiples' panel names and their field: as legible as axis titles.

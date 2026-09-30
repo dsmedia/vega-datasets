@@ -313,6 +313,7 @@ try {
     const dist = path.join(repo, 'site', 'dist', 'datasets');
     const names = readdirSync(dist).filter((n) => readFileSync(path.join(dist, n, 'index.html'), 'utf8').includes('<div class="binds" data-reserve>'));
     const misfits = [];
+    // Coverage: 20 datasets have pickers (london_centroids became a map in 6c pass 2, S9).
     // A select narrowed to fit shows its full field name as a tooltip.
     const untitled = [];
     for (const name of names) {
@@ -337,7 +338,7 @@ try {
       }
       await ctx.close();
     }
-    check(`pickers fit their reserved row at 1024, 900, 768 and 390 px (${names.length} datasets)`, names.length > 20 && misfits.length === 0, misfits.slice(0, 12));
+    check(`pickers fit their reserved row at 1024, 900, 768 and 390 px (${names.length} datasets)`, names.length >= 20 && misfits.length === 0, misfits.slice(0, 12));
     check('every picker names its field in a tooltip', untitled.length === 0, untitled.slice(0, 4));
   }
 

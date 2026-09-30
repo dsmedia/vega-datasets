@@ -19,6 +19,8 @@ import { describe, expect, test } from 'vitest';
 import { type Dataset, effectiveMissing, type Field } from '../src/lib/catalog';
 import { defaultAxes, exploreModes, modeChart, scatterFields, scatterSpec, starterChart } from '../src/lib/explore-model';
 import { JAGGED, scaleType, SERIES_LIMIT } from '../src/lib/chart-rules';
+// S8: a line marks its values when it has at most this many.
+const FEW_POINTS = 60;
 import { totalOf } from '../src/lib/starter';
 import { loadCatalog, readDataUrl } from './catalog';
 import * as largeData from '../src/lib/large-data';
@@ -380,7 +382,7 @@ const quantileLow = (xs: number[], q: number) => {
 };
 
 /** How often each standard's case came up (a coverage guard: a property that never runs proves nothing). */
-const seen = { lines: 0, colored: 0, gapped: 0, segmented: 0, pointsForJagged: 0 };
+const seen = { lines: 0, colored: 0, gapped: 0, segmented: 0, pointsForJagged: 0, fewPoints: 0 };
 
 /** The standards' problems in one time chart, from its rows. */
 function standardsProblems(name: string, d: Dataset, spec: Spec, rows: Datum[], phone: boolean): string[] {
@@ -401,6 +403,14 @@ function standardsProblems(name: string, d: Dataset, spec: Spec, rows: Datum[], 
   }
   seen.lines++;
   const problems: string[] = [];
+  // S8: straight segments (a curve invents peaks and troughs), and the values marked when a line has few.
+  const markSpec = (typeof unit.mark === 'object' ? unit.mark : {}) as { interpolate?: string; point?: unknown };
+  if (markSpec.interpolate && markSpec.interpolate !== 'linear') problems.push(`${name}: ${markSpec.interpolate} interpolation (S8)`);
+  const longest = Math.max(0, ...[...drawn.whole.values()].map((s) => s.length));
+  if (longest <= FEW_POINTS) {
+    seen.fewPoints++;
+    if (!markSpec.point) problems.push(`${name}: ${longest} values on a line, unmarked (S8)`);
+  }
   // S1: at most six colored lines (four on a phone).
   const limit = phone ? SERIES_LIMIT.phone : SERIES_LIMIT.wide;
   if (encodingOf(spec).color?.type === 'nominal') {
@@ -437,7 +447,8 @@ describe('chart standards (site/CHART-STANDARDS.md)', () => {
     expect(seen.colored).toBeGreaterThan(20);
     expect(seen.gapped).toBeGreaterThan(5);
     expect(seen.pointsForJagged).toBeGreaterThan(5);
-  });
+    expect(seen.fewPoints).toBeGreaterThan(20);
+  }, 60_000); // Renders every chart twice (wide, phone): about 2 s alone.
 
   test('S1, S3, S5 on every real dataset’s Explore charts, wide and on a phone', () => {
     const problems = loadCatalog().datasets.flatMap((d) => {
@@ -453,7 +464,7 @@ describe('chart standards (site/CHART-STANDARDS.md)', () => {
         );
     });
     expect(problems).toEqual([]);
-  });
+  }, 60_000); // Renders every chart twice (wide, phone): about 2 s alone.
 
   test('S2: a detected total never shares axes with its parts; it has its own mode', () => {
     const datasets = [...charts.map((c) => c.dataset), ...loadCatalog().datasets];

@@ -13,6 +13,7 @@ from PIL import Image
 from scripts.build_site_catalog import (
     HIST_BINS,
     build_dataset,
+    coordinate_pair,
     coordinates,
     correlations,
     data_url,
@@ -939,3 +940,46 @@ def test_line_shapes_find_gaps_and_jaggedness_per_way_of_splitting() -> None:
     assert {"*", "", "region"} <= set(shapes["year"]["smooth"])
     # Nothing positive throughout: no log jaggedness.
     assert "jagLog" not in by_region
+
+
+def test_coordinate_pair_by_name_centroid_or_described_xy() -> None:
+    lon = pl.Series([-0.44, 0.22, -0.1])
+    lat = pl.Series([51.36, 51.65, 51.5])
+
+    def pair(
+        names: tuple[str, str], descriptions: tuple[str, str] = ("", "")
+    ) -> tuple[str | None, str | None]:
+        fields = [
+            {"name": n, "description": t}
+            for n, t in zip(names, descriptions, strict=True)
+        ]
+        return coordinate_pair({names[0]: lon, names[1]: lat}, fields)
+
+    assert pair(("longitude", "latitude")) == ("latitude", "longitude")
+    # A centroid's cx and cy (london_centroids), in range.
+    assert pair(("cx", "cy")) == ("cy", "cx")
+    # A plain x and y only when described as longitude and latitude.
+    assert pair(("x", "y")) == (None, None)
+    assert pair(("x", "y"), ("Longitude of the centre", "Latitude of the centre")) == (
+        "y",
+        "x",
+    )
+    # Named so, but out of range: no map.
+    far = {"cx": pl.Series([400.0, 500.0]), "cy": pl.Series([1.0, 2.0])}
+    assert coordinate_pair(far, [{"name": "cx"}, {"name": "cy"}]) == (None, None)
+
+
+def test_profile_counts_zeros_when_some() -> None:
+    assert profile_field(pl.Series("c", [0, 0, 0, 5]), "integer")["zeros"] == 3
+    assert "zeros" not in profile_field(pl.Series("c", [1, 2]), "integer")
+
+
+def test_line_shapes_count_times_per_series() -> None:
+    # Two states with one date each and one with three: the median series has one.
+    values = pl.DataFrame({
+        "t": [2000, 2001, 2002, 2000, 2001],
+        "state": ["a", "a", "a", "b", "c"],
+        "v": [1.0, 2.0, 3.0, 4.0, 5.0],
+    })
+    _, shapes = line_shapes({"t": values["t"], "v": values["v"]}, {"t": []}, values)
+    assert shapes["t"]["v"]["state"]["perSeries"] == 1

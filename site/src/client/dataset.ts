@@ -60,10 +60,26 @@ if (examples) {
 // --- Explore: load the chart code when the section comes near the screen ----------------------
 const explore = document.querySelector<HTMLElement>("[data-explore]");
 if (explore) {
-  const near = new IntersectionObserver((entries) => {
-    if (!entries.some((e) => e.isIntersecting)) return;
+  // A Draw button pressed before the chart code has arrived (a quick tap on a phone, where the
+  // section comes near the screen only as the reader scrolls to it) is not lost: it loads the
+  // code at once and draws when it's there.
+  let pressed = false;
+  let loading = false;
+  const load = () => {
+    if (loading) return;
+    loading = true;
     near.disconnect();
-    void import("./explore").then((m) => m.enhanceExplore(explore, readJson<Dataset>("dataset-data")));
+    void import("./explore").then((m) => m.enhanceExplore(explore, readJson<Dataset>("dataset-data"), { drawNow: pressed }));
+  };
+  const onPress = (e: Event) => {
+    if (!(e.target as Element | null)?.closest?.("button.draw")) return;
+    pressed = true;
+    explore.removeEventListener("click", onPress);
+    load();
+  };
+  explore.addEventListener("click", onPress);
+  const near = new IntersectionObserver((entries) => {
+    if (entries.some((e) => e.isIntersecting)) load();
   }, { rootMargin: "400px 0px" });
   near.observe(explore);
 }

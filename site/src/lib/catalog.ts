@@ -26,6 +26,8 @@ export interface QuantProfile {
   evenlySpaced?: true;
   /** With zero or less in the field, its smallest value above zero. */
   minPositive?: number;
+  /** How many values are exactly zero, when some are. */
+  zeros?: number;
 }
 
 export interface TemporalProfile {
@@ -123,6 +125,8 @@ export interface Dataset {
   objectFeatures?: Record<string, number>;
   /** TopoJSON: each object's geometry types (Point, LineString, Polygon, …). */
   objectGeometryTypes?: Record<string, string[]>;
+  /** TopoJSON: how many distinct ids each object's features carry. */
+  objectIds?: Record<string, number>;
   /** GeoJSON: how many features the file holds, and their geometry types. */
   features?: number;
   geometryTypes?: string[];
@@ -139,7 +143,7 @@ export interface Dataset {
    */
   timeSteps?: Record<string, { step: number; breakAt: number; unit: string }>;
   /** Per time field, measure and way of splitting the lines ("*" one line, "" the time's key, or a category), bucketed by the unit: how jagged the lines are, and whether a series skips (S3, S5). */
-  lineShapes?: Record<string, Record<string, Record<string, { gaps: boolean; jag?: number; jagLog?: number }>>>;
+  lineShapes?: Record<string, Record<string, Record<string, { gaps: boolean; perSeries?: number; jag?: number; jagLog?: number }>>>;
   /** Per grouping field and number field, the values that look like totals of the others (a signal for choosing a chart; no row is ever removed). */
   totalValues?: Record<string, Record<string, string[]>>;
   /** Pairs of number fields that move together (|r| ≥ 0.9), as `[a, b, r]`. */

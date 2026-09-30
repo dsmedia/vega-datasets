@@ -233,9 +233,14 @@ describe('G-6: maps', () => {
     compiles(spec);
   });
 
-  test('points close together get no basemap (its coarse coast would mislead)', () => {
+  test('S9: points close together get a Mercator map fitted to them, over the most detailed basemap that holds them', () => {
     const city = { ...us, points: { ...us.points!, box: { longitude: [-118.5, -117.9] as [number, number], latitude: [33.8, 34.3] as [number, number] }, us: 1 } };
-    expect(starterSpec(city)!.layer).toBeUndefined();
+    const spec = starterSpec(city)!;
+    expect(spec.projection).toMatchObject({ type: 'mercator', fit: expect.anything() });
+    expect((spec.layer as Spec[])[0]!.data).toMatchObject({ url: expect.stringMatching(/us-10m\.json$/), format: { feature: 'counties' } });
+    const london = { ...us, points: { ...us.points!, box: { longitude: [-0.44, 0.22] as [number, number], latitude: [51.36, 51.65] as [number, number] }, us: 0 } };
+    expect((starterSpec(london)!.layer as Spec[])[0]!.data).toMatchObject({ url: expect.stringMatching(/londonBoroughs\.json$/), format: { feature: 'boroughs' } });
+    compiles(spec);
   });
 
   test('a direction turns each point into a wedge, colored by the other measure', () => {
@@ -252,10 +257,14 @@ describe('G-6: maps', () => {
   });
 
   test('LineStrings are strokes, colored by their id, never filled shapes', () => {
-    const tube: Dataset = { ...table([], 0), kind: 'json', format: 'topojson', rows: null, objects: ['line'], objectFeatures: { line: 394 }, objectGeometryTypes: { line: ['LineString'] } };
+    const tube: Dataset = { ...table([], 0), kind: 'json', format: 'topojson', rows: null, objects: ['line'], objectFeatures: { line: 394 }, objectGeometryTypes: { line: ['LineString'] }, objectIds: { line: 8 } };
     const spec = starterSpec(tube)!;
     expect(spec.mark).toMatchObject({ type: 'geoshape', filled: false });
     expect(enc(spec).color).toMatchObject({ field: 'id' });
+    // S14: more ids than the palette's ten colors (the tube's 13): one color, named by the tooltip.
+    const thirteen = starterSpec({ ...tube, objectIds: { line: 13 } })!;
+    expect(enc(thirteen).color).toBeUndefined();
+    expect(enc(thirteen).tooltip).toMatchObject({ field: 'id' });
     const shapes = { ...tube, objectGeometryTypes: { line: ['Polygon'] } };
     expect(starterSpec(shapes)!.mark).not.toHaveProperty('filled');
   });
@@ -322,7 +331,7 @@ describe('readability (orchestrator review)', () => {
   test('a time axis ties its tick count to the plot width and drops overlapping labels', async () => {
     const d = table([dates('date', 120), quant('co2', 313, 420)], 120, { timeKeys: { date: [] } });
     const x = enc(starterChart(d)).x;
-    expect(x.axis).toEqual({ tickCount: { expr: 'ceil(width / 90)' }, labelOverlap: 'greedy', format: '%Y' });
+    expect(x.axis).toEqual({ tickCount: { expr: 'ceil(width / 90)' }, labelOverlap: 'greedy', labelSeparation: 8, labelFlush: true, format: '%Y' });
     for (const width of [880, 358]) {
       const rows = Array.from({ length: 120 }, (_, i) => ({ date: `${1960 + Math.floor(i / 2)}-0${1 + (i % 2) * 6}-01`, co2: 313 + i }));
       const view = await draw({ ...starterSpec(d)!, width }, rows);
@@ -523,7 +532,10 @@ describe('Codex round 2', () => {
       ...Array.from({ length: 50 }, () => ({ latitude: -17, longitude: -179 })),
       { latitude: -10, longitude: 179 },
     ];
-    const view = await draw({ ...spec, width: 880 }, rows);
+    // The points' layer (the basemap loads its own file).
+    const { layer, ...frame } = spec as Spec & { layer?: Spec[] };
+    const points = layer ? { ...frame, ...layer.at(-1)! } : spec;
+    const view = await draw({ ...points, width: 880 }, rows);
     try {
       const at = (lon: number, lat: number) => rowsWith(view, 'x').find((r) => r.longitude === lon && r.latitude === lat)! as { x: number; y: number };
       const across = Math.abs(at(179, -17).x - at(-179, -17).x);

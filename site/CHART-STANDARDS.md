@@ -74,7 +74,9 @@ beyond. A measure with zeros or negatives can't be log; it gets `symlog` under a
 stricter test (three decades and piled up near zero), and so does a positive measure
 whose documented range reaches zero. A mean (a line of monthly averages) and a
 heatmap's color keep the measure's scale; a sum does not (its range is not the
-measure's).
+measure's). A chart of part of the rows (the Total mode's totals) fits its log axis to
+whole decades around those rows, not the column's full range: disasters' totals run from
+about 300 to 3.7 million, so the axis starts at 100, not at 1.
 
 Why: a linear axis squeezes the bulk of a heavy-tailed distribution against zero and
 gives the axis to a few outliers. Few recommends log scales for data spanning orders of
@@ -82,8 +84,9 @@ magnitude, labelled so that the reader sees the scale is not linear; the 1-2-5 a
 power-of-ten ticks make that plain.
 
 Tests: `explore-invariants.test.ts` (S4: log only on positive values, symlog only where
-zero is in range, a heavy tail drawn unaggregated on its scale, on generated and real
-datasets), `explore-rules.test.ts` (G-2: log and symlog axes; log ticks).
+zero is in range, a heavy tail or its mean on its scale, on generated and real datasets),
+`chart-standards.test.ts` (a log axis over part of the rows fits whole decades around
+them, from the rendered view), `explore-rules.test.ts` (G-2: log and symlog axes; log ticks).
 
 ## S5. A jagged series is points, not a line
 
@@ -133,3 +136,115 @@ chart with one time). Vega-Lite's own heatmaps of dates ("Annual Weather Heatmap
 by a unit on a time scale.
 
 Tests: `explore-rules.test.ts` (Visual standards review: S7).
+
+## S8. Lines are straight between values
+
+A line joins its values with straight segments (Vega-Lite's default, linear), never a
+smoothed curve (`monotone`, `basis`). A line with at most 60 values (`FEW_POINTS`) marks
+each one.
+
+Why: a curve through the values draws peaks and troughs that aren't in the data (crimea's
+monthly deaths, iowa_electricity's yearly generation, the daily flight delays) and hides
+which points were measured. Few's line graphs connect the measured points and nothing
+else; with few points, the markers show the reader where the data is.
+
+Tests: `explore-invariants.test.ts` (S8 with S1, S3 and S5, on generated and real
+datasets, wide and on a phone).
+
+## S9. A point map has a basemap
+
+Points with coordinates always sit on a basemap. Points close together (within 10
+degrees) get a Mercator map fitted to the middle 98% of them, over the most detailed
+basemap vega-datasets has that holds them: Greater London's boroughs, the United States'
+counties, else the world's countries. Rows the frame leaves out are said below the chart,
+as the Albers USA map says its rows outside the 50 states. The builder finds the
+coordinate columns (`coordinate_pair`): named latitude and longitude, a centroid's `cx`
+and `cy`, or `x` and `y` only when their descriptions say longitude and latitude, with
+every value in range.
+
+Why: points with no map are a scatter plot with no place in it (la_riots' deaths across
+Los Angeles; london_centroids drawn as x and y). The outline is what makes a position a
+place.
+
+Tests: `chart-standards.test.ts` (S9 on every real point map), `test_build_site_catalog.py`
+(the coordinate pair).
+
+## S10. Labels read
+
+No two axis labels overlap (`labelOverlap`, with room between them), no label is turned on
+its side when it fits upright, date labels match the span (`dateFormat`), an integer's
+histogram bins step and are labeled by whole numbers (4, not 4.0), and a log or symlog
+color legend labels its decades, not only its two ends.
+
+Why: a label that overlaps another, or has to be read sideways, is a label the reader
+skips. Knaflic's advice for axes is that they be easy to read at a glance.
+
+Tests: `browser/labels.mjs` (the rendered label boxes of every dataset's Explore chart in
+every mode, at 1360 and 390 px), `chart-standards.test.ts` (integer bins, legend decades).
+
+## S11. A time axis ends at the data
+
+A time axis starts and ends within a tick of the data (a year axis is not `nice`: 1880 to
+2023 ran to 2040). Dates past the catalog's build year are a data error, reported, not
+drawn around: movies' Release Date holds films of the 1910s to 1940s dated 2015 to 2046
+(two-digit years expanded into the wrong century in the source file). The metadata that
+would correct it is not the site's to edit; the test lists it until the data is fixed.
+
+Tests: `chart-standards.test.ts` (S11: the rendered domain against the data's range; the
+dates past the build year).
+
+## S12. Years on a band axis at round steps
+
+A band axis of years (a heatmap's columns) is labeled at a round step (1, 2, 5, 10, 20,
+25, 50 or 100 years) that leaves at most 12 labels, 5 on a phone: 1900, 1920, 1940, not
+1906, 1911, 1916.
+
+Tests: `chart-standards.test.ts` (S12).
+
+## S13. A heatmap shows change over time
+
+A heatmap of time by series colors by a rate when the table has one for the same rows
+(unemployment's rate, not its count): a count colors each row by its size, so the largest
+industry is darkest every month and the change over time is invisible. At least a fifth of
+the color's variation must lie within rows.
+
+Tests: `chart-standards.test.ts` (S13, from the rendered cells).
+
+## S14. Categorical colors stay within the palette on maps too
+
+A map colors lines or points by category only when there are at most ten (`TABLEAU10`, as
+every categorical color on the site). London's 13 tube lines are one color, each named by
+its tooltip: Tableau 20's paired light and dark hues can't be told apart on thin lines,
+and a twelve-hue palette has the same problem at its light end.
+
+Tests: `chart-standards.test.ts` (S14).
+
+## S15. A time chart needs times to show
+
+A time chart split into series (lines or heatmap rows) is drawn only when the median series
+has three or more times (the builder's `perSeries`). Candidates each reporting once or
+twice (political_contributions) make a grid of isolated cells, not a change over time: the
+Explore modes leave the time chart out.
+
+Tests: `chart-standards.test.ts` (S15).
+
+## S16. No mean of a measure that is mostly zero
+
+When more than half a measure's values are zero (the builder's `zeros`) and the rest span
+decades (a log or symlog measure, S4), a bucketed time chart draws the count of records
+per bucket instead of the measure's mean: most bird strikes cost nothing and a few cost
+millions, so their monthly mean cost is a row of spikes; the number of strikes a month is
+what the rows can show. Rain is zero on most days too, but its monthly mean (the month's
+average daily rainfall) is a quantity worth a line, so the decades condition keeps it.
+
+Tests: `chart-standards.test.ts` (S16).
+
+## S17. Measures of one kind over time are drawn together
+
+Two to six measures (four on a phone) whose descriptions open with the same two words, all
+non-negative integers, in a table with one row per time, are one chart: a line each, on one
+axis, colored by measure (crimea's deaths from disease, wounds and other causes,
+Nightingale's view of the data). The rule claims a shared unit only where the metadata says
+so, and is deterministic: the first measure's kind decides.
+
+Tests: `chart-standards.test.ts` (S17).

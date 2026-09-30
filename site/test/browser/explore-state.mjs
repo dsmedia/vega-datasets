@@ -256,6 +256,23 @@ try {
     check('scatter: Escape clears it', after === 0, { after });
     await page.close();
   }
+
+  // A Draw button pressed before the chart code has arrived still draws (a quick tap on a
+  // phone: seattle_weather_hourly_normals waits for its button there). It was lost before.
+  {
+    const page = await browser.newPage();
+    await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
+    await page.goto(`${base}datasets/seattle_weather_hourly_normals/`, { waitUntil: 'networkidle0' });
+    const early = await page.evaluate(() => {
+      document.querySelector('#explore').scrollIntoView();
+      const b = document.querySelector('#explore button.draw');
+      b?.click();
+      return !!b;
+    });
+    const drew = await page.waitForFunction(() => document.querySelector('#explore .explore-chart svg, #explore .explore-chart canvas'), { timeout: 20000 }).then(() => true, () => false);
+    check('a Draw pressed before the chart code arrives still draws', early && drew, { early, drew });
+    await page.close();
+  }
 } finally {
   await browser.close();
   server.kill();

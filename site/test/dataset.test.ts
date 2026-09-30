@@ -208,7 +208,7 @@ describe('Explore', () => {
       } finally {
         view.finalize();
       }
-    }, 60_000); // flights_200k_json draws 200,000 points.
+    }, 120_000); // flights_200k_json draws 200,000 points: about 10 s alone, past 60 s on a loaded machine.
   });
 });
 

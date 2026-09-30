@@ -173,6 +173,8 @@ export function legendLabels(f: Field): string[] {
   // The labels the legend shows: documented ones where the metadata has them (Codex round 5, #2).
   const documented = new Map(categoryLabels(f) ?? []);
   const values = p.kind === "nominal" ? (p.values ?? p.top.map(([v]) => v)) : (categoryValues(f) ?? []).map((c) => String(c.value));
+  // A number's legend (Vega-Lite draws a line chart's as symbols): its range's ends, as wide as its labels.
+  if (p.kind === "quantitative" && !values.length) return [p.min, p.max].map((v) => (Number.isInteger(v) ? String(v) : v.toPrecision(3)));
   return values.map((v) => documented.get(v) ?? v);
 }
 

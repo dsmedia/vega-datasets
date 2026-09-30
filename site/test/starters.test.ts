@@ -73,7 +73,11 @@ describe.each(withStarter.map((d) => [d.name, d] as const))('%s', (_name, d) => 
   test('encodes only columns the file has', () => {
     // Also what its transforms compute (a sum per group), and a geographic feature's own id.
     const spec = starterSpec(d) as Starter;
-    const computed = [...(spec.transform ?? []), ...(unitOf(spec).transform ?? [])].flatMap((t) => JSON.stringify(t).match(/"as":"[^"]+"/g) ?? []).map((m) => m.slice(6, -1));
+    // `as` names one field, or several (a fold's key and value).
+    const computed = [...(spec.transform ?? []), ...(unitOf(spec).transform ?? [])].flatMap((t) => {
+      const as = (t as { as?: string | string[] }).as;
+      return [...(Array.isArray(as) ? as : as ? [as] : []), ...(JSON.stringify(t).match(/"as":"[^"]+"/g) ?? []).map((m) => m.slice(6, -1))];
+    });
     const columns = new Set([...d.fields.map((f) => f.name), ...computed, ...(d.kind === 'json' && /json/.test(d.format) ? ['id'] : [])]);
     expect(encodedFields(starterSpec(d)).filter((f) => !columns.has(f))).toEqual([]);
   });

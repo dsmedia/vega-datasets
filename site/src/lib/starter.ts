@@ -9,7 +9,7 @@
  */
 import LZString from "lz-string";
 import { categoryLabels, categoryValues, type Dataset, documentedRange, effectiveMissing, type Field, fieldTitle, orderedCategories } from "./catalog";
-import { balanced, distinctValues, idName, informative, inUs, JAGGED, namedAxes, nearDuplicate, PALETTE_SIZE, scaleFor, scaleType, SERIES_LIMIT, summable, timeKey, totalsOf, unique, withScale } from "./chart-rules";
+import { balanced, distinctValues, idName, informative, inUs, JAGGED, namedAxes, mostlyZero, nearDuplicate, PALETTE_SIZE, POWER_LABEL, scaleFor, scaleType, SERIES_LIMIT, summable, TABLEAU10, timeKey, totalsOf, unique, withScale } from "./chart-rules";
 
 type Spec = Record<string, unknown>;
 type Enc = Record<string, unknown>;
@@ -169,8 +169,10 @@ function transformFields(spec: Spec): string[] {
     for (const op of ops) if (typeof op.field === "string" && !computed.has(op.field)) read.push(op.field);
     for (const g of (t.groupby as string[] | undefined) ?? []) if (!computed.has(g)) read.push(g);
     for (const s of (t.sort as Enc[] | undefined) ?? []) if (typeof s.field === "string" && !computed.has(s.field)) read.push(s.field);
+    for (const f of (t.fold as string[] | undefined) ?? []) if (!computed.has(f)) read.push(f);
     for (const op of ops) if (typeof op.as === "string") computed.add(op.as);
     if (typeof t.as === "string") computed.add(t.as);
+    if (Array.isArray(t.as)) for (const a of t.as) computed.add(String(a));
   }
   return read;
 }
@@ -365,11 +367,35 @@ export function basemapUrl(d: Dataset): string {
  * A quiet gray that reads on light and dark grounds; decorative, so screen readers skip it.
  */
 function basemap(d: Dataset, usOnly: boolean): Spec {
+  return outline(basemapUrl(d), "countries", usOnly ? [{ filter: "datum.id == 840" }] : []);
+}
+
+/** A basemap layer: a TopoJSON file of vega-datasets (beside the dataset's own) and its feature, in the quiet gray. */
+function outline(url: string, feature: string, transform: Spec[] = []): Spec {
   return {
-    data: { url: basemapUrl(d), format: { type: "topojson", feature: "countries" } },
-    ...(usOnly ? { transform: [{ filter: "datum.id == 840" }] } : {}),
+    data: { url, format: { type: "topojson", feature } },
+    ...(transform.length ? { transform } : {}),
     mark: { type: "geoshape", fill: "#8a8f98", fillOpacity: 0.14, stroke: "#8a8f98", strokeOpacity: 0.5, strokeWidth: 0.5, clip: true, aria: false },
   };
+}
+
+type Box = { longitude: [number, number]; latitude: [number, number] };
+
+/**
+ * The detailed basemaps vega-datasets has for points close together (S9), and where they
+ * reach: Greater London's boroughs; the United States' counties (for points nearly all in
+ * the US, the builder's share). Past them, the world's countries.
+ */
+const DETAILED_BASEMAPS: { file: string; feature: string; box?: Box; us?: true }[] = [
+  { file: "londonBoroughs.json", feature: "boroughs", box: { longitude: [-0.52, 0.34], latitude: [51.28, 51.7] } },
+  { file: "us-10m.json", feature: "counties", us: true },
+];
+
+/** The most detailed basemap that holds a box of points (the first in DETAILED_BASEMAPS), else the world's countries. */
+function basemapFor(d: Dataset, box: Box, us: boolean): Spec {
+  const inside = (b: Box) => box.longitude[0] >= b.longitude[0] && box.longitude[1] <= b.longitude[1] && box.latitude[0] >= b.latitude[0] && box.latitude[1] <= b.latitude[1];
+  const map = DETAILED_BASEMAPS.find((m) => (m.box ? inside(m.box) : !!m.us && us));
+  return map ? outline(d.url.replace(/[^/]+$/, map.file), map.feature) : basemap(d, false);
 }
 
 /**
@@ -410,7 +436,13 @@ function geoFile(d: Dataset, base: Spec): Spec | null {
       mark: lines
         ? { type: "geoshape", filled: false, strokeWidth: 1.5, aria: false }
         : { type: "geoshape", stroke: "white", strokeWidth: 0.5, aria: false },
-      ...(lines ? { encoding: { color: { field: "id", type: "nominal", title: "id", scale: { scheme: "tableau20" } } } } : {}),
+      // Colored by id within the palette's ten colors, as every categorical color is (S1, S14):
+      // more lines than that (the tube's 13) are one color, named by their tooltip.
+      ...(lines
+        ? (d.objectIds?.[feature] ?? Infinity) <= PALETTE_SIZE
+          ? { encoding: { color: { field: "id", type: "nominal", title: "id" }, tooltip: { field: "id", type: "nominal" } } }
+          : { mark: { type: "geoshape", filled: false, strokeWidth: 1.5, stroke: TABLEAU10[0], aria: false }, encoding: { tooltip: { field: "id", type: "nominal", title: "id" } } }
+        : {}),
     };
   }
   const lines = lineGeometry(d.geometryTypes);
@@ -441,15 +473,18 @@ function pointMap(d: Dataset, base: Spec, lat: Field, lon: Field, color: Field |
     ? where.us >= 0.95
     : !!box && box.longitude[0] >= -180 && box.longitude[1] <= -60 && box.latitude[0] >= 15 && box.latitude[1] <= 72;
   const wide = !!box && Math.max(box.longitude[1] - box.longitude[0], box.latitude[1] - box.latitude[0]) >= BASEMAP_MIN_DEGREES;
+  // Close together (a city): a Mercator map fitted to the middle 98% of the points, over the
+  // most detailed basemap that holds them (S9). The rest of the points are left out, and said so.
+  const close = !!box && !wide;
   // A world projection fits the middle 98% of the points, so a few far ones don't shrink the
-  // rest; Albers USA fits the country (or the points themselves, when they are close together).
-  const fit = !us && where && wide ? { fit: boxFeature(where.box) } : {};
+  // rest; Albers USA fits the country.
+  const fit = box && (close || (!us && where && wide)) ? { fit: boxFeature(where?.box ?? box) } : {};
   const direction = measures.find((m) => DIRECTION.test(m.name) && m.profile.kind === "quantitative" && m.profile.min >= 0 && m.profile.max <= 360);
   const strength = direction && measures.find((m) => m !== direction && !DIRECTION.test(m.name) && !nearDuplicate(d, m.name, direction.name));
-  const clip = wide ? { clip: true } : {};
+  const clip = { clip: true };
   const points: Spec = {
     // Albers USA has no place for points outside the US (they would pile up in a corner).
-    ...(us ? { transform: [{ filter: inUs(lon.name, lat.name) }] } : {}),
+    ...(us && !close ? { transform: [{ filter: inUs(lon.name, lat.name) }] } : {}),
     mark: direction
       ? { type: "point", shape: "wedge", filled: true, size: (d.rows ?? 0) > 2000 ? 40 : 80, tooltip: true, ...clip }
       : { type: "circle", size: (d.rows ?? 0) > 5000 ? 4 : 16, opacity: 0.7, tooltip: true, ...clip },
@@ -466,10 +501,12 @@ function pointMap(d: Dataset, base: Spec, lat: Field, lon: Field, color: Field |
   // Points either side of 180° (the box's east edge past it): the world turns to put them in the middle.
   const across = !us && !!box && box.longitude[1] > 180;
   const rotate = across ? { rotate: [-(box!.longitude[0] + box!.longitude[1]) / 2, 0, 0] } : {};
-  const frame: Spec = { ...base, width: 600, height: 380, projection: { type: us ? "albersUsa" : "equalEarth", ...rotate, ...fit } };
-  if (!wide) return { ...frame, ...points };
+  const type = close ? "mercator" : us ? "albersUsa" : "equalEarth";
+  const frame: Spec = { ...base, width: 600, height: 380, projection: { type, ...rotate, ...fit } };
   const { data, ...rest } = frame;
-  return { ...rest, layer: [basemap(d, us), { data, ...points }] };
+  // Every point map has a basemap (S9): without one, points are a scatter with no place.
+  const under = close ? basemapFor(d, box, us) : basemap(d, us);
+  return { ...rest, layer: [under, { data, ...points }] };
 }
 
 /** The starter chart; `phone` for a phone's narrow column (fewer series per chart, S1). */
@@ -594,7 +631,6 @@ function jagged(d: Dataset, t: Field, m: Field, series: Field | undefined, exact
  * measure jumps too much from one time to the next (S5); a heavy tail gets a log axis (S4).
  */
 function timeSeries(d: Dataset, base: Spec, t: Field, m: Field, fields: Field[], phone: boolean, mode: "chart" | "total" = "chart"): Spec {
-  const rows = d.rows ?? 0;
   const date = t.profile.kind === "temporal";
   const key = timeKeyOf(d, t);
   const unit = timeUnit(d, t);
@@ -621,19 +657,24 @@ function timeSeries(d: Dataset, base: Spec, t: Field, m: Field, fields: Field[],
   const keep = split.series && split.totals.length ? (total ? onlyTotals(split.series, split.totals) : withoutTotals(split.series, split.totals)) : [];
   const x = date
     ? { field: fieldRef(along.name), type: "temporal", ...(unitName ? { timeUnit: unitName } : {}), axis: { ...TIME_AXIS, format: dateFormat(along) }, ...titled(along) }
-    : measure(along, { scale: { zero: false }, axis: { format: "d", ...TIME_AXIS } });
+    : // S11: the axis ends at the data, not at a rounded year past it (1880-2023 ran to 2040).
+      measure(along, { scale: { zero: false, nice: false }, axis: { format: "d", ...TIME_AXIS } });
 
   if (!total && series && split.heatmap) {
     // S1: more series than lines can tell apart. Time across, series down, the measure as a
-    // sequential color (log when it spans three decades or more, S4).
-    const s = scaleFor(m);
+    // sequential color (log when it spans three decades or more, S4). S13: a count colors
+    // rows by their size (the largest industry darkest in every month); a rate of the same
+    // rows shows change over time instead, so it colors when the table has one.
+    const hue = rateOf(m, fields) ?? m;
+    const s = scaleFor(hue);
     const heatX = date
       ? unitName || !heatUnit(along).endsWith("yearmonthdate")
         ? // Buckets of a unit across the span: a time axis (a cell as wide as its bucket), ticks and labels as the line chart's, not one per column.
           { field: fieldRef(along.name), type: "temporal", timeUnit: unitName ?? heatUnit(along), axis: { ...TIME_AXIS, format: dateFormat(along) }, ...titled(along) }
         : // A few dates, irregular: a column each (on a time axis a day's cell would be a sliver).
-          { field: fieldRef(along.name), type: "ordinal", timeUnit: heatUnit(along), axis: { labelOverlap: "greedy", format: "%b %d, %Y", ...titled(along) }, ...titled(along) }
-      : { field: fieldRef(along.name), type: "ordinal", axis: { labelOverlap: "greedy", labelAngle: 0 }, ...titled(along) };
+          { field: fieldRef(along.name), type: "ordinal", timeUnit: heatUnit(along), axis: { labelOverlap: "greedy", labelSeparation: 8, labelAngle: 0, format: spanYears(along) > 1.5 ? "%b %d, %Y" : "%b %d", ...titled(along) }, ...titled(along) }
+      : // S12: years labeled at round steps (decades), not every fifth column from wherever it starts.
+        { field: fieldRef(along.name), type: "ordinal", axis: { labelOverlap: "greedy", labelSeparation: 8, labelAngle: 0, ticks: false, labelExpr: roundYears(along, phone) }, ...titled(along) };
     const parts = (distinctValues(series) ?? 0) - split.totals.length;
     return {
       ...base,
@@ -649,25 +690,31 @@ function timeSeries(d: Dataset, base: Spec, t: Field, m: Field, fields: Field[],
           return phone ? { ...y, axis: { ...(y.axis as Enc | undefined), labelLimit: PHONE_ROW_LABELS } } : y;
         })(),
         color: (() => {
-          const c = measure(m, aggregate ? { aggregate } : {});
-          return { ...c, scale: { ...(c.scale as Enc | undefined), ...(s.scale.type ? { type: s.scale.type } : {}), ...(s.scale.type === "symlog" ? { constant: s.scale.constant } : {}), scheme: "blues" } };
+          const c = measure(hue, aggregate ? { aggregate: hue === m ? aggregate : "mean" } : {});
+          // S10: a log color's legend labels its decades, not only its ends.
+          const decades = s.scale.type ? ((s.axis.values as number[] | undefined) ?? []).filter((v) => v === 0 || Number.isInteger(Math.log10(Math.abs(v)))) : [];
+          const legend = decades.length >= 3 ? { legend: { values: decades, labelExpr: POWER_LABEL, gradientLength: 200, labelOverlap: "greedy", titlePadding: 10 } } : {};
+          return { ...c, scale: { ...(c.scale as Enc | undefined), ...(s.scale.type ? { type: s.scale.type } : {}), ...(s.scale.type === "symlog" ? { constant: s.scale.constant } : {}), scheme: "blues" }, ...legend };
         })(),
       },
     };
   }
 
+  // S16: a measure mostly zero (bird strikes' costs) has no mean worth charting: its records
+  // per bucket instead, when the line isn't split (a split needs the measure per series).
+  const counted = !series && !lines && !!unit && mostlyZero(m);
   const lined = series ? seriesLines(series) : null;
   // S3, S5: a line breaks at gaps in its times, and gives way to points when it's too jagged.
   // (Rows aggregated per time, without a time unit, share their time's segment, so the sum or
   // mean is unchanged. Buckets of a time unit that skip one draw as points instead.)
-  const skips = shapeOf(d, along, m, series, exact)?.gaps ?? false;
+  const skips = !counted && (shapeOf(d, along, m, series, exact)?.gaps ?? false);
   const gaps = !unit && !lines && skips ? segments(d, along, splitBy, fields) : null;
-  const points = (!!unit && skips) || jagged(d, along, m, series, exact);
+  const points = (!!unit && skips) || (!counted && jagged(d, along, m, series, exact));
   const mark = points
     ? { type: "point", filled: true, size: 24, tooltip: true }
-    : date
-      ? { type: "line", interpolate: "monotone", tooltip: true, ...(gaps ? { point: { size: 12 } } : {}) }
-      : { type: "line", point: rows <= 60 || !!gaps, tooltip: true };
+    : // S8: straight segments between the values (a curve would invent peaks and troughs), and
+      // the values marked where there are few enough to see (or a gap splits the line).
+      { type: "line", tooltip: true, ...(gaps || timesAlong(along, unit) <= FEW_POINTS ? { point: { size: date ? 16 : 24 } } : {}) };
   const transform = [...keep, ...(gaps && !points ? gaps.transform : [])];
   return {
     ...base,
@@ -681,7 +728,9 @@ function timeSeries(d: Dataset, base: Spec, t: Field, m: Field, fields: Field[],
       x,
       // A mean stays within the measure's values, so it keeps the measure's scale (S4: a heavy
       // tail's mean is still heavy-tailed); a sum's range is not the measure's.
-      y: measure(m, aggregate === "sum" ? { aggregate, ...(band ? { scale: { zero: false } } : {}) } : { ...(aggregate ? { aggregate } : {}), ...scaled(m, band ? { zero: false } : {}) }),
+      y: counted
+        ? { aggregate: "count", type: "quantitative" }
+        : measure(m, aggregate === "sum" ? { aggregate, ...(band ? { scale: { zero: false } } : {}) } : { ...(aggregate ? { aggregate } : {}), ...(keep.length ? fitted(m, band) : scaled(m, band ? { zero: false } : {})) }),
       ...(lined ? lined.encoding : {}),
       ...(gaps && !points ? { detail: { field: gaps.field, type: "nominal" } } : {}),
       ...(lines
@@ -706,12 +755,119 @@ function seriesLines(f: Field): { encoding: Enc; params: Spec[] } {
  * A time axis: about one tick per 90 px of plot (so a 60-year series doesn't label every
  * year at 880 px, nor collide at 358), and any labels that still overlap dropped.
  */
-const TIME_AXIS = { tickCount: { expr: "ceil(width / 90)" }, labelOverlap: "greedy" };
+const TIME_AXIS = { tickCount: { expr: "ceil(width / 90)" }, labelOverlap: "greedy", labelSeparation: 8, labelFlush: true };
 
 /** Date labels as short as the span allows: years over four years, months and years up to four, days within a year and a half. */
 function dateFormat(t: Field): string {
   const span = spanYears(t);
   return span > 4 ? "%Y" : span > 1.5 ? "%b %Y" : "%b %d";
+}
+
+/**
+ * A measure's scale fitted to the rows a chart draws, when it draws some of them (the Total
+ * mode's totals, the parts without them): a log scale spans whole decades around those rows
+ * (S4), not the whole column's range (the totals' 300 to 3.7 million, not 1 to 3.7 million).
+ */
+function fitted(m: Field, band: boolean): Enc {
+  if (scaleType(m) !== "log") return scaled(m, band ? { zero: false } : {});
+  // Labels at the decades only (Vega's log ticks also mark 2 to 9 of each, which crowd).
+  const decade = "abs(log(datum.value) / LN10 - round(log(datum.value) / LN10)) < 1e-6";
+  return { scale: { type: "log", nice: true }, axis: { labelExpr: `${decade} ? (${POWER_LABEL}) : ''` } };
+}
+
+/** A rate among a count's fields (the same rows as a percentage): what a heatmap colors by (S13). */
+function rateOf(m: Field, fields: Field[]): Field | undefined {
+  if (!summable(m)) return undefined;
+  return fields.find((f) => f !== m && f.profile.kind === "quantitative" && isMeasure(f, fields) && RATE_NAME.test(`${f.name} ${f.title ?? ""} ${f.description ?? ""}`));
+}
+const RATE_NAME = /\b(rate|percent|percentage|share|ratio)\b/i;
+
+/**
+ * Labels for a band axis of years at a round step (S12): 1, 2, 5, 10, 20, 25, 50 or 100
+ * years, whichever leaves at most 12 labels (5 on a phone). An expression, not a list of
+ * values: a CSV file's years reach the band scale as text, a JSON file's as numbers.
+ */
+function roundYears(t: Field, phone: boolean): string | undefined {
+  const p = t.profile;
+  if (p.kind !== "quantitative") return undefined;
+  const most = phone ? 5 : 12;
+  const step = [1, 2, 5, 10, 20, 25, 50, 100, 200, 500].find((k) => Math.floor(p.max / k) - Math.ceil(p.min / k) + 1 <= most) ?? 1000;
+  return `toNumber(datum.value) % ${step} === 0 ? datum.label : ''`;
+}
+
+/**
+ * Whether a time chart of `m` along `t` has something to show (S15): its lines (or heatmap
+ * rows) have three or more times each, as the builder counted them (the median series).
+ * Candidates each reporting on a date or two (political contributions) make a grid of
+ * isolated cells, not a change over time.
+ */
+function timeSeriesHolds(d: Dataset, t: Field, m: Field, fields: Field[], phone: boolean): boolean {
+  const { series } = splitOf(d, t, m, fields, phone);
+  if (!series) return true;
+  const per = d.lineShapes?.[t.name]?.[m.name]?.[series.name]?.perSeries;
+  return per === undefined || per >= 3;
+}
+
+/** The words that name a measure's kind ("Deaths from Wounds", "Deaths from Disease"): its description's first two words. */
+function kindOf(f: Field): string | null {
+  const words = (f.description ?? "").toLowerCase().match(/[a-z]+/g) ?? [];
+  return words.length >= 3 ? words.slice(0, 2).join(" ") : null;
+}
+
+/**
+ * Measures of one kind, drawn together (S17): two to SERIES_LIMIT of them (four on a phone)
+ * whose descriptions open with the same two words ("Deaths from …"), all non-negative
+ * integers, in a table with one row per time (crimea: deaths from disease, wounds and other
+ * causes each month, Nightingale's classic view). The first measure's kind decides; the
+ * rule is conservative on purpose: a shared unit is claimed only where the metadata says so.
+ */
+function sameKind(d: Dataset, t: Field, measures: Field[], phone: boolean): Field[] | null {
+  const kind = measures[0] ? kindOf(measures[0]) : null;
+  if (!kind || timeKeyOf(d, t)?.length !== 0) return null;
+  const kin = measures.filter((m) => m !== t && kindOf(m) === kind && m.type === "integer" && m.profile.kind === "quantitative" && m.profile.min >= 0);
+  return kin.length >= 2 && kin.length <= (phone ? SERIES_LIMIT.phone : SERIES_LIMIT.wide) ? kin : null;
+}
+
+/** Several measures of one kind over time (S17): folded into one colored line each, on one axis, with legend isolation. */
+function foldedSeries(d: Dataset, base: Spec, t: Field, kin: Field[]): Spec {
+  const taken = new Set(d.fields.map((f) => f.name));
+  const free = (name: string): string => (taken.has(name) ? free(`_${name}`) : name);
+  const [key, value] = [free("measure"), free("value")];
+  const date = t.profile.kind === "temporal";
+  const x = date
+    ? { field: fieldRef(t.name), type: "temporal", axis: { ...TIME_AXIS, format: dateFormat(t) }, ...titled(t) }
+    : measure(t, { scale: { zero: false, nice: false }, axis: { format: "d", ...TIME_AXIS } });
+  const title = (f: Field) => fieldTitle(f);
+  // The axis names the kind by its first word ("Deaths").
+  const kind = (kindOf(kin[0]!) ?? "value").split(" ")[0]!;
+  return {
+    ...base,
+    width: 640,
+    height: 300,
+    usermeta: { chart: "time" },
+    transform: [
+      { fold: kin.map((m) => fieldRef(m.name)), as: [key, value] },
+      // The legend names each measure by its title.
+      ...(kin.some((m) => title(m) !== m.name) ? [{ calculate: `${JSON.stringify(Object.fromEntries(kin.map((m) => [m.name, title(m)])))}[datum[${JSON.stringify(key)}]]`, as: key }] : []),
+    ],
+    params: [{ name: "series", select: { type: "point", fields: [key] }, bind: "legend" }],
+    mark: { type: "line", tooltip: true, ...(timesAlong(t, undefined) <= FEW_POINTS ? { point: { size: date ? 16 : 24 } } : {}) },
+    encoding: {
+      x,
+      y: { field: value, type: "quantitative", title: kind.charAt(0).toUpperCase() + kind.slice(1) },
+      color: { field: key, type: "nominal", title: null, scale: { domain: kin.map(title) } },
+      opacity: { condition: { param: "series", empty: true, value: 1 }, value: 0.15 },
+    },
+  };
+}
+
+/** A line marks its values when it has at most this many (S8). */
+export const FEW_POINTS = 60;
+
+/** How many times a line along `t` draws: its buckets of `unit` across the span, else its distinct values. */
+function timesAlong(t: Field, unit: string | undefined): number {
+  const perYear: Record<string, number> = { yearmonthdate: 365.25, yearmonth: 12, year: 1 };
+  return unit ? Math.floor(spanYears(t) * (perYear[unit.replace(/^utc/, "")] ?? 1)) + 1 : (distinctValues(t) ?? Infinity);
 }
 
 /** A heatmap's columns, most: a date drawn as it is (no time unit) gets a column per day up to this many distinct dates. */
@@ -751,9 +907,11 @@ function starterRule(d: Dataset, phone = false): Spec | null {
   const cat = fields.find((f) => nominal(f, 60, fields));
   const colorBy = (f: Field | undefined): Enc => (f ? { color: category(f) } : {});
 
-  // 1. Latitude/longitude columns → a point map.
-  const lat = fields.find((f) => isLat(f) && f.profile.kind === "quantitative");
-  const lon = fields.find((f) => isLon(f) && f.profile.kind === "quantitative");
+  // 1. Latitude/longitude columns → a point map: the pair the builder found (by name, a
+  //    centroid's cx/cy, or x/y described as longitude and latitude, all values in range), else by name.
+  const byName = (test: (f: Field) => boolean) => fields.find((f) => test(f) && f.profile.kind === "quantitative");
+  const lat = d.points ? fields.find((f) => f.name === d.points!.latitude) : byName(isLat);
+  const lon = d.points ? fields.find((f) => f.name === d.points!.longitude) : byName(isLon);
   if (lat && lon) return pointMap(d, base, lat, lon, smallCat, measures);
 
   // 2. start/end columns → a timeline of ranges.
@@ -776,9 +934,12 @@ function starterRule(d: Dataset, phone = false): Spec | null {
 
   const [m1] = measures;
 
-  // 3. Dates, or three or more years, with a measure → a time series.
+  // 3. Dates, or three or more years, with a measure → a time series: several measures of
+  //    one kind on one chart (S17), else the first measure, when its series have times enough (S15).
   const t = timeField(fields);
-  if (t && m1) return timeSeries(d, base, t, m1, fields, phone);
+  const kin = t && m1 ? sameKind(d, t, measures, phone) : null;
+  if (t && kin) return foldedSeries(d, base, t, kin);
+  if (t && m1 && timeSeriesHolds(d, t, m1, fields, phone)) return timeSeries(d, base, t, m1, fields, phone);
 
   // 4. A small table of equal groups with two measures → small multiples, a panel per group (G-7).
   const pair = defaultPair(d, measures, "x");
@@ -877,7 +1038,8 @@ function starterRule(d: Dataset, phone = false): Spec | null {
       height: 260,
       mark: { type: "bar", tooltip: true },
       encoding: {
-        x: measure(m1, { bin: { maxbins: 30 } }),
+        // S10: an integer's bins step by whole numbers, labeled as integers (4, not 4.0).
+        x: measure(m1, { bin: { maxbins: 30, ...(m1.type === "integer" ? { minstep: 1 } : {}) }, ...(m1.type === "integer" ? { axis: { format: "d" } } : {}) }),
         y: { aggregate: "count", type: "quantitative" },
       },
     };
@@ -893,7 +1055,8 @@ function starterRule(d: Dataset, phone = false): Spec | null {
       transform: [{ filter: `isValid(datum[${JSON.stringify(gx.name)}]) && isValid(datum[${JSON.stringify(gy.name)}])` }],
       mark: { type: "rect", tooltip: true },
       encoding: {
-        x: { field: fieldRef(gx.name), type: "ordinal", ...titled(gx) },
+        // S10: short labels upright (Vega-Lite turns an ordinal x axis's labels on their side).
+        x: { field: fieldRef(gx.name), type: "ordinal", axis: { labelAngle: 0 }, ...titled(gx) },
         y: { field: fieldRef(gy.name), type: "ordinal", sort: "descending", ...titled(gy) },
         color: { aggregate: "count", type: "quantitative" },
       },
