@@ -150,7 +150,10 @@ try {
     await page.click('#explore button.draw');
     await page.waitForSelector('#explore .vega-embed canvas, #explore .vega-embed svg.marks', { timeout: 120_000 });
     await sleep(1000);
-    check(`desktop ${name}: "Draw the Live Map" loads the file once`, requests.length === 1 && errors.length === 0, { requests, errors });
+    // A point map also loads its basemap (world_110m, G-6), once; the dataset's own file, once.
+    const own = requests.filter((r) => !r.endsWith('/world-110m.json'));
+    const basemaps = requests.length - own.length;
+    check(`desktop ${name}: "Draw the Live Map" loads the file once`, own.length === 1 && basemaps <= 1 && errors.length === 0, { requests, errors });
     await ctx.close();
   }
   {
@@ -217,7 +220,7 @@ try {
 
   // Explore reserves the height it draws: no shift when it draws, no gap after.
   for (const [label, device] of [['desktop', DESKTOP], ['phone', PHONE]]) {
-    for (const name of ['cars', 'flights_200k_json', 'seattle_weather', 'stocks', 'barley', 'london_boroughs', 'us_10m', 'airports']) {
+    for (const name of ['cars', 'flights_200k_json', 'seattle_weather', 'stocks', 'barley', 'london_boroughs', 'us_10m', 'airports', 'anscombe', 'us_state_capitals', 'london_tube_lines', 'budgets', 'co2_concentration']) {
       const { ctx, page } = await openPage(browser, name, device, { settle: 1500 });
       const m = await exploreHeights(page);
       // Maps on a picture reserve nothing: the picture holds its own place.
