@@ -52,6 +52,7 @@ exports[`bars of a measure by category > starter and Explore specs match the cod
     "aggregate": "mean"
    }
   },
+  "height": 60,
   "autosize": {
    "type": "fit-x",
    "contains": "padding"
@@ -111,6 +112,7 @@ exports[`category counts > starter and Explore specs match the code before the m
     "type": "quantitative"
    }
   },
+  "height": 60,
   "autosize": {
    "type": "fit-x",
    "contains": "padding"

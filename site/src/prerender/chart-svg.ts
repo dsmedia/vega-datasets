@@ -4,7 +4,7 @@
  * with the live view (client/catalog-chart.ts).
  */
 import * as vega from "vega";
-import { compile, type TopLevelSpec } from "vega-lite";
+import { compileStrict } from "./compile";
 import { pointSource } from "../lib/vega-data";
 import { themeConfig } from "../lib/vega-theme";
 import { readDataUrl } from "./repo";
@@ -50,7 +50,7 @@ export interface StaticChart {
 
 export async function staticChart(spec: Record<string, unknown>): Promise<StaticChart> {
   const config = themeConfig(lightToken);
-  const { spec: vg } = compile(spec as unknown as TopLevelSpec, { config: config as never });
+  const { spec: vg } = compileStrict(spec, config, String(spec.description ?? "a static chart"));
   const view = new vega.View(vega.parse(vg), { renderer: "none" });
   try {
     await view.runAsync();
@@ -82,7 +82,7 @@ export interface DrawnChart {
 export async function drawnChart(spec: Record<string, unknown>, width: number): Promise<DrawnChart> {
   const config = themeConfig(lightToken);
   // Small multiples size their panels themselves (a facet takes no width).
-  const { spec: vg } = compile((spec.facet ? spec : { ...spec, width }) as unknown as TopLevelSpec, { config: config as never });
+  const { spec: vg } = compileStrict(spec.facet ? spec : { ...spec, width }, config, `${String(spec.description ?? "a chart")} at ${width} px`);
   const loader = vega.loader();
   loader.load = async (uri: string) => readDataUrl(uri);
   const view = new vega.View(vega.parse(vg), { renderer: "none", loader });

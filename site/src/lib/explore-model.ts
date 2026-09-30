@@ -5,10 +5,10 @@
  * Multiples" when it is one panel per group.
  */
 import { type Dataset, documentedRange, effectiveMissing, type Field, fieldTitle } from "./catalog";
-import { correlation, sampled, type ScaleType, scaleFor, scaleType, summable, withScale } from "./chart-rules";
+import { correlation, distinctValues, sampled, type ScaleType, scaleFor, scaleType, summable, totalsOf, withScale } from "./chart-rules";
 import { BAND_POLICY, rowBand } from "./large-data";
 import { formatCount } from "./format";
-import { category, categoryAsText, colorable, defaultPair, fieldRef, isMeasure, isYear, markerForms, missingFilter, PANEL_SIZE, starterSpec, tag, tagged, timeField, timeKeyOf, timeYear, titled, untag } from "./starter";
+import { category, categoryAsText, colorable, defaultPair, fieldRef, isMeasure, isYear, markerForms, missingFilter, PANEL_SIZE, starterSpec, tag, tagged, timeField, timeKeyOf, timeYear, titled, TOP, untag } from "./starter";
 
 type Spec = Record<string, unknown>;
 
@@ -245,7 +245,31 @@ export function starterChart(d: Dataset, phone = false): Spec | null {
     const size = phone ? PANEL_SIZE.phone : PANEL_SIZE.wide;
     return { ...spec, spec: { ...(spec.spec as Spec), width: size, height: size } };
   }
-  return { ...spec, width: "container", autosize: { type: "fit-x", contains: "padding" } };
+  const height = discreteHeight(d, spec);
+  return { ...spec, width: "container", ...(height ? { height } : {}), autosize: { type: "fit-x", contains: "padding" } };
+}
+
+/** Vega-Lite's default step (px) per value of a discrete axis. */
+const STEP = 20;
+
+/**
+ * A chart with categories down its y axis (bars, a dot plot, a heatmap) gets its height as
+ * a number: the default step times the values the axis shows, which is the height a step
+ * would draw (20 px each, with Vega-Lite's default paddings). A step height beside a width
+ * that fits its container makes Vega-Lite warn that it drops a "fit-y" it was never asked
+ * for (upstream, DOSSIER §16.1). Null when the axis isn't discrete or its values can't be counted.
+ */
+export function discreteHeight(d: Dataset, spec: Spec): number | null {
+  const y = (spec.encoding as Record<string, Spec> | undefined)?.y;
+  if (!y || spec.height !== undefined || (y.type !== "nominal" && y.type !== "ordinal")) return null;
+  const name = String(y.field ?? "").replace(/\\(.)/g, "$1");
+  const f = d.fields.find((x) => x.name === name);
+  const all = f ? distinctValues(f) : null;
+  if (!f || all === null) return null;
+  // The top twenty leave out totals, then keep twenty at most.
+  const top = ((spec.transform as Spec[] | undefined) ?? []).some((t) => t.window);
+  const shown = top ? Math.min(TOP, all - totalsOf(d, f).length) : all;
+  return shown > 0 ? shown * STEP : null;
 }
 
 /**

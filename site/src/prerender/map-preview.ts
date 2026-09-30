@@ -4,7 +4,7 @@
  * that into a small WebP, so the page shows the map without drawing thousands of marks.
  */
 import * as vega from "vega";
-import { compile, type TopLevelSpec } from "vega-lite";
+import { compileStrict } from "./compile";
 import sharp from "sharp";
 import type { Dataset } from "../lib/catalog";
 import { starterSpec } from "../lib/starter";
@@ -32,7 +32,7 @@ async function draw(d: Dataset): Promise<MapPreview> {
   if (!spec) throw new Error(`${d.name} has no starter chart`);
   // On white, like the gallery thumbnails (an opaque picture is also far smaller than one with alpha).
   const config = { ...themeConfig(lightToken), background: "#ffffff" };
-  const { spec: vg } = compile(spec as unknown as TopLevelSpec, { config: config as never });
+  const { spec: vg } = compileStrict(spec, config, `${d.name}'s map preview`);
   const loader = vega.loader();
   loader.load = async (uri: string) => readDataUrl(uri);
   const view = new vega.View(vega.parse(vg), { renderer: "none", loader });

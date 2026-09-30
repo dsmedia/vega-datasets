@@ -546,7 +546,7 @@ function dateFormat(t: Field): string {
 }
 
 /** Bars for the largest groups of a category with many values. */
-const TOP = 20;
+export const TOP = 20;
 
 function starterRule(d: Dataset): Spec | null {
   const base: Spec = {
