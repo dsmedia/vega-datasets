@@ -82,6 +82,14 @@ describe('the checklist', () => {
     expect(completeness({ ...image, title: undefined, licenses: [{ name: 'notspecified' }] }).gaps).toBe(2);
   });
 
+  test('a table without a declared schema (fields read from the data) has no field items (Codex round 1, #3)', () => {
+    const inferred: Dataset = { ...full(), fieldsInferred: true, fields: full().fields.map((f) => ({ ...f, description: null })) };
+    expect(completeness(inferred).fields).toBeNull();
+    expect(completeness(inferred).gaps).toBe(0);
+    expect(summarize([inferred]).fields).toEqual({ total: 0, described: 0 });
+    expect(summarize([inferred]).tablesWithoutDescriptions).toBe(0);
+  });
+
   test('properties that apply only where they fit are documented, never gaps', () => {
     expect(documented(described())).toEqual([
       'Field titles (5 fields)', 'Categories (2 fields)', 'Constraints (4 fields)', 'Missing values', 'Primary key', 'Foreign keys (2)',
@@ -142,6 +150,37 @@ describe("a dataset's entry in the metadata TOML", () => {
     expect([...resourceLines(TOML)]).toEqual([['a.csv', 4], ['b.json', 10], ['c.png', 17]]);
   });
 
+  test('header-like text inside strings is not a header (Codex round 1, #2)', () => {
+    const toml = [
+      '[[resources]] # Path: a.csv', // 1
+      'path = "a.csv"',
+      'description = """',
+      '[[resources]] # Path: b.csv', // inside a basic multiline string
+      'path = "b.csv"',
+      '"""',
+      '[[resources]] # Path: b.csv', // 7: the real one
+      'path = "b.csv"',
+      "description = '''",
+      '[[resources]] # Path: c.csv', // inside a literal multiline string
+      "'''",
+      'note = """an escaped quote \\""" leaves it open',
+      '[[resources]] # Path: d.csv', // still inside
+      'and it closes with an extra quote """"',
+      'y = "one line \\"\\"\\" with quotes" # a comment with """',
+      "z = 'literal with \"\"\"'",
+      '[[resources]] # Path: c.csv', // 17
+      'path = "c.csv"',
+      '[[resources]] # Path: d.csv', // 19
+      'path = "d.csv"',
+    ].join('\n');
+    expect(Object.fromEntries(resourceLines(toml))).toEqual({ 'a.csv': 1, 'b.csv': 7, 'c.csv': 17, 'd.csv': 19 });
+  });
+
+  test("the block's own path wins over a stale comment", () => {
+    const toml = ['[[resources]] # Path: old.csv', 'path = "new.csv"', '[[resources]] # Path: old.csv', 'path = "old.csv"'].join('\n');
+    expect(Object.fromEntries(resourceLines(toml))).toEqual({ 'new.csv': 1, 'old.csv': 3 });
+  });
+
   test('a link to the line, else to the file', () => {
     const lines = resourceLines(TOML);
     const file = 'https://github.com/o/r/blob/main/_data/datapackage_additions.toml';
@@ -166,6 +205,19 @@ describe('the repository edit links go to', () => {
     expect(siteRepo({ SITE_REPO: '' })).toBe('https://github.com/vega/vega-datasets');
     expect(siteRepo({ SITE_REPO: 'not a repo' })).toBe('https://github.com/vega/vega-datasets');
     expect(siteRepo({ SITE_REPO: 'https://evil.example/x' })).toBe('https://github.com/vega/vega-datasets');
+  });
+
+  test('site.yml sets SITE_REPO for the whole job, so the tests and link check see what the build used', () => {
+    const yml = readFileSync(path.join(REPO, '.github', 'workflows', 'site.yml'), 'utf8').split(/\r?\n/);
+    // The build job's own env (four spaces in), not a step's (ten).
+    const job = yml.indexOf('  build:');
+    const env = yml.indexOf('    env:', job);
+    const steps = yml.indexOf('    steps:', job);
+    expect(job).toBeGreaterThan(-1);
+    expect(env).toBeGreaterThan(job);
+    expect(env).toBeLessThan(steps);
+    expect(yml.slice(env, steps)).toContain('      SITE_REPO: ${{ github.repository }}');
+    expect(yml.filter((l) => l.includes('SITE_REPO:'))).toHaveLength(1);
   });
 
   test('SITE_REPO names the repository that built the site', () => {

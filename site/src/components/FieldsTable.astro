@@ -33,7 +33,7 @@ const links = joins(d);
   <tbody>
     {fields.map(({ f, spark, miss, notes, format, key }) => (
       <tr>
-        <td class="f-name"><code>{f.name}</code>{key && <span class="f-key">Key</span>}{!hasDescription(f) && <a class="f-add" href={metadata}>Add<span class="visually-hidden"> a description for {f.name}</span></a>}{f.title && <span class="f-title">{f.title}</span>}{f.description && <p class="f-desc">{f.description}</p>}{notes.length > 0 && <p class="f-meta">{notes.join(" · ")}</p>}</td>
+        <td class="f-name"><code>{f.name}</code>{key && <span class="f-key">Key</span>}{!d.fieldsInferred && !hasDescription(f) && <a class="f-add" href={metadata}>Add<span class="visually-hidden"> a description for {f.name}</span></a>}{f.title && <span class="f-title">{f.title}</span>}{f.description && <p class="f-desc">{f.description}</p>}{notes.length > 0 && <p class="f-meta">{notes.join(" · ")}</p>}</td>
         <td class="f-type"><span class="type">{typeLabel(f)}</span>{format && <span class="f-format mono">{format}</span>}</td>
         <td class="f-dist">{spark ? <Sparkline model={spark} /> : f.profile.kind === "nominal" ? `${formatCount(f.profile.distinct)} distinct` : ""}</td>
         <td class={`f-sum${f.profile.kind === "nominal" ? "" : " mono"}`}>{profileSummary(f)}</td>

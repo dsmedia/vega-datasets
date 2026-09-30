@@ -103,6 +103,8 @@ export interface Dataset {
   sources: Source[];
   usedBy: string[];
   fields: Field[];
+  /** Present (true) when the table has no declared schema and its fields were read from the data. */
+  fieldsInferred?: true;
   rows: number | null;
   preview: { columns: string[]; rows: string[][] } | null;
   /** TopoJSON: the objects, and how many features each one becomes. */

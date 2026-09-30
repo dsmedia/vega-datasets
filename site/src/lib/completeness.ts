@@ -25,7 +25,7 @@ export const CHECK_LABEL: Record<Check, string> = {
 export interface Completeness {
   /** Whether each dataset-level item is filled in. */
   has: Record<Check, boolean>;
-  /** The table's fields and which lack a description; null when there is no schema (maps, images, JSON trees). */
+  /** The table's fields and which lack a description; null without a declared schema (maps, images, JSON trees, inferred columns). */
   fields: { total: number; undescribed: string[] } | null;
   /** Missing dataset-level items plus undescribed fields. */
   gaps: number;
@@ -68,7 +68,9 @@ export function completeness(d: Dataset): Completeness {
     source: d.sources.some((s) => filled(s.title) || filled(s.path)),
     license: licenseFamily(d) !== "Not specified",
   };
-  const fields = d.fields.length ? { total: d.fields.length, undescribed: d.fields.filter((f) => !hasDescription(f)).map((f) => f.name) } : null;
+  // Field items apply to declared fields only: a table without a schema shows its columns, but
+  // the metadata never named them.
+  const fields = d.fields.length && !d.fieldsInferred ? { total: d.fields.length, undescribed: d.fields.filter((f) => !hasDescription(f)).map((f) => f.name) } : null;
   const gaps = CHECKS.filter((c) => !has[c]).length + (fields?.undescribed.length ?? 0);
   return { has, fields, gaps, documented: documented(d) };
 }
@@ -115,29 +117,84 @@ export function summarize(datasets: Dataset[]): Summary {
 /** The metadata file contributors edit, relative to the repository root. */
 export const ADDITIONS_FILE = "_data/datapackage_additions.toml";
 
+type Quote = '"""' | "'''";
+
+/** Where a multiline string closing with `quote` ends on `line` (just after its closing quotes), or -1. */
+function closeMultiline(line: string, from: number, quote: Quote): number {
+  for (let j = from; j < line.length; j++) {
+    // Basic strings have escapes (\" is a quote, not a delimiter); literal strings don't.
+    if (quote === '"""' && line[j] === "\\") {
+      j++;
+      continue;
+    }
+    if (line.startsWith(quote, j)) {
+      // Up to two more quotes belong to the string: `""""` is a quote, then the close.
+      let k = j + 3;
+      while (k < j + 5 && line[k] === quote[0]) k++;
+      return k;
+    }
+  }
+  return -1;
+}
+
+/** The multiline string still open at the end of `line` (read from `from`, outside any string), if any. */
+function openAtEnd(line: string, from: number): Quote | null {
+  for (let i = from; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === "#") return null;
+    const quote: Quote | null = line.startsWith('"""', i) ? '"""' : line.startsWith("'''", i) ? "'''" : null;
+    if (quote) {
+      const end = closeMultiline(line, i + 3, quote);
+      if (end < 0) return quote;
+      i = end - 1;
+    } else if (ch === '"' || ch === "'") {
+      // A one-line string, to its closing quote (a basic string skips escaped characters).
+      let j = i + 1;
+      while (j < line.length && line[j] !== ch) j += ch === '"' && line[j] === "\\" ? 2 : 1;
+      i = j;
+    }
+  }
+  return null;
+}
+
 /**
- * The line of each `[[resources]]` block in the metadata TOML, by the file it describes:
- * named by the header's `# Path: <file>` comment, else by the block's own `path = "…"`.
+ * The line of each `[[resources]]` block in the metadata TOML, by the file it describes: the
+ * block's own `path = "…"`, else its header's `# Path: <file>` comment. Text inside multiline
+ * strings (descriptions) is never read as a header or a key; the first block for a file wins.
  */
 export function resourceLines(toml: string): Map<string, number> {
   const lines = new Map<string, number>();
-  let open: number | null = null;
+  let block: { line: number; comment?: string; path?: string; own: boolean } | null = null;
+  const close = () => {
+    const file = block?.path ?? block?.comment;
+    if (block && file && !lines.has(file)) lines.set(file, block.line);
+  };
+  let string: Quote | null = null;
   toml.split(/\r?\n/).forEach((line, i) => {
-    const header = /^\s*\[\[resources\]\]\s*(?:#\s*Path:\s*(\S+))?/.exec(line);
-    if (header) {
-      const file = header[1];
-      open = file ? null : i + 1;
-      if (file && !lines.has(file)) lines.set(file, i + 1);
-      return;
+    let from = 0;
+    if (string) {
+      const end = closeMultiline(line, 0, string);
+      if (end < 0) return;
+      string = null;
+      from = end;
+    } else {
+      const header = /^\s*\[\[resources\]\]\s*(?:#\s*Path:\s*(\S+))?/.exec(line);
+      if (header) {
+        close();
+        block = { line: i + 1, ...(header[1] ? { comment: header[1] } : {}), own: true };
+        return;
+      }
+      // Only the block's own keys: a sub-table (sources, licenses, schema) has paths of its own.
+      if (/^\s*\[/.test(line)) {
+        if (block) block.own = false;
+      } else if (block?.own && block.path === undefined) {
+        const path = /^\s*path\s*=\s*(?:"([^"\\]*)"|'([^']*)')/.exec(line);
+        if (path) block.path = path[1] ?? path[2];
+      }
     }
-    // Only the block's own keys: a sub-table (sources, licenses, schema) has paths of its own.
-    if (/^\s*\[/.test(line)) open = null;
-    const path = open !== null ? /^\s*path\s*=\s*["']([^"']+)["']/.exec(line) : null;
-    if (path && open !== null) {
-      if (!lines.has(path[1]!)) lines.set(path[1]!, open);
-      open = null;
-    }
+    string = openAtEnd(line, from);
   });
+  close();
   return lines;
 }
 

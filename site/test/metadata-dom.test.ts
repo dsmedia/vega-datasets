@@ -90,6 +90,9 @@ test('each undescribed field has a quiet "Add" link to the metadata entry, named
   const note = none.querySelector<HTMLAnchorElement>('.sec-note a')!;
   expect(text(note)).toBe('Add them');
   expect(note.getAttribute('href')).toBe(METADATA);
+  // Columns read from the data (no declared schema) aren't the metadata's fields: no "Add" beside them.
+  const { doc: inferred } = await render({ ...described(), fieldsInferred: true, fields: described().fields.map((f) => ({ ...f, description: null })) });
+  expect(inferred.querySelectorAll('.f-add')).toHaveLength(0);
 });
 
 test('a card summarizes the dataset by its title, else by its description', async () => {

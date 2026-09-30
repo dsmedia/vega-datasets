@@ -533,7 +533,12 @@ def build_dataset(
     )
     if df is None:
         return entry
-    fields = schema.get("fields") or [{"name": c, "type": "string"} for c in df.columns]
+    fields = schema.get("fields")
+    if not fields:
+        # No declared schema: the columns stand in, marked so the site doesn't ask for
+        # descriptions of fields the metadata never named (only then: no key otherwise).
+        fields = [{"name": c, "type": "string"} for c in df.columns]
+        entry["fieldsInferred"] = True
     for field in fields:
         if field["name"] not in df.columns:
             continue
