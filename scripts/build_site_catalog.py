@@ -335,17 +335,19 @@ def without_missing(s: pl.Series, values: list[str]) -> pl.Series:
 
 
 def profile_field(
-    s: pl.Series, field_type: str, missing: list[str] | None = None
+    s: pl.Series, field_type: str, markers: list[str] | None = None
 ) -> dict[str, Any]:
     """
     Summarize one column for the Field Guide.
 
     Numbers and dates get range and a histogram; everything else (strings,
-    booleans, lists) gets its most common values. Nulls and empty text count
-    as missing, and so do the field's documented ``missing`` values, if any.
+    booleans, lists) gets its most common values. Nulls count as missing, and
+    so do the documented missing-value ``markers``; without a list, Table Schema's
+    default (empty text) applies. An explicit list replaces it, so with ``[]``
+    empty text is a value.
     """
-    if missing:
-        s = without_missing(s, missing)
+    if markers:
+        s = without_missing(s, markers)
     n = s.len()
     if field_type in {"integer", "number"}:
         num = s.cast(pl.Float64, strict=False)
@@ -383,7 +385,8 @@ def profile_field(
             profile["bins"] = _bins((valid - lo).dt.total_seconds(), span)
         return profile
     text = s.cast(pl.String, strict=False).drop_nulls()
-    text = text.filter(text.str.len_chars() > 0)
+    if markers is None:
+        text = text.filter(text.str.len_chars() > 0)
     # Break count ties by value so rebuilds produce the same catalog.
     counts = text.value_counts(name="n").sort(
         ["n", text.name], descending=[True, False]
@@ -519,10 +522,10 @@ def build_dataset(
     for field in fields:
         if field["name"] not in df.columns:
             continue
-        # A field's own missingValues replace the schema's (Table Schema v2).
-        missing = missing_values(
-            field.get("missingValues", schema.get("missingValues"))
-        )
+        # A field's own missingValues replace the schema's (Table Schema v2);
+        # neither leaves the default (None: empty text is missing).
+        spec = field.get("missingValues", schema.get("missingValues"))
+        missing = None if spec is None else missing_values(spec)
         entry["fields"].append({
             "name": field["name"],
             "type": field.get("type", "string"),

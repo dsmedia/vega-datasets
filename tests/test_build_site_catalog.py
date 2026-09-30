@@ -433,3 +433,32 @@ def test_field_missing_values_replace_the_schema_list_not_extend_it(
     profile = entry["fields"][0]["profile"]
     assert (profile["missing"], profile["distinct"]) == (1, 2)
     assert profile["top"] == [["A", 1], ["NA", 1]]
+
+
+def test_an_explicit_missing_values_list_replaces_the_empty_string_default(
+    tmp_path: Path,
+) -> None:
+    # Table Schema: missingValues defaults to [""]; an explicit list replaces it, so
+    # with [] an empty string is a value. Without a list, empty text stays missing.
+    path = tmp_path / "rows.json"
+    path.write_text(json.dumps([{"c": ""}, {"c": "A"}]), "utf-8")
+
+    def profile(**field: object) -> dict[str, object]:
+        entry = build_dataset(
+            _resource(
+                path,
+                format=".json",
+                schema={"fields": [{"name": "c", "type": "string", **field}]},
+            ),
+            [],
+            "https://example.invalid/rows.json",
+            tmp_path,
+        )
+        return entry["fields"][0]["profile"]
+
+    assert (profile()["missing"], profile()["distinct"]) == (1, 1)
+    explicit = profile(missingValues=[])
+    assert (explicit["missing"], explicit["distinct"]) == (0, 2)
+    assert profile(missingValues=["A"])["top"] == [["", 1]]
+    both = profile(missingValues=["", "A"])
+    assert (both["missing"], both["distinct"]) == (2, 0)
