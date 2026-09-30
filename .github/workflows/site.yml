@@ -29,6 +29,12 @@ jobs:
 
     name: Build site
 
+    env:
+      # Edit links ("Add", "Edit this dataset's metadata") go to the repository that
+      # built the site: a fork's deploy to the fork, vega's to vega/vega-datasets. Set for
+      # the whole job, so the tests and the link check see what the build used.
+      SITE_REPO: ${{ github.repository }}
+
     steps:
       - uses: actions/checkout@v7
 
@@ -61,9 +67,6 @@ jobs:
           # A fork's deploy is a preview: keep it out of search results (the page names
           # vega.github.io/vega-datasets/ as canonical).
           SITE_NOINDEX: ${{ github.repository != 'vega/vega-datasets' && '1' || '0' }}
-          # Edit links ("Add", "Edit this dataset's metadata") go to the repository that
-          # built the site: a fork's deploy to the fork, vega's to vega/vega-datasets.
-          SITE_REPO: ${{ github.repository }}
 
       - name: Type-check the Field Guide
         run: npm run site:check

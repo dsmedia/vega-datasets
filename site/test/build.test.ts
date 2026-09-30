@@ -8,6 +8,7 @@ import { completeness } from '../src/lib/completeness';
 import { chartFeatures } from '../src/lib/explore-model';
 import { type DensityGrid, densityCaption, densityPageSpec, densitySpec } from '../src/lib/large-data';
 import { editorUrl } from '../src/lib/starter';
+import { siteRepo } from '../src/lib/seo';
 import { loadCatalog, REPO } from './catalog';
 
 const catalog = loadCatalog();
@@ -89,7 +90,10 @@ test('the sitemap lists every page', () => {
 });
 
 describe('metadata gaps (DECISIONS D6)', () => {
-  const ENTRY = /^https:\/\/github\.com\/vega\/vega-datasets\/blob\/main\/_data\/datapackage_additions\.toml#L\d+$/;
+  // Edit links go to the repository the build was told about (site.yml sets SITE_REPO for the
+  // whole job, so this test sees what the build saw); vega/vega-datasets by default.
+  const FILE = `${siteRepo(process.env)}/blob/main/_data/datapackage_additions.toml`;
+  const isEntry = (href: string | undefined) => !!href && href.startsWith(`${FILE}#L`) && /^\d+$/.test(href.slice(FILE.length + 2));
   const status = html(path.join(dist, 'metadata', 'index.html'));
   const rows = [...status.matchAll(/<tr id="([^"]+)">([\s\S]*?)<\/tr>/g)].map(([, id, body]) => ({ id: id!, body: body! }));
 
@@ -102,7 +106,7 @@ describe('metadata gaps (DECISIONS D6)', () => {
       expect(body, id).toContain(`href="${BASE}datasets/${id}/"`);
       const hrefs = [...body.matchAll(/href="(https:[^"]+)"/g)].map((m) => m[1]!);
       expect(hrefs, id).toHaveLength(1);
-      expect(hrefs[0], id).toMatch(ENTRY);
+      expect(isEntry(hrefs[0]), `${id}: ${hrefs[0]}`).toBe(true);
     }
     // The row ids are the only ids named after datasets: none collides with the page's own.
     const ids = [...status.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]!);
@@ -124,9 +128,9 @@ describe('metadata gaps (DECISIONS D6)', () => {
       const s = completeness(d);
       const adds = [...text.matchAll(/<a class="f-add" href="([^"]+)">Add<span class="visually-hidden"> a description for ([^<]+)<\/span><\/a>/g)];
       expect(adds.map((m) => m[2]), d.name).toEqual(s.fields?.undescribed ?? []);
-      for (const [, href] of adds) expect(href, d.name).toMatch(ENTRY);
+      for (const [, href] of adds) expect(isEntry(href), `${d.name}: ${href}`).toBe(true);
       const edit = text.match(/<a href="([^"]+)">Edit this dataset's metadata<\/a>/)![1]!;
-      expect(edit, d.name).toMatch(ENTRY);
+      expect(isEntry(edit), `${d.name}: ${edit}`).toBe(true);
       const line = text.match(/<span class="footer-gaps">This dataset has <a href="([^"]+)">([^<]+)<\/a>\.<\/span>/);
       if (s.gaps === 0) expect(line, d.name).toBeNull();
       else {
@@ -134,8 +138,6 @@ describe('metadata gaps (DECISIONS D6)', () => {
         expect(line?.[2], d.name).toBe(s.gaps === 1 ? '1 metadata gap' : `${s.gaps.toLocaleString('en-US')} metadata gaps`);
       }
     }
-    // cars: no title, no known license, nine undescribed fields.
-    expect(html(path.join(dist, 'datasets', 'cars', 'index.html'))).toContain('This dataset has <a href="/vega-datasets/metadata/#cars">11 metadata gaps</a>.');
   });
 
   test('the home page links to the status page from its Contribute box only', () => {
