@@ -251,8 +251,9 @@ try {
     await exploreHeights(page);
     const draws = await page.$eval('#explore', (s) => Number(s.dataset.draws ?? 0));
     await page.select('#explore .binds select', 'Penicillin');
-    await page.waitForFunction((n) => Number(document.querySelector('#explore').dataset.draws ?? 0) > n, { timeout: 60_000 }, draws);
-    await sleep(500);
+    // A redraw is expected; without one (the old behavior) the points are measured as they are.
+    const redrawn = await page.waitForFunction((n) => Number(document.querySelector('#explore').dataset.draws ?? 0) > n, { timeout: 10_000 }, draws).then(() => true, () => false);
+    await sleep(1000);
     const r = await page.evaluate(() => {
       const axis = [...document.querySelectorAll('#explore svg .role-axis')].find((g) => /^X-axis/.test(g.getAttribute('aria-label') ?? ''));
       const ticks = [...(axis?.querySelectorAll('.role-axis-tick line') ?? [])].map((l) => l.getBoundingClientRect().left);
@@ -260,7 +261,7 @@ try {
       const [lo, hi] = [Math.min(...ticks), Math.max(...ticks)];
       return { points: points.length, outside: points.filter((x) => x < lo - 1 || x > hi + 1).length, lo: Math.round(lo), hi: Math.round(hi) };
     });
-    check('desktop burtin: a picked log field redraws on its own domain (no point cut off)', r.points === 16 && r.outside === 0 && errors.length === 0, { ...r, errors });
+    check('desktop burtin: a picked log field redraws on its own domain (no point cut off)', redrawn && r.points === 16 && r.outside === 0 && errors.length === 0, { ...r, redrawn, errors });
     await ctx.close();
   }
 
