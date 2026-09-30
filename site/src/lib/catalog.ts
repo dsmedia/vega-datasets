@@ -225,9 +225,26 @@ export function documentedRange(f: Field): { min?: number; max?: number; fits: b
   const min = typeof minimum === "number" ? minimum : undefined;
   const max = typeof maximum === "number" ? maximum : undefined;
   if (min === undefined && max === undefined) return null;
-  const p = f.profile;
-  const fits = p.kind !== "quantitative" || ((min === undefined || p.min >= min) && (max === undefined || p.max <= max));
+  const fits = insideDocumented(f) !== false;
   return { ...(min !== undefined ? { min } : {}), ...(max !== undefined ? { max } : {}), fits };
+}
+
+/**
+ * Whether the data's range (the profile's) lies inside the documented `minimum` and
+ * `maximum`: numbers for a number field, dates and times (as text) for a temporal one;
+ * null when that can't be told (no bounds, or bounds that don't match the data's kind).
+ */
+export function insideDocumented(f: Field): boolean | null {
+  const { minimum, maximum } = f.constraints ?? {};
+  const p = f.profile;
+  const value = (v: number | string | undefined): number | undefined =>
+    p.kind === "quantitative" ? (typeof v === "number" ? v : undefined)
+    : p.kind === "temporal" && typeof v === "string" && !Number.isNaN(Date.parse(v)) ? Date.parse(v)
+    : undefined;
+  const [min, max] = [value(minimum), value(maximum)];
+  if (min === undefined && max === undefined) return null;
+  const [lo, hi] = p.kind === "quantitative" ? [p.min, p.max] : p.kind === "temporal" ? [Date.parse(p.min), Date.parse(p.max)] : [NaN, NaN];
+  return (min === undefined || lo >= min) && (max === undefined || hi <= max);
 }
 
 /** The primary key's fields (empty when there is none). */

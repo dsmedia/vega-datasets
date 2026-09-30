@@ -188,8 +188,9 @@ describe('fields table text', () => {
     expect(formatNote({ ...field('when'), format: 'default' })).toBeNull();
     expect(formatNote(field('hp'))).toBeNull();
     expect(d.fields.filter((f) => isKey(d, f)).map((f) => f.name)).toEqual(['id']);
-    expect(missingNote(d)).toBe('Empty cells and “NA” count as missing.');
-    expect(missingNote({ ...d, missingValues: ['NA'] })).toBe('“NA” counts as missing.');
+    // hp lists its own markers.
+    expect(missingNote(d)).toBe('Empty cells and “NA” count as missing, except in fields that list their own markers.');
+    expect(missingNote({ ...d, missingValues: ['NA'] })).toBe('“NA” counts as missing, except in fields that list their own markers.');
     expect(missingNote({ ...d, missingValues: [''] })).toBeNull();
     expect(missingNote(strip(d))).toBeNull();
   });

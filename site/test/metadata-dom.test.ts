@@ -53,7 +53,7 @@ test('the notes under the table: missing markers and the joins, linking pages th
   const { doc } = await render(described());
   const notes = [...doc.querySelectorAll('.sec-note')].map(text);
   expect(notes).toEqual([
-    'Profiled across all 5 rows. Empty cells and “NA” count as missing.',
+    'Profiled across all 5 rows. Empty cells and “NA” count as missing, except in fields that list their own markers.',
     'Rows refer to other rows of this table: parent → id.',
     'Joins with origins: origin → name.',
   ]);

@@ -5,6 +5,7 @@
 import { describe, expect, test } from 'vitest';
 import type { Dataset, Field } from '../src/lib/catalog';
 import { defaultAxes, scatterFields, scatterSpec } from '../src/lib/explore-model';
+import { fieldNotes, missingNote } from '../src/lib/field-meta';
 import { densityGrid } from '../src/lib/large-data';
 import { starterSpec } from '../src/lib/starter';
 import { draw, rowsWith } from './draw';
@@ -132,6 +133,16 @@ describe('documented ranges', () => {
       expect(x).toEqual({ field: 'v', type: 'quantitative', bin: { maxbins: 30 } });
     }
   });
+
+  test('date bounds are checked against the data like numbers', () => {
+    const when: Field = {
+      name: 'when', type: 'date', description: null, constraints: { minimum: '2020-01-01', maximum: '2020-12-31' },
+      profile: { kind: 'temporal', min: '2019-06-01T00:00:00Z', max: '2021-02-01T00:00:00Z', missing: 0 },
+    };
+    expect(fieldNotes(when)).toEqual(['Documented range 2020-01-01 – 2020-12-31 (some values fall outside)']);
+    const inside = { ...when, profile: { ...when.profile, min: '2020-01-01T00:00:00Z', max: '2020-12-31T00:00:00Z' } } as Field;
+    expect(fieldNotes(inside)).toEqual(['Documented range 2020-01-01 – 2020-12-31']);
+  });
 });
 
 describe('integer categories', () => {
@@ -154,6 +165,35 @@ describe('integer categories', () => {
 
   test('alone, are counted', () => {
     expect(enc(starterSpec(table([grade]))).y).toMatchObject({ field: 'grade', type: 'nominal' });
+  });
+});
+
+describe('fields table text', () => {
+  test('an allowed set narrower than the categories is listed too', () => {
+    const f = nominal('c', ['a', 'b'], { categories: ['a', 'b'], constraints: { enum: ['a'] } });
+    expect(fieldNotes(f)).toEqual(['Values: a, b', 'Allowed values: a']);
+    // The same set isn't said twice.
+    expect(fieldNotes({ ...f, constraints: { enum: ['b', 'a'] } })).toEqual(['Values: a, b']);
+  });
+
+  test('lengths, patterns and exclusive bounds', () => {
+    expect(fieldNotes(nominal('c', ['AB'], { constraints: { minLength: 2, maxLength: 5, pattern: '^[A-Z]+$' } }))).toEqual([
+      'Length 2 – 5 characters', 'Pattern ^[A-Z]+$',
+    ]);
+    expect(fieldNotes(nominal('c', ['AB'], { constraints: { minLength: 2 } }))).toEqual(['At least 2 characters']);
+    expect(fieldNotes(nominal('c', ['AB'], { constraints: { maxLength: 1 } }))).toEqual(['At most 1 character']);
+    expect(fieldNotes(quant(1, 2, { constraints: { exclusiveMinimum: 0, exclusiveMaximum: 10 } }))).toEqual(['Greater than 0', 'Less than 10']);
+  });
+
+  test('an empty list of its own says the field has no markers', () => {
+    expect(fieldNotes(nominal('c', ['a'], { missingValues: [] }))).toEqual(['No missing-value markers']);
+  });
+
+  test('the footer names the schema’s markers only for the fields they apply to', () => {
+    const own = nominal('c', ['NA'], { missingValues: [] });
+    expect(missingNote(table([own], { missingValues: ['NA'] }))).toBeNull();
+    expect(missingNote(table([own, nominal('d', ['x'])], { missingValues: ['NA'] }))).toBe('“NA” counts as missing, except in fields that list their own markers.');
+    expect(missingNote(table([nominal('d', ['x'])], { missingValues: ['NA'] }))).toBe('“NA” counts as missing.');
   });
 });
 
