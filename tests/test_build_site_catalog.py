@@ -409,3 +409,27 @@ def test_profile_counts_documented_missing_values() -> None:
     # Typed columns (Parquet, Arrow) keep their type.
     typed = pl.Series("t", [1, -1, 5], dtype=pl.Int64)
     assert profile_field(typed, "integer", ["-1"])["min"] == 1.0
+
+
+def test_field_missing_values_replace_the_schema_list_not_extend_it(
+    tmp_path: Path,
+) -> None:
+    # Replacing leaves "NA" a value of `code` (2 distinct, 1 missing); a union of the
+    # field's and the schema's markers would count it missing too (1 distinct, 2 missing).
+    path = tmp_path / "codes.csv"
+    path.write_text("code\nA\n-\nNA\n", "utf-8")
+    entry = build_dataset(
+        _resource(
+            path,
+            schema={
+                "fields": [{"name": "code", "type": "string", "missingValues": ["-"]}],
+                "missingValues": ["NA"],
+            },
+        ),
+        [],
+        "https://example.invalid/codes.csv",
+        tmp_path,
+    )
+    profile = entry["fields"][0]["profile"]
+    assert (profile["missing"], profile["distinct"]) == (1, 2)
+    assert profile["top"] == [["A", 1], ["NA", 1]]
