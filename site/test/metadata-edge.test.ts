@@ -313,3 +313,45 @@ describe('date bounds follow the field’s format and the profile’s UTC wall c
     expect(fieldNotes(f)).toEqual(['Documented minimum 01 February 2020']);
   });
 });
+
+// Codex review, round 3.
+
+test('a date field’s markers match its text before parsing: the same instant written otherwise stays', async () => {
+  const when: Field = {
+    name: 'when', type: 'datetime', description: null, missingValues: ['1900-01-01T00:00:00Z'],
+    profile: { kind: 'temporal', min: '1899-12-31T19:00:00-05:00', max: '2020-01-01T00:00:00Z', missing: 1 },
+  };
+  const view = await draw(starterSpec(table([when, quant(1, 3)]))!, [
+    { when: '1900-01-01T00:00:00Z', v: 10 }, { when: '1899-12-31T19:00:00-05:00', v: 2 }, { when: '2020-01-01T00:00:00Z', v: 3 },
+  ]);
+  try {
+    // The marker's row (v = 10) is gone; the same instant written with an offset stays.
+    expect(view.scale('y').domain()[1]).toBeLessThan(10);
+    expect(+view.scale('x').domain()[0]).toBe(Date.UTC(1900, 0, 1));
+  } finally {
+    view.finalize();
+  }
+});
+
+test('ordered integer categories sort as one type, whatever mix of numbers and text the file holds', async () => {
+  const grade: Field = {
+    name: 'grade', type: 'integer', description: null, categoriesOrdered: true,
+    categories: [{ value: 3, label: 'High' }, { value: 1, label: 'Low' }, { value: 2, label: 'Mid' }],
+    profile: { kind: 'quantitative', min: 1, max: 3, mean: 2, missing: 0, bins: [1, 1, 1] },
+  };
+  const rows = [{ grade: '1', v: 1, w: 1 }, { grade: 2, v: 2, w: 2 }, { grade: 3, v: 3, w: 3 }];
+  const bars = await draw(starterSpec(table([grade, quant(1, 3)]))!, rows);
+  try {
+    expect(bars.scale('y').domain()).toEqual(['3', '1', '2']);
+  } finally {
+    bars.finalize();
+  }
+  const d = table([grade, quant(1, 3), quant(1, 3, { name: 'w' })]);
+  const sf = scatterFields(d)!;
+  const scatter = await draw(scatterSpec(d, sf, { x: 'v', y: 'w', zoom: false, height: 300 }), rows);
+  try {
+    expect(scatter.scale('color').domain()).toEqual(['3', '1', '2']);
+  } finally {
+    scatter.finalize();
+  }
+});

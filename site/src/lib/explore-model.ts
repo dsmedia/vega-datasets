@@ -6,7 +6,7 @@
 import { type Dataset, documentedRange, effectiveMissing, type Field, fieldTitle } from "./catalog";
 import { formatCount } from "./format";
 import { BAND_POLICY, rowBand } from "./large-data";
-import { category, fieldRef, isMeasure, isYear, markerForms, missingFilter, nominal, starterSpec, tag, tagged, titled, untag } from "./starter";
+import { category, categoryAsText, fieldRef, isMeasure, isYear, markerForms, missingFilter, nominal, starterSpec, tag, tagged, titled, untag } from "./starter";
 
 type Spec = Record<string, unknown>;
 
@@ -107,7 +107,7 @@ function measureLookups(d: Dataset, measures: Field[]) {
 export function scatterSpec(d: Dataset, f: ScatterFields, o: ScatterOptions): Spec {
   const options = f.measures.map((m) => m.name);
   const meta = measureLookups(d, f.measures);
-  const missing = [meta.missing, f.color ? missingFilter(d, [f.color]) : null].filter((t) => t !== null);
+  const prepare = [meta.missing, f.color ? missingFilter(d, [f.color]) : null, f.color ? categoryAsText(f.color) : null].filter((t) => t !== null);
   const labels = meta.labels ? { labels: meta.labels } : {};
   const title = (param: string, place: Spec) => ({
     data: { values: [{}] },
@@ -138,7 +138,7 @@ export function scatterSpec(d: Dataset, f: ScatterFields, o: ScatterOptions): Sp
       {
         // The field is picked at run time, so Vega-Lite can't parse it up front (CSV values are strings).
         transform: [
-          ...missing,
+          ...prepare,
           { calculate: "toNumber(datum[xField])", as: px },
           { calculate: "toNumber(datum[yField])", as: py },
           { filter: `isValid(datum.${px}) && isValid(datum.${py}) && isFinite(datum.${px}) && isFinite(datum.${py})` },

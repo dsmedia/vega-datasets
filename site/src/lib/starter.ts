@@ -91,15 +91,21 @@ export function measure(f: Field, enc: Enc = {}, bars = false): Enc {
 }
 
 /**
- * The documented order as a Vega-Lite `sort` array, or null. Numbers are listed as text too:
- * a CSV gives them as text, and the sort compares strictly. Text that names an object
- * property can't go in (Vega refuses the literal in the sort expression Vega-Lite writes),
- * so such categories keep the default order.
+ * The documented order as a Vega-Lite `sort` array of text, or null. Text that names an
+ * object property can't go in (Vega refuses the literal in the sort expression Vega-Lite
+ * writes), so such categories keep the default order. Numbered categories are sorted as
+ * text, and `categoryAsText` makes the field's values text to match: a file may hold them
+ * as numbers, as text (CSV), or both, and the sort compares strictly.
  */
-function sortOrder(f: Field): (string | number)[] | null {
-  const order = orderedCategories(f);
-  if (!order || order.some((v) => typeof v === "string" && v in Object.prototype)) return null;
-  return [...order, ...order.filter((v) => typeof v === "number").map(String)];
+function sortOrder(f: Field): string[] | null {
+  const order = orderedCategories(f)?.map(String);
+  return order && !order.some((v) => v in Object.prototype) ? order : null;
+}
+
+/** The transform that makes an ordered, numbered category's values text (null stays null), or null when none is needed. */
+export function categoryAsText(f: Field): Enc | null {
+  const numbered = orderedCategories(f)?.some((v) => typeof v === "number");
+  return numbered && sortOrder(f) ? { calculate: `toString(datum[${JSON.stringify(f.name)}])`, as: f.name } : null;
 }
 
 /**
@@ -127,16 +133,6 @@ export function markerForms(f: Field, markers: string[]): string[] {
   return [...new Set(markers.flatMap((m) => (numeric && m.trim() !== "" && Number.isFinite(Number(m)) ? [m, String(Number(m))] : [m])))];
 }
 
-/**
- * A date field's markers that read as dates, compared as instants: Vega-Lite parses a
- * temporal field before any transform, so its text is gone by the time the filter runs.
- * `toDate` parses them the way that parse does, in the viewer's browser.
- */
-function dateMarkerTest(f: Field, markers: string[], value: string): string | null {
-  if (f.profile.kind !== "temporal") return null;
-  const dates = markers.filter((m) => !Number.isNaN(Date.parse(m)));
-  return dates.length ? `indexof([${dates.map((m) => `time(toDate(${JSON.stringify(m)}))`).join(", ")}], time(${value})) < 0` : null;
-}
 
 /**
  * A filter that leaves out the rows where any of `fields` holds one of its documented
@@ -147,19 +143,33 @@ export function missingFilter(d: Dataset, fields: Field[]): Enc | null {
   const tests = fields.flatMap((f) => {
     const markers = effectiveMissing(d, f);
     if (!markers?.length) return [];
-    const value = `datum[${JSON.stringify(f.name)}]`;
-    return [`indexof(${tagged(markerForms(f, markers))}, ${tag(value)}) < 0`, dateMarkerTest(f, markers, value)].filter((t) => t !== null);
+    return [`indexof(${tagged(markerForms(f, markers))}, ${tag(`datum[${JSON.stringify(f.name)}]`)}) < 0`];
   });
   return tests.length ? { filter: tests.join(" && ") } : null;
 }
 
-/** The starter chart with the rows its encoded fields mark as missing left out. */
-function withoutMissing(d: Dataset, spec: Spec | null): Spec | null {
+/**
+ * The starter chart with what its encoded fields' metadata asks of the data: the rows they
+ * mark as missing left out, and ordered numbered categories made text. Markers are matched
+ * on a value's text, as Table Schema says, so a date field with markers is read as text
+ * (`parse: null`) and parsed after the filter (`toDate`, as Vega-Lite's own parse does).
+ * Without such metadata the spec is unchanged.
+ */
+function withMetadata(d: Dataset, spec: Spec | null): Spec | null {
   const encoding = spec?.encoding as Record<string, Enc> | undefined;
   if (!spec || !encoding) return spec;
   const used = new Set(Object.values(encoding).map((e) => e.field));
-  const filter = missingFilter(d, d.fields.filter((f) => used.has(fieldRef(f.name))));
-  return filter ? { ...spec, transform: [filter] } : spec;
+  const fields = d.fields.filter((f) => used.has(fieldRef(f.name)));
+  const dates = fields.filter((f) => f.profile.kind === "temporal" && effectiveMissing(d, f)?.length);
+  const transform = [
+    missingFilter(d, fields),
+    ...dates.map((f) => ({ calculate: `toDate(datum[${JSON.stringify(f.name)}])`, as: f.name })),
+    ...fields.map(categoryAsText),
+  ].filter((t) => t !== null);
+  if (!transform.length) return spec;
+  const data = spec.data as Spec;
+  const parse = dates.length ? { format: { ...(data.format as Spec | undefined), parse: Object.fromEntries(dates.map((f) => [f.name, null])) } } : {};
+  return { ...spec, data: { ...data, ...parse }, transform };
 }
 
 const ID_NAME = /(^id$|_id$|^id_|code$|^code|^zip|zip_code|^key$|^index$|^cluster$|^source$|^target$|^group$|^fips)/i;
@@ -275,7 +285,7 @@ function pointMap(d: Dataset, base: Spec, lat: Field, lon: Field, color: Field |
 }
 
 export function starterSpec(d: Dataset): Spec | null {
-  return withoutMissing(d, starterRule(d));
+  return withMetadata(d, starterRule(d));
 }
 
 function starterRule(d: Dataset): Spec | null {
