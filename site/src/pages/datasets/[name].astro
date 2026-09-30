@@ -292,7 +292,7 @@ const title = datasetTitle(d);
     <aside class="ds-rail" aria-label="Using this dataset">
       <div class="rail-box rail-use">
         <h3>Use This Dataset</h3>
-        <SnippetTabs id="use" label="Snippet language" snippets={useSnippets(d)} />
+        <SnippetTabs id="use" url={d.url} snippets={useSnippets(d)} />
         {/* The site's own copy: browsers ignore `download` on other origins (jsDelivr) and open the file instead. */}
         <a class="btn" href={`${base}data/${d.file}`} download={fileName(d)}>Download {fileName(d)}</a>
       </div>

@@ -1,24 +1,28 @@
 ---
 /**
- * Code snippets behind ARIA tabs, one panel per snippet. The first panel shows
- * without scripts; client/snippets.ts adds switching (arrows, Home, End) and Copy.
+ * How to load a file: its URL, which every tool uses, then one tab per tool (ARIA tabs,
+ * one panel per snippet). The first panel shows without scripts; client/snippets.ts adds
+ * switching (arrows, Home, End), Copy, and remembers the reader's tool across pages.
  */
 import type { Snippet } from "../lib/dataset-model";
 
 interface Props {
   /** Prefixes the element ids. */
   id: string;
-  label: string;
+  url: string;
   snippets: Snippet[];
 }
-const { id, label, snippets } = Astro.props;
+const { id, url, snippets } = Astro.props;
 ---
 <div class="snippets" data-snippets>
-  <div class="tabs" role="tablist" aria-label={label}>
-    {snippets.map((s, i) => (
-      <button class="tab" role="tab" type="button" id={`${id}-tab-${i}`} aria-controls={`${id}-panel-${i}`} aria-selected={i === 0 ? "true" : "false"} tabindex={i === 0 ? 0 : -1}>{s.name}</button>
-    ))}
-  </div>
+  <pre class="snippet snippet-url" data-snippet-url aria-label="URL"><code>{url}</code></pre>
+  {snippets.length > 0 && (
+    <div class="tabs" role="tablist" aria-label="Tool">
+      {snippets.map((s, i) => (
+        <button class="tab" role="tab" type="button" id={`${id}-tab-${i}`} data-tool={s.name} aria-controls={`${id}-panel-${i}`} aria-selected={i === 0 ? "true" : "false"} tabindex={i === 0 ? 0 : -1}>{s.name}</button>
+      ))}
+    </div>
+  )}
   {snippets.map((s, i) => (
     <pre class="snippet" role="tabpanel" id={`${id}-panel-${i}`} aria-labelledby={`${id}-tab-${i}`} tabindex="0" hidden={i !== 0}><code>{s.code}</code></pre>
   ))}

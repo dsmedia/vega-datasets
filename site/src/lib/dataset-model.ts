@@ -3,7 +3,7 @@ import type { Dataset, Example, Gallery } from "./catalog";
 import { GALLERIES } from "./catalog";
 import { formatBytes, formatCount, FORMAT_LABEL } from "./format";
 
-/** A code snippet behind a tab (Use This Dataset, Quick Start). */
+/** A tool's code snippet behind a tab (Use This Dataset, Quick Start). */
 export interface Snippet {
   name: string;
   code: string;
@@ -21,33 +21,57 @@ function variable(d: Dataset): string {
   return /^[0-9]/.test(id) ? `_${id}` : id;
 }
 
-/** The files Vega-Lite reads with a plain `data.url`. */
+/** The files Vega-Lite and Vega read with a `data` url. */
 const VL_FORMATS = new Set(["csv", "tsv", "json", "topojson", "geojson"]);
 
+/** JSON on one line, spaced as people write it: `{"type": "csv", "parse": "auto"}`. */
+function inline(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(inline).join(", ")}]`;
+  if (value !== null && typeof value === "object") {
+    return `{${Object.entries(value).map(([k, v]) => `${JSON.stringify(k)}: ${inline(v)}`).join(", ")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/** An object inline when it has one key, else one key per line with inline values. */
+function block(o: Record<string, unknown>): string {
+  const keys = Object.keys(o);
+  if (keys.length <= 1) return inline(o);
+  return `{\n${keys.map((k) => `  ${JSON.stringify(k)}: ${inline(o[k])}`).join(",\n")}\n}`;
+}
+
+/** The `format` a Vega or Vega-Lite `data` entry needs to read the file, if any. */
+function dataFormat(d: Dataset, vega: boolean): Record<string, unknown> | undefined {
+  if (d.format === "topojson" && d.objects?.[0]) return { type: "topojson", feature: d.objects[0] };
+  if (d.format === "geojson") return { type: "json", property: "features" };
+  // Vega-Lite parses CSV and TSV types by itself; Vega reads them as text unless told.
+  if (vega && (d.format === "csv" || d.format === "tsv")) return { type: d.format, parse: "auto" };
+  return undefined;
+}
+
 /**
- * How to load the file: its URL; the npm package and Altair (released files only,
- * since both follow npm releases); and a Vega-Lite `data` block (formats it reads).
+ * How to load the file, one snippet per tool (the URL shows above them): Vega-Lite and
+ * Vega `data` entries (formats they read); Altair and the npm package (released files
+ * only, since both follow npm releases).
  */
 export function useSnippets(d: Dataset): Snippet[] {
-  const out: Snippet[] = [{ name: "URL", code: d.url }];
+  const out: Snippet[] = [];
   const v = variable(d);
-  const parsed = d.format === "json" || d.format === "csv";
+  if (VL_FORMATS.has(d.format)) {
+    const vl = dataFormat(d, false);
+    out.push({ name: "Vega-Lite", code: `"data": ${block({ url: d.url, ...(vl ? { format: vl } : {}) })}` });
+    const vg = dataFormat(d, true);
+    out.push({ name: "Vega", code: `"data": [${block({ name: d.name, url: d.url, ...(vg ? { format: vg } : {}) })}]` });
+  }
   if (isReleased(d)) {
+    out.push({
+      name: "Altair",
+      code: `from altair.datasets import data\n\n${d.kind === "table" ? `${v} = data.${d.name}()` : `url = data.${d.name}.url`}`,
+    });
+    const parsed = d.format === "json" || d.format === "csv";
     out.push({
       name: "JavaScript",
-      code: `import data from 'vega-datasets';\n\n${parsed ? `const ${v} = await data['${d.file}']();` : `const url = data['${d.file}'].url;`}`,
-    });
-  }
-  if (VL_FORMATS.has(d.format)) {
-    const data: Record<string, unknown> = { url: d.url };
-    if (d.format === "topojson" && d.objects?.[0]) data.format = { type: "topojson", feature: d.objects[0] };
-    if (d.format === "geojson") data.format = { type: "json", property: "features" };
-    out.push({ name: "Vega-Lite", code: `"data": ${JSON.stringify(data, null, 2)}` });
-  }
-  if (isReleased(d)) {
-    out.push({
-      name: "Python",
-      code: `from altair.datasets import data\n\n${d.kind === "table" ? `${v} = data.${d.name}()` : `url = data.${d.name}.url`}`,
+      code: `import data from 'vega-datasets';\n\n${parsed ?`const ${v} = await data['${d.file}']();` : `const url = data['${d.file}'].url;`}`,
     });
   }
   return out;
