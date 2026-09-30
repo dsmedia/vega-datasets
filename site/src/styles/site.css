@@ -242,7 +242,8 @@ table.preview tr:last-child td { border-bottom: 0; }
     outline: 2px solid Highlight; outline-offset: -2px;
   }
   .hist-bin.active .bar { fill: Highlight; }
-  table.status tbody tr:target { outline: 2px solid Highlight; outline-offset: -2px; }
+  /* On the cells: the sticky name cell would paint over an outline on the row. */
+  table.status tbody tr:target > * { border-block: 2px solid Highlight; }
   /* !important: the mode's colors must beat every theming rule above, however specific
      (.mark-text.role-mark text, the dataset labels, outranks a plain "svg text"). */
   :is(.catalog-chart, .explore-chart) svg text { fill: CanvasText !important; }
