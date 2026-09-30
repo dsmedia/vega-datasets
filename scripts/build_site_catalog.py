@@ -460,11 +460,17 @@ def profile_field(
             profile["bins"] = _bins((valid - lo).dt.total_seconds(), span)
         # ISO dates without a time (or with a zone) are read as UTC by browsers, so the
         # site buckets them in UTC; other forms are read as local wall-clock time.
-        iso = s.dtype == pl.String and bool(
-            s.drop_nulls()
-            .str.strip_chars()
-            .str.contains(r"^\d{4}-\d{2}-\d{2}(T[\d:.]+(Z|[+-]\d{2}:?\d{2}))?$")
-            .all()
+        # Judged on the non-empty cells: one empty cell doesn't change how the rest are read.
+        cells = s.drop_nulls().str.strip_chars() if s.dtype == pl.String else None
+        cells = cells.filter(cells.str.len_chars() > 0) if cells is not None else None
+        iso = (
+            cells is not None
+            and cells.len() > 0
+            and bool(
+                cells.str.contains(
+                    r"^\d{4}-\d{2}-\d{2}(T[\d:.]+(Z|[+-]\d{2}:?\d{2}))?$"
+                ).all()
+            )
         )
         return {**profile, **_spacing(valid), **({"utc": True} if iso else {})}
     text = s.cast(pl.String, strict=False).drop_nulls()
@@ -796,7 +802,8 @@ def parsed_values(
 TOTAL_MIN_KEYS: Final = 3
 TOTAL_SHARE: Final = 0.9
 TOTAL_TOLERANCE: Final = 0.01
-TOTAL_MAX_VALUES: Final = 300
+# present_categories reads category columns of at most this many values (names and titles have more).
+CATEGORY_MAX_VALUES: Final = 300
 
 
 def total_values(
@@ -805,31 +812,29 @@ def total_values(
     numbers: dict[str, pl.Series],
     keys: dict[str, list[str]],
     values: pl.DataFrame | None = None,
-) -> dict[str, list[str]]:
+) -> dict[str, dict[str, list[str]]]:
     """
-    Per grouping column, its values that are the sum of the column's other values.
+    Per grouping column and number field, the column's values that look like totals.
 
-    A column counts when it keys a time with the time (``timeKeys``). For each of its
-    values and each number field, the value's row is compared with the sum of the other
-    rows of the same time and series: within 1% in at least 90% of at least three such
-    groups, the value is a total, and the site leaves it out wherever it adds rows up.
+    A signal only: the site never removes these rows. It uses them to choose a chart
+    (a line per value, or an average) instead of adding a total to its parts. A column
+    counts when it keys a time with the time (``timeKeys``); text and integer columns
+    alike, every value, empty ones left out. For each number field, a value's row is
+    compared with the sum of the other rows of the same time and series: within 1% in at
+    least 90% of at least three such groups, the value looks like a total for that field.
+    A coincidence (10 + 20 = 30) only makes a chart less aggregated.
     """
     fields = [f for f in fields if f["name"] in df.columns]
     values = parsed_values(df, fields, numbers) if values is None else values
-    out: dict[str, list[str]] = {}
+    out: dict[str, dict[str, list[str]]] = {}
     for t, key in keys.items():
         for g in key:
-            if values[g].dtype != pl.String or g in out:
-                continue
-            if values[g].drop_nulls().n_unique() > TOTAL_MAX_VALUES:
-                continue
             context = [t, *(k for k in key if k != g)]
-            measures = [m for m in numbers if m not in context and m != g]
-            hits = sorted({
-                v for m in measures for v in _totals_by(values, g, m, context)
-            })
-            if hits:
-                out[g] = hits
+            for m in numbers:
+                if m in context or m == g:
+                    continue
+                if hits := _totals_by(values, g, m, context):
+                    out.setdefault(g, {})[m] = hits
     return out
 
 
@@ -837,29 +842,52 @@ def _totals_by(values: pl.DataFrame, g: str, m: str, context: list[str]) -> list
     """
     The values of ``g`` that are the sum of the other values for measure ``m``, in one pass.
 
-    Each row is compared with the sum of its group (the rows of the same time and series):
-    a total satisfies 2 x value = group sum, here |2v - s| <= 1% of the others (s - v).
-    A value counts when that holds in at least 90% of the (at least three) groups where it
-    has a value beside at least two others.
+    Each row is compared with the sum of its group (the rows of the same time and series
+    with a value of ``g``): a total satisfies 2 x value = group sum, here
+    |2v - s| <= 1% of the others (s - v). A value counts when that holds in at least 90%
+    of the (at least three) groups where it has a value beside at least two others.
     """
-    rows = values.select([*context, g, m]).with_columns(
-        pl.col(m).sum().over(context).alias("_sum"),
-        pl.len().over(context).alias("_rows"),
+    columns = [*context, g, m]
+    taken = set(columns)
+
+    def scratch(name: str) -> str:
+        while name in taken:
+            name = f"_{name}"
+        taken.add(name)
+        return name
+
+    total, count, groups, near = (
+        scratch("_sum"),
+        scratch("_rows"),
+        scratch("_groups"),
+        scratch("_close"),
     )
-    candidates = rows.filter(
-        pl.col(g).is_not_null() & pl.col(m).is_not_null() & (pl.col("_rows") >= 3)
+    rows = (
+        values.select(columns)
+        .filter(
+            pl.col(g).is_not_null() & (pl.col(g).cast(pl.String).str.len_chars() > 0)
+        )
+        .with_columns(
+            pl.col(m).sum().over(context).alias(total),
+            pl.len().over(context).alias(count),
+        )
     )
-    others = pl.col("_sum") - pl.col(m)
+    candidates = rows.filter(pl.col(m).is_not_null() & (pl.col(count) >= 3))
+    others = pl.col(total) - pl.col(m)
     close = (pl.col(m) - others).abs() <= TOTAL_TOLERANCE * others.abs() + 1e-9
     found = (
         candidates.group_by(g)
-        .agg(pl.len().alias("_groups"), close.sum().alias("_close"))
+        .agg(pl.len().alias(groups), close.sum().alias(near))
         .filter(
-            (pl.col("_groups") >= TOTAL_MIN_KEYS)
-            & (pl.col("_close") >= TOTAL_SHARE * pl.col("_groups"))
+            (pl.col(groups) >= TOTAL_MIN_KEYS)
+            & (pl.col(near) >= TOTAL_SHARE * pl.col(groups))
         )
     )
-    return found[g].to_list()
+    # Integer categories read as numbers: written as their text ("99", not "99.0").
+    return sorted(
+        str(int(v)) if isinstance(v, float) and v.is_integer() else str(v)
+        for v in found[g].to_list()
+    )
 
 
 def present_categories(
@@ -875,11 +903,11 @@ def present_categories(
     fields = [f for f in fields if f["name"] in df.columns]
     out: dict[str, dict[str, int]] = {}
     for c in fields:
-        if c.get("type", "string") != "string":
+        if c.get("type", "string") not in {"string", "integer"}:
             continue
         column = df[c["name"]].cast(pl.String)
         total = column.drop_nulls().n_unique()
-        if total > TOTAL_MAX_VALUES:
+        if total > CATEGORY_MAX_VALUES:
             continue
         for m in fields:
             if m.get("type") not in {"integer", "number"}:

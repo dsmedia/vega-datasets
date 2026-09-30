@@ -177,10 +177,12 @@ describe('G-4: series stay apart', () => {
     expect(e.y).not.toHaveProperty('aggregate');
   });
 
-  test('a series value that totals the others is left out', () => {
+  test('a series value that totals the others is its own line: no row is removed (round 4)', () => {
     const entity = nominal('Entity', [['All natural disasters', 10], ['Drought', 10], ['Flood', 10]]);
-    const d = table([quant('Year', 1900, 1909, { type: 'integer' }, { distinct: 10, evenlySpaced: true }), entity, quant('Deaths', 1, 3.7e6, { type: 'integer' })], 30, { timeKeys: { Year: ['Entity'] }, totalValues: { Entity: ['All natural disasters'] } });
-    expect(JSON.stringify(starterSpec(d)!.transform)).toContain('All natural disasters');
+    const d = table([quant('Year', 1900, 1909, { type: 'integer' }, { distinct: 10, evenlySpaced: true }), entity, quant('Deaths', 1, 3.7e6, { type: 'integer' })], 30, { timeKeys: { Year: ['Entity'] }, totalValues: { Entity: { Deaths: ['All natural disasters'] } } });
+    const spec = starterSpec(d)!;
+    expect(spec.transform).toBeUndefined();
+    expect(enc(spec).color).toMatchObject({ field: 'Entity' });
   });
 });
 
@@ -372,15 +374,17 @@ describe('Codex round 1', () => {
     expect(enc(starterSpec(d)).y).toMatchObject({ aggregate: 'mean' });
   });
 
-  test('#5 a sum leaves out the total among its groups, even ones it can’t color', async () => {
+  test('#5 a total among groups it can’t color: averaged, never summed with its parts (round 4: nothing removed)', async () => {
     const region = { ...nominal('region', regions(6)), profile: { kind: 'nominal' as const, distinct: 13, top: regions(6), missing: 0 } };
-    const d = table([year, region, quant('count', 10, 120)], 39, { timeKeys: { year: ['region'] }, totalValues: { region: ['Total'] } });
+    const d = table([year, region, quant('count', 10, 120)], 39, { timeKeys: { year: ['region'] }, totalValues: { region: { count: ['Total'] } } });
     const spec = starterSpec(d)!;
-    expect(enc(spec).y).toMatchObject({ aggregate: 'sum' });
+    expect(enc(spec).y).toMatchObject({ aggregate: 'mean' });
+    expect(spec.transform).toBeUndefined();
     const rows = [2000, 2001, 2002].flatMap((y) => [...regions(12).map(([r]) => ({ year: y, region: r, count: 10 })), { year: y, region: 'Total', count: 120 }]);
     const view = await draw(spec, rows);
     try {
-      expect(new Set(rowsWith(view, 'sum_count').map((r) => r.sum_count))).toEqual(new Set([120]));
+      // The mean of twelve tens and one 120 (every row counted once).
+      expect(new Set(rowsWith(view, 'mean_count').map((r) => Math.round((r.mean_count as number) * 1000) / 1000))).toEqual(new Set([Math.round((240 / 13) * 1000) / 1000]));
     } finally {
       view.finalize();
     }
@@ -461,13 +465,14 @@ describe('Codex round 2', () => {
     expect(enc(starterSpec(once)).y).toMatchObject({ aggregate: 'sum' });
   });
 
-  test('#3 a total among more than sixty groups is left out of the sum', async () => {
+  test('#3 a total among more than sixty groups is never summed with its parts', async () => {
     const region = many('region', 61, regions(6, 'Region'));
-    const d = table([year, region, quant('count', 10, 600)], 183, { timeKeys: { year: ['region'] }, totalValues: { region: ['Total'] } });
+    const d = table([year, region, quant('count', 10, 600)], 183, { timeKeys: { year: ['region'] }, totalValues: { region: { count: ['Total'] } } });
     const rows = [2000, 2001, 2002].flatMap((y) => [...Array.from({ length: 60 }, (_, i) => ({ year: y, region: `Region${String(i).padStart(2, '0')}`, count: 10 })), { year: y, region: 'Total', count: 600 }]);
     const view = await draw(starterSpec(d)!, rows);
     try {
-      expect(new Set(rowsWith(view, 'sum_count').map((r) => r.sum_count))).toEqual(new Set([600]));
+      expect(rowsWith(view, 'sum_count')).toEqual([]);
+      expect(new Set(rowsWith(view, 'mean_count').map((r) => Math.round(r.mean_count as number)))).toEqual(new Set([Math.round(1200 / 61)]));
     } finally {
       view.finalize();
     }
@@ -598,16 +603,16 @@ describe('Codex round 3', () => {
   });
 
   test('#5 a big table on a phone never loads without a button, whatever its modes', () => {
-    const gate = (largeData as unknown as { loadGate?: (rows: number, map: boolean) => { button: boolean; autoDraw: string } }).loadGate;
+    const gate = (largeData as unknown as { loadGate?: (rows: number, bytes: number, map: boolean) => { button: boolean; autoDraw: string } }).loadGate;
     expect(gate).toBeTypeOf('function');
     for (const rows of [100, 6000, 30000, 50001, 200000]) {
-      const g = gate!(rows, false);
+      const g = gate!(rows, 0, false);
       const band = largeData.rowBand(rows);
       // Anything past the SVG band waits for a button on a phone (canvas: on desktop it draws itself).
       expect(g.button).toBe(band !== 'svg');
       expect(g.autoDraw).toBe(band === 'svg' ? 'always' : band === 'canvas' ? 'desktop' : 'never');
     }
-    expect(gate!(200000, true).button).toBe(false);
+    expect(gate!(200000, 0, true).button).toBe(false);
   });
 });
 
@@ -643,5 +648,12 @@ describe('field names with dots, brackets and backslashes draw in every chart ki
     } finally {
       view.finalize();
     }
+  });
+});
+
+describe('Codex round 4', () => {
+  test('#1 a percent sign in brackets or before "of" marks a rate', () => {
+    for (const title of ['Deaths (%)', 'Deaths [%]', '% of deaths']) expect(summable(quant('deaths', 0, 100, { title }))).toBe(false);
+    expect(nameTokens('Deaths (%)')).toEqual(['Deaths', '(', '%', ')']);
   });
 });

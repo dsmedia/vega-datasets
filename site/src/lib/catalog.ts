@@ -130,8 +130,8 @@ export interface Dataset {
   timeKeyBuckets?: Record<string, string[]>;
   /** Per category and number field with missing-value markers: the category's values left once those rows go (only where fewer). */
   presentCategories?: Record<string, Record<string, number>>;
-  /** Per text field, its values that stand for all the others ("Total"), found among every value. */
-  totalValues?: Record<string, string[]>;
+  /** Per grouping field and number field, the values that look like totals of the others (a signal for choosing a chart; no row is ever removed). */
+  totalValues?: Record<string, Record<string, string[]>>;
   /** Pairs of number fields that move together (|r| ≥ 0.9), as `[a, b, r]`. */
   correlated?: [string, string, number][];
   /** A table with latitude and longitude columns: the box holding the middle 98% of each, and the share of points in the US. */

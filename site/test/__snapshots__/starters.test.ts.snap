@@ -90,7 +90,7 @@ cars: line x=Year y=mean(Miles_per_Gallon) color=Origin
 co2_concentration: line x=Date y=CO2
 countries: line x=year y=mean(fertility)
 crimea: line x=date y=wounds
-disasters: line x=Year y=log(Deaths) color=Entity transformed
+disasters: line x=Year y=log(Deaths) color=Entity
 driving: line x=year y=miles
 earthquakes: geoshape over basemap equalEarth
 ffox: none

@@ -72,14 +72,19 @@ export function tableBand(d: Dataset): Band | null {
  * Whether a table's Explore chart waits for a button, whatever chart opens first (points,
  * a time series, bars) and whatever modes it has: past the SVG band a file is big enough
  * that a phone loads it only when asked (a desktop-class device draws the canvas band by
- * itself). A long table with a scatter plot opens on its density overview, which holds the
+ * itself), and so is any file over AUTO_LOAD_BYTES. A long table with a scatter plot opens on its density overview, which holds the
  * place of the button. Maps follow the map rule (a picture) instead.
  */
-export function loadGate(rows: number, map: boolean): { band: Band; button: boolean; autoDraw: When } {
+export function loadGate(rows: number, bytes: number, map: boolean): { band: Band; button: boolean; autoDraw: When } {
   const band = rowBand(rows);
   if (map) return { band, button: false, autoDraw: "always" };
+  // A big file waits for a button on every device, however few its rows.
+  if (bytes > AUTO_LOAD_BYTES) return { band, button: true, autoDraw: "never" };
   return { band, button: band !== "svg", autoDraw: BAND_POLICY[band].autoDraw };
 }
+
+/** Files above this size load only when asked, whatever their rows. */
+export const AUTO_LOAD_BYTES = 3e6;
 
 /** The label of the button that draws the points of a table that doesn't draw by itself. */
 export function drawPointsLabel(d: Dataset): string {

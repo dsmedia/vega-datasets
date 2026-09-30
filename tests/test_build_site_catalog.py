@@ -723,7 +723,7 @@ def test_totals_among_more_than_sixty_groups() -> None:
     ]
     numbers = {n: numeric_values(df[n]) for n in ("year", "count")}
     keys = time_keys(df, fields, numbers)
-    assert total_values(df, fields, numbers, keys) == {"region": ["Total"]}
+    assert total_values(df, fields, numbers, keys) == {"region": {"count": ["Total"]}}
 
 
 def test_time_key_buckets_notice_an_entity_repeating_within_a_month() -> None:
@@ -783,7 +783,7 @@ def test_totals_are_decided_by_the_data() -> None:
     })
     numbers2 = {n: numeric_values(df2[n]) for n in ("year", "deaths")}
     assert total_values(df2, fields, numbers2, time_keys(df2, fields, numbers2)) == {
-        "cause": ["All natural disasters"]
+        "cause": {"deaths": ["All natural disasters"]}
     }
 
 
@@ -808,3 +808,87 @@ def test_utc_dates_are_marked() -> None:
     assert "utc" not in profile_field(
         pl.Series("d", ["2019/01/31", "2019/02/01"]), "date"
     )
+
+
+# Codex round 4: totals are a signal per measure; dates judged on non-empty cells
+
+
+def _panel(rows: list[tuple], columns: list[str], types: list[str]) -> tuple:
+    df = pl.DataFrame({
+        c: [str(r[i]) if r[i] is not None else None for r in rows]
+        for i, c in enumerate(columns)
+    })
+    fields = [{"name": c, "type": t} for c, t in zip(columns, types, strict=True)]
+    numbers = {
+        c: numeric_values(df[c])
+        for c, t in zip(columns, types, strict=True)
+        if t in {"integer", "number"}
+    }
+    return df, fields, numbers, time_keys(df, fields, numbers)
+
+
+def test_total_signal_is_per_measure() -> None:
+    # Ranks 1, 2, 3: C's rank (3) equals A's + B's, but C's count is no total.
+    rows = [
+        (y, c, r, v)
+        for y in (2000, 2001, 2002)
+        for c, r, v in (("A", 1, 10), ("B", 2, 20), ("C", 3, 7))
+    ]
+    df, fields, numbers, keys = _panel(
+        rows,
+        ["year", "cat", "rank", "count"],
+        ["integer", "string", "integer", "number"],
+    )
+    assert total_values(df, fields, numbers, keys) == {"cat": {"rank": ["C"]}}
+
+
+def test_total_signal_reads_every_category_ignores_empty_ones_and_scratch_names() -> (
+    None
+):
+    regions = [f"R{i:03}" for i in range(320)]
+    rows = [(y, r, 1) for y in (2000, 2001, 2002) for r in regions] + [
+        (y, "Total", 320) for y in (2000, 2001, 2002)
+    ]
+    df, fields, numbers, keys = _panel(
+        rows, ["year", "region", "_sum"], ["integer", "string", "number"]
+    )
+    assert total_values(df, fields, numbers, keys) == {"region": {"_sum": ["Total"]}}
+    # Rows with no category don't join the sums: A (10) is not the total of B (4) and an empty one (6).
+    rows = [
+        (y, c, v)
+        for y in (2000, 2001, 2002)
+        for c, v in (("A", 10), ("B", 4), ("C", 3), (None, 3))
+    ]
+    df, fields, numbers, keys = _panel(
+        rows, ["year", "cat", "count"], ["integer", "string", "number"]
+    )
+    assert total_values(df, fields, numbers, keys) == {}
+
+
+def test_total_signal_includes_integer_categories() -> None:
+    rows = [
+        (y, c, v) for y in (2000, 2001, 2002) for c, v in ((1, 10), (2, 20), (99, 30))
+    ]
+    df, fields, numbers, keys = _panel(
+        rows, ["year", "code", "count"], ["integer", "integer", "number"]
+    )
+    assert total_values(df, fields, numbers, keys) == {"code": {"count": ["99"]}}
+
+
+def test_present_categories_counts_integer_categories() -> None:
+    codes = [str(i) for i in range(60)]
+    df = pl.DataFrame({
+        "code": codes * 2,
+        "m": ["10" if c == "0" else "-99" for c in codes] * 2,
+    })
+    fields = [
+        {"name": "code", "type": "integer"},
+        {"name": "m", "type": "number", "missingValues": ["-99"]},
+    ]
+    assert present_categories(df, fields, {}) == {"code": {"m": 1}}
+
+
+def test_utc_dates_judged_on_non_empty_cells() -> None:
+    # An empty cell (kept as text when another field declares missing values) is no date form.
+    p = profile_field(pl.Series("d", ["2019-01-31", "", "2019-02-01"]), "date")
+    assert p["utc"] is True

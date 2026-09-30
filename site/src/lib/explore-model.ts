@@ -5,7 +5,7 @@
  * Multiples" when it is one panel per group.
  */
 import { type Dataset, documentedRange, effectiveMissing, type Field, fieldTitle } from "./catalog";
-import { correlation, distinctValues, sampled, type ScaleType, scaleFor, scaleType, summable, totalsOf, withScale } from "./chart-rules";
+import { correlation, distinctValues, sampled, type ScaleType, scaleFor, scaleType, summable, withScale } from "./chart-rules";
 import { BAND_POLICY, rowBand } from "./large-data";
 import { formatCount } from "./format";
 import { category, categoryAsText, colorable, defaultPair, fieldRef, isMeasure, isYear, markerForms, missingFilter, PANEL_SIZE, starterSpec, tag, tagged, timeField, timeKeyOf, timeYear, titled, TOP, untag } from "./starter";
@@ -273,9 +273,9 @@ export function discreteHeight(d: Dataset, spec: Spec): number | null {
   const measures = [String(x?.field ?? ""), ...summed].map((n) => n.replace(/\\(.)/g, "$1"));
   const present = measures.map((m) => d.presentCategories?.[f.name]?.[m]).find((n) => n !== undefined);
   const all = present ?? counted;
-  // The top twenty leave out totals, then keep twenty at most.
+  // The top twenty keep twenty at most.
   const top = transforms.some((t) => t.window);
-  const shown = top ? Math.min(TOP, all - totalsOf(d, f).length) : all;
+  const shown = top ? Math.min(TOP, all) : all;
   return shown > 0 ? shown * STEP : null;
 }
 

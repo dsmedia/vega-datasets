@@ -495,19 +495,13 @@ function timeSeries(d: Dataset, base: Spec, t: Field, m: Field, fields: Field[])
   // across times merged into one bucket (a daily population is not a monthly one); totals
   // among the groups are left out, or they'd count everything twice.
   const merges = !!unit && !(d.timeKeyBuckets?.[t.name] ?? []).includes(unit);
-  const sums = !exact && key !== null && !merges && summable(m);
+  // Never across a category where a value looks like the total of the others (it would count
+  // everything twice): average there. A colored series with a total just draws its line.
+  const addsTotal = key?.some((g) => g !== series && g !== vintage && totalsOf(d, g, m).length > 0) ?? false;
+  const sums = !exact && key !== null && !merges && !addsTotal && summable(m);
   const aggregate = unit || !exact ? (sums ? "sum" : "mean") : undefined;
   // Two year fields: the one with more years runs along x, and the other draws a line each.
   const [along, lines] = vintage && (distinctValues(vintage) ?? 0) > (distinctValues(t) ?? 0) ? [vintage, t] : [t, vintage];
-  // A series (colored) never shows its total among the parts; a sum leaves out every key's totals.
-  const splits = [...new Set([...(series ? [series] : []), ...(sums ? key! : [])])];
-  const leaveOut = splits.flatMap((f) => {
-    const totals = totalsOf(d, f);
-    const left = (distinctValues(f) ?? 0) - totals.length;
-    return totals.length && (f !== series || sums || left >= 2)
-      ? [{ filter: `indexof(${tagged(totals)}, ${tag(`datum[${JSON.stringify(f.name)}]`)}) < 0` }]
-      : [];
-  });
   // Values in a narrow band far from zero (CO2 in ppm, air pressure) leave zero off the axis, or the line is flat.
   const q = m.profile;
   const band = aggregate !== "sum" && q.kind === "quantitative" && q.min > 0 && q.min >= q.max / 2;
@@ -515,7 +509,6 @@ function timeSeries(d: Dataset, base: Spec, t: Field, m: Field, fields: Field[])
     ...base,
     width: 640,
     height: 300,
-    ...(leaveOut.length ? { transform: leaveOut } : {}),
     mark: date ? { type: "line", interpolate: "monotone", tooltip: true } : { type: "line", point: rows <= 60, tooltip: true },
     encoding: {
       x: date
@@ -672,7 +665,6 @@ function starterRule(d: Dataset): Spec | null {
       ...base,
       width: 480,
       transform: [
-        ...(totalsOf(d, many).length ? [{ filter: `indexof(${tagged(totalsOf(d, many))}, ${tag(`datum[${JSON.stringify(many.name)}]`)}) < 0` }] : []),
         { aggregate: [{ op: "sum", field: fieldRef(m1.name), as: total }], groupby: [fieldRef(many.name)] },
         { window: [{ op: "row_number", as: rank }], sort: [{ field: total, order: "descending" }] },
         { filter: `datum[${JSON.stringify(rank)}] <= ${TOP}` },

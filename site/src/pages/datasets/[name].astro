@@ -16,7 +16,7 @@ import Base from "../../layouts/Base.astro";
 import { type Dataset, type Gallery, GALLERIES, GALLERY_LABEL, licenseFamily } from "../../lib/catalog";
 import { fileName, formatDescription, interleave, isReleased, linkText, sizeDescription, useSnippets } from "../../lib/dataset-model";
 import { bothValuesNote, chartFeatures, defaultAxes, exploreModes, hasDensity, mapNote, MODE_LABEL, scatterFields, scatterSpec, starterChart } from "../../lib/explore-model";
-import { BAND_POLICY, densityCaption, densityPageSpec, densitySpec, drawPointsLabel, hasMapPreview, loadGate } from "../../lib/large-data";
+import { AUTO_LOAD_BYTES, BAND_POLICY, densityCaption, densityPageSpec, densitySpec, drawPointsLabel, hasMapPreview, loadGate } from "../../lib/large-data";
 import { densityOf } from "../../prerender/density";
 import { mapPreview } from "../../prerender/map-preview";
 import { drawnChart } from "../../prerender/chart-svg";
@@ -38,8 +38,6 @@ const EXAMPLES_SHOWN = 8;
 const PREVIEW_ROWS = 5;
 /** The Explore column's width (px) at a 1360 px window and on a 390 px phone. */
 const EXPLORE_WIDTH = { wide: 880, phone: 358 };
-/** Other charts of files above this size draw only when asked (the large-data policy covers scatter plots and maps). */
-const AUTO_LOAD_BYTES = 3e6;
 
 // Neighbors, for the stepper.
 const i = c.datasets.indexOf(d);
@@ -68,7 +66,7 @@ const first = modes[0];
 // hint until the client knows the device).
 // By the table's size, whichever chart opens first (a bar chart of 12,000 rows loads the same file);
 // a map follows the map rule instead.
-const gate = modes.length && d.rows !== null ? loadGate(d.rows, !!starterSpec(d)?.projection) : null;
+const gate = modes.length && d.rows !== null ? loadGate(d.rows, d.bytes ?? 0, !!starterSpec(d)?.projection) : null;
 const band = gate && !starterSpec(d)?.projection ? gate.band : null;
 const policy = band ? BAND_POLICY[band] : null;
 const zoomable = !policy || policy.zoom !== "never";
@@ -78,7 +76,8 @@ const wideSpec = first ? specFor(first, false) : null;
 const phoneSpec = first ? specFor(first, true) : null;
 // The overview (a long table with a scatter plot) takes the button's place.
 const pointsButton = !!gate?.button && !hasDensity(d);
-const bigFile = !band && (d.bytes ?? 0) > AUTO_LOAD_BYTES;
+// Files without rows (a map, JSON) over the size limit: the gate covers tables.
+const bigFile = !gate?.button && (d.bytes ?? 0) > AUTO_LOAD_BYTES;
 // Long tables open on a density overview binned now; heavy maps on a picture drawn now.
 const grid = hasDensity(d) && axes ? densityOf(d, axes) : null;
 const density = grid ? { grid, spec: densitySpec(d, grid, 380), page: densityPageSpec(d, grid, 380) } : null;

@@ -256,7 +256,7 @@ export function nameTokens(name: string): string[] {
   return name
     .replace(/([a-z\d])([A-Z])/g, "$1 $2")
     .split(/[_\-\s.]+/)
-    .flatMap((part) => part.match(/[A-Za-z]+|\d+|[^A-Za-z\d]+/g) ?? []);
+    .flatMap((part) => part.match(/[A-Za-z]+|\d+|[^A-Za-z\d\s]/g) ?? []);
 }
 
 /**
@@ -301,10 +301,12 @@ export function namedAxes(measures: Field[]): { x: Field; y: Field } | null {
 // --- Totals ----------------------------------------------------------------------------------
 
 /**
- * A category's values that stand for all the others ("Total", "All natural disasters"), as
- * the catalog builder found them among every value (`is_total` there keeps the names); none
- * for a table the builder didn't read.
+ * A category's values that look like totals of its other values for measure `m`, as the
+ * catalog builder found them in the data (each value's row equals the others' sum, time
+ * after time). A signal for choosing a chart, never a filter: a chart that would sum
+ * across this category averages instead, and a colored line per value shows the total as
+ * what it is. None for a table the builder didn't read.
  */
-export function totalsOf(d: Dataset, f: Field): string[] {
-  return d.totalValues?.[f.name] ?? [];
+export function totalsOf(d: Dataset, f: Field, m: Field): string[] {
+  return d.totalValues?.[f.name]?.[m.name] ?? [];
 }
