@@ -104,7 +104,11 @@ export function scaleFor(f: Field): { scale: Enc; axis: Enc } {
   if (type === "linear") return { scale: {}, axis: {} };
   if (type === "log") {
     const p = f.profile as { min: number; max: number };
-    const ticks = logTicks(p.min, p.max);
+    // Metadata first: documented bounds that the data fits set the domain (a log scale's
+    // bounds are positive here: a documented minimum at or below zero made it symlog).
+    const r = documentedRange(f);
+    const [lo, hi] = [r?.fits && r.min !== undefined ? r.min : p.min, r?.fits && r.max !== undefined ? r.max : p.max];
+    const ticks = logTicks(lo, hi);
     // The domain ends at the steps around the data (5 to 1,000 for prices of 6 to 800), not at a
     // power of ten far below it; ticks, and so grid lines, only at those steps.
     return {
@@ -240,6 +244,13 @@ export function sampled(t: Field): boolean {
 
 const COUNT_NAME = /(^|[_\s])(count|counts|people|population|pop|deaths|cases|number|total|votes|visitors|passengers|jobs)($|[_\s])/i;
 const COUNT_DESC = /^(the )?(total )?(number|count) of\b/i;
+/** Name parts that make a measure a rate or a summary (`deaths_per_100k`, `avgPrice`, `pct`), whatever else the name says. */
+const RATE_TOKEN = /^(per|rate|rates|ratio|pct|percent|percentage|share|avg|average|mean|median|index|perc|proportion|density)$/i;
+
+/** A field name's parts: split at underscores, hyphens, spaces, dots and camelCase humps. */
+export function nameTokens(name: string): string[] {
+  return name.replace(/([a-z\d])([A-Z])/g, "$1 $2").split(/[_\-\s.]+/).filter(Boolean);
+}
 /** Words that make a count a rate or an average, which don't add up ("number of children per woman"). */
 const NOT_A_TOTAL = /\b(per|rate|ratio|average|mean|median|share|percent|percentage)\b|%/i;
 
@@ -253,6 +264,7 @@ export function summable(f: Field): boolean {
   if (p.kind !== "quantitative" || p.min < 0) return false;
   const words = [f.title ?? "", f.description ?? ""];
   if (words.some((w) => NOT_A_TOTAL.test(w))) return false;
+  if (nameTokens(f.name).some((t) => RATE_TOKEN.test(t))) return false;
   if (f.description && COUNT_DESC.test(f.description.trim())) return true;
   return COUNT_NAME.test(f.name) || COUNT_NAME.test(f.title ?? "");
 }
@@ -280,4 +292,19 @@ export function namedAxes(measures: Field[]): { x: Field; y: Field } | null {
     if (y) return { x, y };
   }
   return null;
+}
+
+// --- Totals ----------------------------------------------------------------------------------
+
+const TOTAL_VALUE = /^(all|total)\b/i;
+
+/**
+ * A category's values that stand for all the others ("All natural disasters", "Total"): as
+ * the builder found them among every value, else (a table the builder didn't read) among the
+ * profile's most common values.
+ */
+export function totalsOf(d: Dataset, f: Field): string[] {
+  if (d.totalValues) return d.totalValues[f.name] ?? [];
+  const p = f.profile;
+  return p.kind === "nominal" ? p.top.map(([v]) => v).filter((v) => TOTAL_VALUE.test(v.trim())) : [];
 }

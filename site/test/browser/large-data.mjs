@@ -129,7 +129,8 @@ const puppeteer = await loadPuppeteer();
 const browser = await puppeteer.launch({ executablePath: chrome, headless: true });
 try {
   // A phone (touch, coarse pointer): nothing heavy loads before a click.
-  for (const name of ['flights_200k_json', 'flights_20k', 'zipcodes', 'us_10m']) {
+  // jobs opens on Over Time (G-1): the same gate holds for whichever mode opens first.
+  for (const name of ['flights_200k_json', 'flights_20k', 'zipcodes', 'us_10m', 'jobs']) {
     const { ctx, requests, errors, state } = await openPage(browser, name, PHONE);
     check(`phone ${name}: no data file before a click`, requests.length === 0 && state.drawButton !== null && errors.length === 0, { requests, errors, ...state });
     await ctx.close();
@@ -229,6 +230,40 @@ try {
       await ctx.close();
     }
   }
+  // Another mode sizes the box itself: no gap left by the first mode's reservation (anscombe:
+  // Small Multiples, then Scatter; seattle_weather: Scatter, then Over Time).
+  for (const [label, device] of [['desktop', DESKTOP], ['phone', PHONE]]) {
+    for (const [name, mode] of [['anscombe', 'scatter'], ['seattle_weather', 'time']]) {
+      const { ctx, page } = await openPage(browser, name, device, { settle: 1500 });
+      await exploreHeights(page);
+      const draws = await page.$eval('#explore', (s) => Number(s.dataset.draws ?? 0));
+      await page.click(`#explore .seg [data-mode="${mode}"]`);
+      await page.waitForFunction((n) => Number(document.querySelector('#explore').dataset.draws ?? 0) > n, { timeout: 60_000 }, draws);
+      const m = await exploreHeights(page);
+      check(`${label} ${name}: switching to ${mode} leaves no reserved gap`, Math.abs(m.gap) <= 8, m);
+      await ctx.close();
+    }
+  }
+
+  // burtin: picking another log-scaled field redraws with that field's domain, so no point is cut off.
+  {
+    const { ctx, page, errors } = await openPage(browser, 'burtin', DESKTOP, { settle: 1500 });
+    await exploreHeights(page);
+    const draws = await page.$eval('#explore', (s) => Number(s.dataset.draws ?? 0));
+    await page.select('#explore .binds select', 'Penicillin');
+    await page.waitForFunction((n) => Number(document.querySelector('#explore').dataset.draws ?? 0) > n, { timeout: 60_000 }, draws);
+    await sleep(500);
+    const r = await page.evaluate(() => {
+      const axis = [...document.querySelectorAll('#explore svg .role-axis')].find((g) => /^X-axis/.test(g.getAttribute('aria-label') ?? ''));
+      const ticks = [...(axis?.querySelectorAll('.role-axis-tick line') ?? [])].map((l) => l.getBoundingClientRect().left);
+      const points = [...document.querySelectorAll('#explore svg .mark-symbol.role-mark path')].map((p) => { const b = p.getBoundingClientRect(); return b.left + b.width / 2; });
+      const [lo, hi] = [Math.min(...ticks), Math.max(...ticks)];
+      return { points: points.length, outside: points.filter((x) => x < lo - 1 || x > hi + 1).length, lo: Math.round(lo), hi: Math.round(hi) };
+    });
+    check('desktop burtin: a picked log field redraws on its own domain (no point cut off)', r.points === 16 && r.outside === 0 && errors.length === 0, { ...r, errors });
+    await ctx.close();
+  }
+
   // flights_20k at 1360 px: no shift whether the device draws the points itself or shows the button.
   for (const [label, device] of [['desktop', DESKTOP], ['coarse pointer', { viewport: { ...DESKTOP.viewport, hasTouch: true } }]]) {
     const { ctx, page, state } = await openPage(browser, 'flights_20k', device, { settle: 6000 });

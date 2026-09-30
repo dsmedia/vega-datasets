@@ -13,6 +13,7 @@
 import type { Dataset } from "../lib/catalog";
 import { deviceSignals, isDesktopClass } from "../lib/device";
 import { bothValuesNote, chartFeatures, defaultAxes, exploreModes, type Mode, pickScale, scatterFields, scatterSpec, starterChart } from "../lib/explore-model";
+import { scaleFor } from "../lib/chart-rules";
 import { allowed, BAND_POLICY, type DensityGrid, densityPageSpec, tableBand } from "../lib/large-data";
 import { editorUrl, starterSpec } from "../lib/starter";
 import { pointSource } from "../lib/vega-data";
@@ -47,6 +48,11 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
   // Scroll to zoom traps page scrolling on a narrow screen, and redraws every point per wheel step.
   const zoom = () => !phone.matches && (!policy || allowed(policy.zoom, desktop));
   const fields = scatterFields(d);
+  /** A picked field's scale and axis, as text to compare: the same for any two linear fields. */
+  const scaleOf = (name: string): string => {
+    const m = fields?.measures.find((x) => x.name === name);
+    return m && pickScale(fields!, name) !== "linear" ? JSON.stringify(scaleFor(m)) : "linear";
+  };
   const state: { mode: Mode; x: string; y: string } = { mode: modes[0]!, ...(fields ? defaultAxes(d, fields) : { x: "", y: "" }) };
 
   const binds = $(".binds", section);
@@ -67,6 +73,9 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
       const m = b.dataset.mode as Mode;
       if (state.mode === m) return;
       state.mode = m;
+      // The build reserved the first mode's height; another mode sizes the box itself.
+      host.style.removeProperty("--chart-h");
+      host.style.removeProperty("--chart-h-phone");
       section.querySelectorAll(".seg [data-mode]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
       void render();
     });
@@ -106,6 +115,9 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
   let queue: Promise<void> = Promise.resolve();
   const draw = async () => {
     const v = await loadVega();
+    // The box keeps its height while the old chart goes and the new one draws (nothing below
+    // moves), then fits the new chart.
+    host.style.minHeight = `${host.offsetHeight}px`;
     result?.finalize();
     binds.replaceChildren();
     plotted = null;
@@ -118,6 +130,7 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
       ...embedOptions(v, canvas && !density ? "canvas" : "svg", { export: true, source: true, compiled: true, editor: false }, (uri) => failed.push(uri)),
       bind: binds,
     });
+    host.style.minHeight = "";
     // How many times the chart has been drawn: once on open, unless asked (the browser check reads it).
     section.dataset.draws = String(Number(section.dataset.draws ?? 0) + 1);
     // Vega draws an empty chart when its file doesn't load: say so instead, and count nothing.
@@ -138,10 +151,11 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
     recount();
     if (source) {
       const follow = (axis: "x" | "y") => (_name: string, value: unknown) => {
-        const before = pickScale(fields!, state[axis]);
+        const before = scaleOf(state[axis]);
         state[axis] = String(value);
-        // A field on a log scale (or off one) needs a new chart: a scale's type can't follow a param.
-        if (pickScale(fields!, state[axis]) !== before) {
+        // A field on a log scale (or leaving one, or to another log field's domain and ticks)
+        // needs a new chart: a scale's type, fitted domain and ticks can't follow a param.
+        if (scaleOf(state[axis]) !== before) {
           void render();
           return;
         }
@@ -202,6 +216,9 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
   drawAll?.addEventListener("click", () => {
     density = null;
     drawAll.remove();
+    // The overview is of the scatter plot: its points, whatever mode was pressed.
+    state.mode = "scatter";
+    section.querySelectorAll(".seg [data-mode]").forEach((x) => x.setAttribute("aria-pressed", String((x as HTMLElement).dataset.mode === "scatter")));
     void render();
   }, { once: true });
   // A mid-size table's button (data-auto-draw="desktop") stands aside on a desktop-class device.

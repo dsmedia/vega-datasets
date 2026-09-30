@@ -124,10 +124,12 @@ export interface Dataset {
   geometryTypes?: string[];
   /** For each date (or year) field that indexes the rows, the fields that with it identify every row ([] for none). */
   timeKeys?: Record<string, string[]>;
+  /** Per text field, its values that stand for all the others ("Total"), found among every value. */
+  totalValues?: Record<string, string[]>;
   /** Pairs of number fields that move together (|r| ≥ 0.9), as `[a, b, r]`. */
   correlated?: [string, string, number][];
   /** A table with latitude and longitude columns: the box holding the middle 98% of each, and the share of points in the US. */
-  points?: { latitude: string; longitude: string; box: { longitude: [number, number]; latitude: [number, number] }; us: number };
+  points?: { latitude: string; longitude: string; box: { longitude: [number, number]; latitude: [number, number] }; us: number; outsideUs?: number };
   image?: string;
   /** The table schema's keys and missing-value markers, when the metadata has them. */
   primaryKey?: string | string[];

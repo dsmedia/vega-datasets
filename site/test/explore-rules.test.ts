@@ -6,11 +6,11 @@ import { expressionInterpreter } from 'vega-interpreter';
 import { compile, type TopLevelSpec } from 'vega-lite';
 import { describe, expect, test } from 'vitest';
 import type { Dataset, Field } from '../src/lib/catalog';
-import { idName, informative, logTicks, namedAxes, nearDuplicate, scaleFor, scaleType, summable } from '../src/lib/chart-rules';
+import { idName, informative, logTicks, nameTokens, namedAxes, nearDuplicate, scaleFor, scaleType, summable } from '../src/lib/chart-rules';
 import { chartConfig, tokenInk } from '../src/lib/vega-theme';
-import { chartFeatures, defaultAxes, exploreModes, pickScale, scatterFields, scatterSpec, starterChart } from '../src/lib/explore-model';
+import { chartFeatures, defaultAxes, exploreModes, mapNote, pickScale, scatterFields, scatterSpec, starterChart } from '../src/lib/explore-model';
 import { basemapUrl, starterSpec } from '../src/lib/starter';
-import { draw } from './draw';
+import { draw, rowsWith } from './draw';
 import { described, strip } from './fixtures';
 
 type Spec = Record<string, unknown>;
@@ -339,5 +339,93 @@ describe('readability (orchestrator review)', () => {
   test('small multiples label their panels at 12 px in the ink color', () => {
     const header = chartConfig(tokenInk(() => '#123456'), 'sans-serif').header as Record<string, unknown>;
     expect(header).toMatchObject({ labelFontSize: 12, titleFontSize: 12, labelColor: '#123456' });
+  });
+});
+
+// Codex round 1: each finding reproduced as a failing test first.
+describe('Codex round 1', () => {
+  const regions = (n: number) => Array.from({ length: n }, (_, i) => [`r${String(i).padStart(2, '0')}`, 3] as [string, number]);
+  const year = quant('year', 2000, 2002, { type: 'integer' }, { distinct: 3, evenlySpaced: true });
+
+  test('#2 a sum is not bounded by the range documented for its rows', () => {
+    const count = quant('count', 80, 80, { constraints: { minimum: 0, maximum: 100 } });
+    const d = table([year, nominal('region', regions(13)), count, quant('other', 1, 9)], 39, { timeKeys: { year: ['region'] }, totalValues: {} });
+    const y = enc(starterSpec(d)).y;
+    expect(y).toMatchObject({ aggregate: 'sum' });
+    expect(y.scale ?? {}).not.toHaveProperty('domainMax');
+  });
+
+  test('#3 a rate named for what it counts is not summed', () => {
+    expect(nameTokens('deaths_per_100k')).toEqual(['deaths', 'per', '100k']);
+    expect(nameTokens('avgDeaths')).toEqual(['avg', 'Deaths']);
+    expect(summable(quant('deaths_per_100k', 0, 100))).toBe(false);
+    expect(summable(quant('pct_total', 0, 1))).toBe(false);
+    expect(summable(quant('deaths', 0, 100))).toBe(true);
+  });
+
+  test('#4 times merged into one bucket are averaged, never summed', () => {
+    const days: Field = { name: 'date', type: 'date', description: null, profile: { kind: 'temporal', min: '2019-01-01T00:00:00Z', max: '2021-12-31T00:00:00Z', missing: 0, distinct: 1096, evenlySpaced: true } };
+    const d = table([days, quant('population', 100, 100)], 1096, { timeKeys: { date: [] } });
+    expect(enc(starterSpec(d)).y).toMatchObject({ aggregate: 'mean' });
+  });
+
+  test('#5 a sum leaves out the total among its groups, even ones it can’t color', async () => {
+    const region = { ...nominal('region', regions(6)), profile: { kind: 'nominal' as const, distinct: 13, top: regions(6), missing: 0 } };
+    const d = table([year, region, quant('count', 10, 120)], 39, { timeKeys: { year: ['region'] }, totalValues: { region: ['Total'] } });
+    const spec = starterSpec(d)!;
+    expect(enc(spec).y).toMatchObject({ aggregate: 'sum' });
+    const rows = [2000, 2001, 2002].flatMap((y) => [...regions(12).map(([r]) => ({ year: y, region: r, count: 10 })), { year: y, region: 'Total', count: 120 }]);
+    const view = await draw(spec, rows);
+    try {
+      expect(new Set(rowsWith(view, 'sum_count').map((r) => r.sum_count))).toEqual(new Set([120]));
+    } finally {
+      view.finalize();
+    }
+  });
+
+  test('#6 the top twenty leave out documented missing values before summing', async () => {
+    const many = { ...nominal('origin', regions(6)), profile: { kind: 'nominal' as const, distinct: 61, top: regions(6), missing: 0 } };
+    // The profile leaves the markers out, as the builder does.
+    const count = quant('count', 1, 10, { missingValues: ['-99'] });
+    const d = table([many, nominal('destination', regions(6)), count], 122, { totalValues: {} });
+    (d.fields[1]!.profile as { distinct: number }).distinct = 61;
+    const spec = starterSpec(d)!;
+    const rows = Array.from({ length: 61 }, (_, i) => [{ origin: `o${i}`, count: 10 }, { origin: `o${i}`, count: -99 }]).flat();
+    const view = await draw(spec, rows);
+    try {
+      const totals = rowsWith(view, 'total').map((r) => r.total);
+      expect(totals.length).toBeGreaterThanOrEqual(20);
+      expect(new Set(totals)).toEqual(new Set([10]));
+    } finally {
+      view.finalize();
+    }
+  });
+
+  test('#8 a table past the points bands opens on the scatter overview, not Over Time', () => {
+    const d = table([dates('date', 200000), quant('a', 1, 9), quant('b', 1, 9)], 200000, { timeKeys: { date: [] }, correlated: [['a', 'b', 0.95]] });
+    expect(exploreModes(d)[0]).toBe('scatter');
+  });
+
+  test('#10 documented bounds set a log axis’s domain', () => {
+    const f = quant('v', 0.001, 870, { constraints: { minimum: 0.0001, maximum: 10000 } });
+    expect(scaleFor(f).scale).toMatchObject({ type: 'log', domainMin: 0.0001, domainMax: 10000 });
+  });
+
+  test('#11 a map that leaves out points outside the 50 states says how many', () => {
+    const d = table([quant('latitude', 13, 71), quant('longitude', -176, 145)], 3376, {
+      points: { latitude: 'latitude', longitude: 'longitude', box: { longitude: [-164, -69], latitude: [20, 66] }, us: 0.97, outsideUs: 28 },
+    });
+    expect(mapNote(d)).toBe('The map leaves out 28 of 3,376 rows, outside the 50 states: the Albers USA projection has no place for them.');
+    expect(mapNote({ ...d, points: { ...d.points!, outsideUs: 0 } })).toBeNull();
+  });
+
+  test('#14 small multiples follow the documented order and labels', () => {
+    const levels = ['low', 'medium', 'high'];
+    const severity = nominal('severity', [['high', 4], ['low', 4], ['medium', 4]], {
+      categories: levels.map((value) => ({ value, label: `${value[0]!.toUpperCase()}${value.slice(1)} severity` })), categoriesOrdered: true,
+    });
+    const facet = starterSpec(table([severity, quant('X', 1, 9), quant('Y', 1, 9)], 12))!.facet as Record<string, unknown>;
+    expect(facet.sort).toEqual(levels);
+    expect(JSON.stringify(facet.header)).toContain('Low severity');
   });
 });

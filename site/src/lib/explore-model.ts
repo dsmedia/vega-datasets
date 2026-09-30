@@ -6,8 +6,8 @@
  */
 import { type Dataset, documentedRange, effectiveMissing, type Field, fieldTitle } from "./catalog";
 import { correlation, sampled, type ScaleType, scaleFor, scaleType, summable, withScale } from "./chart-rules";
-import { formatCount } from "./format";
 import { BAND_POLICY, rowBand } from "./large-data";
+import { formatCount } from "./format";
 import { category, categoryAsText, colorable, defaultPair, fieldRef, isMeasure, isYear, markerForms, missingFilter, PANEL_SIZE, starterSpec, tag, tagged, timeField, timeKeyOf, timeYear, titled, untag } from "./starter";
 
 type Spec = Record<string, unknown>;
@@ -78,7 +78,9 @@ export function exploreModes(d: Dataset): Mode[] {
   if (starter?.projection) return ["starter"];
   const scatter = scatterFields(d);
   if (starter?.facet) return scatter ? ["panels", "scatter"] : ["panels"];
-  if (scatter) return isTimeSeries(starter) ? (timeFirst(d, scatter) ? ["time", "scatter"] : ["scatter", "time"]) : ["scatter"];
+  // A table long enough for the density overview opens on it, and the overview is of the scatter plot.
+  const overview = rowBand(d.rows ?? 0) === "density";
+  if (scatter) return isTimeSeries(starter) ? (!overview && timeFirst(d, scatter) ? ["time", "scatter"] : ["scatter", "time"]) : ["scatter"];
   return starter ? ["starter"] : [];
 }
 
@@ -216,6 +218,18 @@ export function scatterSpec(d: Dataset, f: ScatterFields, o: ScatterOptions): Sp
 /** Does this dataset open on the density overview (a table past the points bands, with a scatter plot)? */
 export function hasDensity(d: Dataset): boolean {
   return rowBand(d.rows ?? 0) === "density" && scatterFields(d) !== null;
+}
+
+/**
+ * What a map leaves out, said under it: Albers USA has no place for points outside the 50
+ * states (Puerto Rico, Guam), so the starter drops them, and the page says how many; null
+ * when it drops none.
+ */
+export function mapNote(d: Dataset): string | null {
+  const spec = starterSpec(d);
+  const n = d.points?.outsideUs ?? 0;
+  if ((spec?.projection as Spec | undefined)?.type !== "albersUsa" || !n || !d.points || d.rows === null) return null;
+  return `The map leaves out ${formatCount(n)} of ${formatCount(d.rows)} rows, outside the 50 states: the Albers USA projection has no place for them.`;
 }
 
 /** The starter chart, sized to its column; small multiples keep two columns of fixed panels, smaller on a phone. */

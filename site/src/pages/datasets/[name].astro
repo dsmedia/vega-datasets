@@ -15,7 +15,7 @@ import MotionSection from "../../components/MotionSection.astro";
 import Base from "../../layouts/Base.astro";
 import { type Dataset, type Gallery, GALLERIES, GALLERY_LABEL, licenseFamily } from "../../lib/catalog";
 import { fileName, formatDescription, interleave, isReleased, linkText, sizeDescription, useSnippets } from "../../lib/dataset-model";
-import { bothValuesNote, chartFeatures, defaultAxes, exploreModes, hasDensity, MODE_LABEL, scatterFields, scatterSpec, starterChart } from "../../lib/explore-model";
+import { bothValuesNote, chartFeatures, defaultAxes, exploreModes, hasDensity, mapNote, MODE_LABEL, scatterFields, scatterSpec, starterChart } from "../../lib/explore-model";
 import { BAND_POLICY, densityCaption, densityPageSpec, densitySpec, drawPointsLabel, hasMapPreview, tableBand } from "../../lib/large-data";
 import { densityOf } from "../../prerender/density";
 import { mapPreview } from "../../prerender/map-preview";
@@ -66,7 +66,8 @@ const first = modes[0];
 // themselves, on a desktop-class device only (the client decides), or when asked; and
 // whether they may zoom (a band that allows it only on desktop-class devices shows the
 // hint until the client knows the device).
-const band = first === "scatter" ? tableBand(d) : null;
+// Whichever mode opens first (a table that opens on Over Time loads the same file).
+const band = modes.includes("scatter") ? tableBand(d) : null;
 const policy = band ? BAND_POLICY[band] : null;
 const zoomable = !policy || policy.zoom !== "never";
 const specFor = (mode: string, phone: boolean) =>
@@ -92,6 +93,7 @@ const plotted = reserve?.wide.plotted ?? null;
 const countNote = plotted === null ? null : bothValuesNote(d, plotted);
 const color = sf?.color ? ` the legend to isolate ${/^[aeiou]/i.test(sf.color.name) ? "an" : "a"} ${sf.color.name.toLowerCase()}.` : "";
 
+const leftOut = mapNote(d);
 const motion = hasMotion(d);
 const preview = d.preview && d.preview.rows.length ? d.preview : null;
 const shown = preview ? preview.rows.slice(0, PREVIEW_ROWS) : [];
@@ -187,7 +189,7 @@ const title = datasetTitle(d);
           <div class="explore-chart" style={reserve ? `--chart-h: ${reserve.wide.height}px; --chart-h-phone: ${reserve.phone.height}px` : undefined}>
             {mapPic && <img class="chart-preview" src={`${base}previews/${d.name}.webp`} width={mapPic.width} height={mapPic.height} alt={`The ${d.name} map, as the starter chart draws it`}>}
             {mapPic && <button class="btn draw" type="button">Draw the Live Map ({formatBytes(d.bytes)})</button>}
-            {pointsButton && !mapPic && <button class="btn draw" type="button" data-auto-draw={policy?.autoDraw}>{drawPointsLabel(d)}</button>}
+            {pointsButton && !mapPic && <button class="btn draw" type="button" data-auto-draw={policy?.autoDraw}>{first === "scatter" ? drawPointsLabel(d) : `Draw Chart (${formatBytes(d.bytes)})`}</button>}
             {bigFile && !density && !mapPic && <button class="btn draw" type="button">Draw Chart ({formatBytes(d.bytes)})</button>}
           </div>
           <div class="chart-foot">
@@ -197,6 +199,7 @@ const title = datasetTitle(d);
                 : first === "scatter" && sf
                 ? <span class="hint" data-plotted={plotted ?? undefined}><span class="wide-only">Pick two fields.{zoomable && " Scroll to zoom, drag to pan."}{color && ` Click${color}`}{countNote && ` ${countNote}`}</span><span class="phone-only">Pick two fields.{color && ` Tap${color}`}{countNote && ` ${countNote}`}</span></span>
                 : <span class="hint" hidden></span>}
+              {leftOut && <span class="map-note">{leftOut}</span>}
               {density
                 ? <span class="features mono">{chartFeatures(density.page).join(" · ")}</span>
                 : <span class="features mono"><span class="wide-only">{chartFeatures(wideSpec).join(" · ")}</span><span class="phone-only">{chartFeatures(phoneSpec).join(" · ")}</span></span>}

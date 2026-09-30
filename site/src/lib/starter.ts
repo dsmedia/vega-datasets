@@ -9,7 +9,7 @@
  */
 import LZString from "lz-string";
 import { categoryLabels, categoryValues, type Dataset, documentedRange, effectiveMissing, type Field, fieldTitle, orderedCategories } from "./catalog";
-import { balanced, distinctValues, idName, informative, inUs, namedAxes, nearDuplicate, scaleFor, scaleType, summable, timeKey, unique, withScale } from "./chart-rules";
+import { balanced, distinctValues, idName, informative, inUs, namedAxes, nearDuplicate, scaleFor, scaleType, summable, timeKey, totalsOf, unique, withScale } from "./chart-rules";
 
 type Spec = Record<string, unknown>;
 type Enc = Record<string, unknown>;
@@ -79,7 +79,9 @@ function zeroSide(r: Range): Range {
  */
 export function measure(f: Field, enc: Enc = {}, bars = false): Enc {
   const out: Enc = { field: fieldRef(f.name), type: "quantitative", ...enc };
-  const range = bars ? zeroSide(documentedRange(f)) : documentedRange(f);
+  // A documented range bounds each row's value, not a sum of rows.
+  const own = enc.aggregate === "sum" ? null : documentedRange(f);
+  const range = bars ? zeroSide(own) : own;
   if (range?.fits && out.bin) {
     if (range.min !== undefined && range.max !== undefined) out.bin = { ...(out.bin as Enc), extent: [range.min, range.max] };
   } else if (range?.fits) {
@@ -116,7 +118,7 @@ export function categoryAsText(f: Field): Enc | null {
  * order), and an axis reads it as ordinal. Colors stay nominal: an ordinal ramp would fade
  * the first category into the background.
  */
-export function category(f: Field, enc: Enc = {}, guide: "axis" | "legend" = "legend"): Enc {
+export function category(f: Field, enc: Enc = {}, guide: "axis" | "legend" | "header" = "legend"): Enc {
   const order = sortOrder(f);
   const labels = categoryLabels(f);
   return {
@@ -164,7 +166,10 @@ function withMetadata(d: Dataset, spec: Spec | null): Spec | null {
   if (layers) return { ...spec, layer: layers.map((l, i) => (i === layers.length - 1 ? withMetadata(d, l)! : l)) };
   const encoding = ((spec.spec as Spec | undefined)?.encoding ?? spec.encoding) as Record<string, Enc> | undefined;
   if (!encoding) return spec;
-  const used = new Set([...Object.values(encoding).map((e) => e.field), (spec.facet as Enc | undefined)?.field]);
+  // Fields the encodings show, the facet splits by, and the chart's own transforms read (a sum per group).
+  const read = JSON.stringify(spec.transform ?? []).match(/"(?:field|groupby)":(?:"[^"]*"|\[[^\]]*\])/g) ?? [];
+  const inTransforms = read.flatMap((m) => [...m.matchAll(/"([^"]*)"/g)].map((x) => x[1]!)).filter((n) => n !== "field" && n !== "groupby");
+  const used = new Set([...Object.values(encoding).map((e) => e.field), (spec.facet as Enc | undefined)?.field, ...inTransforms.map(fieldRef)]);
   const fields = d.fields.filter((f) => used.has(fieldRef(f.name)));
   const dates = fields.filter((f) => f.profile.kind === "temporal" && effectiveMissing(d, f)?.length);
   const transform = [
@@ -188,8 +193,6 @@ const LON = /^(lon|lng|long|longitude)$/i;
 const SERIES = /^(symbol|source|location|country|region|series|sex|gender|division|entity|variety|site|origin|species|type|category)$/i;
 /** A direction in degrees (wind, heading), drawn as the angle of a wedge on a map. */
 const DIRECTION = /^(dir|direction|bearing|heading|wind_?dir(ection)?)$/i;
-/** A series value that stands for all the others together ("All natural disasters", "Total"). */
-const TOTAL_VALUE = /^(all|total)\b/i;
 
 /** Coordinates, by name or (metadata first) by title. */
 export const isLat = (f: Field): boolean => LAT.test(f.name) || LAT.test(f.title ?? "");
@@ -279,6 +282,12 @@ function spanYears(f: Field): number {
   const p = f.profile;
   if (p.kind !== "temporal") return 0;
   return (new Date(p.max).getTime() - new Date(p.min).getTime()) / (365.25 * 864e5);
+}
+
+/** How many buckets of `unit` the time's span covers (days, months or years). */
+function buckets(t: Field, unit: string): number {
+  const span = spanYears(t);
+  return Math.floor(unit === "yearmonthdate" ? span * 365.25 : unit === "yearmonth" ? span * 12 : span) + 1;
 }
 
 /** The unit a long daily or hourly series is averaged into: days for up to two years, months up to forty, else years. */
@@ -471,15 +480,23 @@ function timeSeries(d: Dataset, base: Spec, t: Field, m: Field, fields: Field[])
     key?.find((f) => colorable(f, 12, fields, rows)) ?? fields.find((f) => colorable(f, 12, fields, rows) && SERIES.test(f.name));
   const vintage = !series && key?.length === 1 && timeYear(key[0]!) ? key[0] : undefined;
   const exact = key !== null && key.every((f) => f === series || f === vintage);
-  const aggregate = unit || !exact ? (summable(m) ? "sum" : "mean") : undefined;
+  // Sum only across the separate groups of one time (people of each age in a year), never
+  // across times merged into one bucket (a daily population is not a monthly one); totals
+  // among the groups are left out, or they'd count everything twice.
+  const merges = !!unit && (distinctValues(t) ?? Infinity) > buckets(t, unit);
+  const sums = !exact && key !== null && !merges && summable(m);
+  const aggregate = unit || !exact ? (sums ? "sum" : "mean") : undefined;
   // Two year fields: the one with more years runs along x, and the other draws a line each.
   const [along, lines] = vintage && (distinctValues(vintage) ?? 0) > (distinctValues(t) ?? 0) ? [vintage, t] : [t, vintage];
-  const p = series?.profile;
-  const totals = p?.kind === "nominal" ? p.top.map(([v]) => v).filter((v) => TOTAL_VALUE.test(v)) : [];
-  const leaveOut =
-    series && p?.kind === "nominal" && totals.length && p.distinct - totals.length >= 2
-      ? [{ filter: `indexof(${tagged(totals)}, ${tag(`datum[${JSON.stringify(series.name)}]`)}) < 0` }]
+  // A series (colored) never shows its total among the parts; a sum leaves out every key's totals.
+  const splits = [...new Set([...(series ? [series] : []), ...(sums ? key! : [])])];
+  const leaveOut = splits.flatMap((f) => {
+    const totals = totalsOf(d, f);
+    const left = (distinctValues(f) ?? 0) - totals.length;
+    return totals.length && (f !== series || sums || left >= 2)
+      ? [{ filter: `indexof(${tagged(totals)}, ${tag(`datum[${JSON.stringify(f.name)}]`)}) < 0` }]
       : [];
+  });
   // Values in a narrow band far from zero (CO2 in ppm, air pressure) leave zero off the axis, or the line is flat.
   const q = m.profile;
   const band = aggregate !== "sum" && q.kind === "quantitative" && q.min > 0 && q.min >= q.max / 2;
@@ -574,7 +591,7 @@ function starterRule(d: Dataset): Spec | null {
     return {
       ...base,
       columns: 2,
-      facet: { field: fieldRef(by.name), type: "nominal", ...titled(by) },
+      facet: category(by, {}, "header"),
       spec: {
         width: PANEL_SIZE.wide,
         height: PANEL_SIZE.wide,
@@ -644,6 +661,7 @@ function starterRule(d: Dataset): Spec | null {
       ...base,
       width: 480,
       transform: [
+        ...(totalsOf(d, many).length ? [{ filter: `indexof(${tagged(totalsOf(d, many))}, ${tag(`datum[${JSON.stringify(many.name)}]`)}) < 0` }] : []),
         { aggregate: [{ op: "sum", field: m1.name, as: total }], groupby: [many.name] },
         { window: [{ op: "row_number", as: rank }], sort: [{ field: total, order: "descending" }] },
         { filter: `datum[${JSON.stringify(rank)}] <= ${TOP}` },
