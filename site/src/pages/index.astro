@@ -13,6 +13,7 @@ import Thumb from "../components/Thumb.astro";
 import Base from "../layouts/Base.astro";
 import { GALLERIES, GALLERY_LABEL } from "../lib/catalog";
 import { catalogSpec } from "../lib/catalog-chart";
+import { useSnippets } from "../lib/dataset-model";
 import { formatBytes, formatCount } from "../lib/format";
 import { chartRows, FORMAT_GROUPS, homeCounts, listDatasets, NO_FILTERS, readmeSection, showcase, SORT_LABEL, SORT_NOTE, type Sort } from "../lib/home-model";
 import { markdownToHtml } from "../lib/markdown";
@@ -21,7 +22,8 @@ import { catalogJsonLd, datasetPath, HOME_DESCRIPTION, HOME_TITLE, REPO, STATUS_
 const counts = homeCounts(c);
 const max = Math.max(...c.datasets.map((d) => d.usedBy.length), 1);
 const major = c.package.version.split(".")[0];
-const cdnUrl = (file: string) => `https://cdn.jsdelivr.net/npm/vega-datasets@${major}/data/${file}`;
+/** The Quick Start loads cars, the most used dataset. */
+const cars = c.dataset("cars")!;
 const list = listDatasets(c, NO_FILTERS);
 
 // The catalog chart as the page first shows it: at the width of a 1360px window (the
@@ -46,7 +48,7 @@ const about = readmeItems.flatMap(([id, title, hint, heading]) => {
 });
 ---
 <Base title={HOME_TITLE} description={HOME_DESCRIPTION} path="" section="home" jsonLd={catalogJsonLd(c)}>
-  <div class="wrap"><h1 class="home-title"><b>Vega Datasets</b> – The Data Behind the Examples</h1></div>
+  <div class="wrap"><h1 class="home-title"><b>Vega Datasets</b></h1></div>
   <div class="showcase" aria-hidden="true">
     {showcase(c, 8).map((p) => <a href={`${import.meta.env.BASE_URL}${datasetPath(p.dataset)}`} tabindex="-1"><Thumb example={p.example} eager /><span class="showcase-name mono">{p.dataset}</span></a>)}
   </div>
@@ -61,13 +63,7 @@ const about = readmeItems.flatMap(([id, title, hint, heading]) => {
       </div>
     </div>
     <div class="quickstart">
-      <SnippetTabs id="qs" label="Quick start" snippets={[
-        { name: "URL", code: cdnUrl("cars.json") },
-        { name: "JavaScript", code: "npm install vega-datasets\n\nimport data from 'vega-datasets';\nconst cars = await data['cars.json']();" },
-        // The data block alone, as on the dataset pages: a whole spec made the box tall.
-        { name: "Vega-Lite", code: `"data": ${JSON.stringify({ url: cdnUrl("cars.json") }, null, 2)}` },
-        { name: "Python", code: "from altair.datasets import data\n\ncars = data.cars()" },
-      ]} />
+      <SnippetTabs id="qs" url={cars.url} snippets={useSnippets(cars)} />
       <p class="note">The <code>@{major}</code> URL tracks {major}.x releases, so it gets fixes without breaking changes. To lock a version, use <code>@{c.package.version}</code>. <a href="#about-versioning" data-open-details>Versioning</a></p>
     </div>
   </section>

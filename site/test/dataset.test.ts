@@ -65,32 +65,42 @@ test('canary: Vega-Lite still warns "fit-y" for a container-width bar chart (whe
 });
 
 describe('Use This Dataset snippets', () => {
-  test('a released table gets URL, JavaScript, Vega-Lite and Python (Altair)', () => {
+  // The URL shows above the tabs (every tool uses it); the tabs are per tool.
+  test('a released table gets Vega-Lite, Vega, Altair and JavaScript, in that order', () => {
     const s = Object.fromEntries(useSnippets(ds('cars')).map((x) => [x.name, x.code]));
-    expect(Object.keys(s)).toEqual(['URL', 'JavaScript', 'Vega-Lite', 'Python']);
-    expect(s.URL).toBe(ds('cars').url);
-    expect(s.JavaScript).toContain("const cars = await data['cars.json']();");
+    expect(Object.keys(s)).toEqual(['Vega-Lite', 'Vega', 'Altair', 'JavaScript']);
     expect(JSON.parse(`{${s['Vega-Lite']}}`)).toEqual({ data: { url: ds('cars').url } });
-    expect(s.Python).toBe('from altair.datasets import data\n\ncars = data.cars()');
+    expect(JSON.parse(`{${s.Vega}}`)).toEqual({ data: [{ name: 'cars', url: ds('cars').url }] });
+    expect(s.Altair).toBe('from altair.datasets import data\n\ncars = data.cars()');
+    expect(s.JavaScript).toContain("const cars = await data['cars.json']();");
+    expect(Object.values(s).some((code) => code === ds('cars').url)).toBe(false);
   });
 
-  test('files that are not tables give their URL to JavaScript and Python', () => {
+  test('Vega parses CSV types, as Vega-Lite does by itself', () => {
+    const vega = useSnippets(ds('seattle_weather')).find((x) => x.name === 'Vega')!;
+    expect(JSON.parse(`{${vega.code}}`).data[0].format).toEqual({ type: 'csv', parse: 'auto' });
+  });
+
+  test('files that are not tables give their URL to Altair and JavaScript', () => {
     const s = Object.fromEntries(useSnippets(ds('gimp')).map((x) => [x.name, x.code]));
-    expect(Object.keys(s)).toEqual(['URL', 'JavaScript', 'Python']);
+    expect(Object.keys(s)).toEqual(['Altair', 'JavaScript']);
     expect(s.JavaScript).toContain("data['gimp.png'].url");
-    expect(s.Python).toContain('url = data.gimp.url');
+    expect(s.Altair).toContain('url = data.gimp.url');
   });
 
-  test('TopoJSON names its object for Vega-Lite', () => {
+  test('TopoJSON names its object for Vega-Lite and Vega', () => {
+    const feature = ds('us_10m').objects![0];
     const vl = useSnippets(ds('us_10m')).find((x) => x.name === 'Vega-Lite')!;
-    expect(JSON.parse(`{${vl.code}}`).data.format).toEqual({ type: 'topojson', feature: ds('us_10m').objects![0] });
+    const vega = useSnippets(ds('us_10m')).find((x) => x.name === 'Vega')!;
+    expect(JSON.parse(`{${vl.code}}`).data.format).toEqual({ type: 'topojson', feature });
+    expect(JSON.parse(`{${vega.code}}`).data[0].format).toEqual({ type: 'topojson', feature });
   });
 
-  test('files not yet on npm skip the npm and Altair (Python) loaders', () => {
+  test('files not yet on npm skip the npm and Altair loaders', () => {
     const unreleased = catalog.datasets.filter((d) => !isReleased(d));
     expect(unreleased.length).toBeGreaterThan(0);
     for (const d of unreleased) expect(snippetNames(d.name)).not.toContain('JavaScript');
-    for (const d of unreleased) expect(snippetNames(d.name)).not.toContain('Python');
+    for (const d of unreleased) expect(snippetNames(d.name)).not.toContain('Altair');
   });
 });
 

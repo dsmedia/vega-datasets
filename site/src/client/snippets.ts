@@ -1,9 +1,29 @@
 /**
- * Code snippets behind tabs (components/SnippetTabs.astro): switching tabs (ARIA tabs:
- * arrow keys, Home and End) and a Copy button on each panel; if the clipboard is
- * blocked, Copy selects the code for Ctrl/⌘+C.
+ * How to load a file (components/SnippetTabs.astro): switching tabs (ARIA tabs: arrow
+ * keys, Home and End), a Copy button on the URL and on each panel (if the clipboard is
+ * blocked, Copy selects the code for Ctrl/⌘+C), and the reader's tool, remembered across
+ * pages in this browser.
  */
 import { h } from "./dom";
+
+/** Where the reader's tool is kept (localStorage). */
+export const TOOL_KEY = "vega-datasets-tool";
+
+function rememberedTool(): string | null {
+  try {
+    return localStorage.getItem(TOOL_KEY);
+  } catch {
+    return null; // Storage blocked (private mode, disabled site data): start on the first tab.
+  }
+}
+
+function rememberTool(tool: string): void {
+  try {
+    localStorage.setItem(TOOL_KEY, tool);
+  } catch {
+    // Storage blocked: the pick holds on this page only.
+  }
+}
 
 function copyButton(code: HTMLElement): HTMLButtonElement {
   const btn = h("button", { class: "copy-btn", type: "button" }, "Copy");
@@ -35,9 +55,9 @@ function copyButton(code: HTMLElement): HTMLButtonElement {
 export function enhanceSnippets(root: HTMLElement): void {
   const tabs = [...root.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
   const panels = tabs.map((t) => document.getElementById(t.getAttribute("aria-controls") ?? ""));
-  for (const panel of panels) {
-    const code = panel?.querySelector("code");
-    if (panel && code) panel.prepend(copyButton(code));
+  for (const block of [root.querySelector<HTMLElement>("[data-snippet-url]"), ...panels]) {
+    const code = block?.querySelector("code");
+    if (block && code) block.prepend(copyButton(code));
   }
   const select = (i: number, focus: boolean) => {
     tabs.forEach((t, j) => {
@@ -47,14 +67,21 @@ export function enhanceSnippets(root: HTMLElement): void {
     });
     if (focus) tabs[i]?.focus();
   };
+  const pick = (i: number, focus: boolean) => {
+    select(i, focus);
+    const tool = tabs[i]?.dataset.tool;
+    if (tool) rememberTool(tool);
+  };
+  const remembered = tabs.findIndex((t) => t.dataset.tool === rememberedTool());
+  if (remembered > 0) select(remembered, false);
   tabs.forEach((t, i) => {
-    t.addEventListener("click", () => select(i, false));
+    t.addEventListener("click", () => pick(i, false));
     t.addEventListener("keydown", (e) => {
       const n = tabs.length;
       const next = ({ ArrowRight: (i + 1) % n, ArrowLeft: (i - 1 + n) % n, Home: 0, End: n - 1 } as Record<string, number>)[e.key];
       if (next === undefined) return;
       e.preventDefault();
-      select(next, true);
+      pick(next, true);
     });
   });
 }

@@ -1,4 +1,4 @@
-// Switching a snippet tab doesn't move the page. The panels differed in height (the home
+// Switching a snippet tab doesn't move the page, and the reader's tool carries across pages. The panels differed in height (the home
 // page's Vega-Lite tab was 241 px on a phone, its URL tab 61 px), so each switch shifted
 // everything below the box by up to 180 px. Checked on the home page and a dataset page,
 // on a phone and a desktop: after each switch, the content below the box stays put.
@@ -80,6 +80,20 @@ try {
       await page.close();
     }
   }
+  // A tool picked on the home page opens first on a dataset page, and the URL shows above the tabs.
+  const page = await browser.newPage();
+  await page.setViewport(VIEWPORTS.phone);
+  await page.goto(base, { waitUntil: 'networkidle0' });
+  await page.click('[data-snippets] [role=tab][data-tool="Altair"]');
+  await page.goto(`${base}datasets/cars/`, { waitUntil: 'networkidle0' });
+  const r = await page.evaluate(() => ({
+    selected: document.querySelector('[data-snippets] [aria-selected="true"]')?.textContent.trim(),
+    shown: document.querySelector('[data-snippets] [role=tabpanel]:not([hidden]) code')?.textContent,
+    url: document.querySelector('[data-snippets] [data-snippet-url] code')?.textContent,
+  }));
+  check('the tool picked on the home page opens first on cars', r.selected === 'Altair' && /data\.cars\(\)/.test(r.shown ?? ''), r);
+  check('the URL shows above the tabs', /\/data\/cars\.json$/.test(r.url ?? ''), r);
+  await page.close();
 } finally {
   await browser.close();
   server.kill();
