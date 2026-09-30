@@ -605,7 +605,11 @@ def test_coordinates_box_and_us_share() -> None:
     assert points["us"] == 0.99
     assert points["outsideUs"] == 1
     assert points["box"]["longitude"][0] < -116
-    assert points["box"]["longitude"][1] < 0  # the 1% beyond the box doesn't stretch it
+    assert points["box"]["longitude"][1] < 0  # an outlier (Guam) doesn't stretch it
+    assert points["outsideBox"] == 1
+    # Every other point inside, none on the edge.
+    assert points["box"]["longitude"][0] < -116.2
+    assert points["box"]["latitude"][1] > 43.62
     # Found by title too; none without both columns.
     titled = [
         {"name": "cy", "type": "number", "title": "Latitude"},
@@ -688,7 +692,10 @@ def test_longitude_box_takes_the_short_way_across_180() -> None:
     points = coordinates({"lat": pl.Series([-17.0] * 100), "lon": lon}, fields)
     assert points is not None
     west, east = points["box"]["longitude"]
-    assert east - west == 2
+    # The two degrees across 180, and 5% to spare each side.
+    assert west < 179
+    assert east > 181
+    assert east - west < 2.5
     assert shortest_arc(pl.Series([-100.0, -90.0])).to_list() == [-100.0, -90.0]
 
 
@@ -983,3 +990,22 @@ def test_line_shapes_count_times_per_series() -> None:
     })
     _, shapes = line_shapes({"t": values["t"], "v": values["v"]}, {"t": []}, values)
     assert shapes["t"]["v"]["state"]["perSeries"] == 1
+
+
+def test_coordinates_frame_leaves_out_outliers_only() -> None:
+    # A city's 40 points, and one recorded far east: the edge points stay in the frame.
+    lon = pl.Series([-118.47 + 0.47 * i / 39 for i in range(40)] + [-117.3])
+    lat = pl.Series([33.8 + 0.48 * ((i * 7) % 40) / 39 for i in range(40)] + [34.0])
+    fields = [
+        {"name": "latitude", "type": "number"},
+        {"name": "longitude", "type": "number"},
+    ]
+    points = coordinates({"latitude": lat, "longitude": lon}, fields)
+    assert points is not None
+    assert points["outsideBox"] == 1
+    west, east = points["box"]["longitude"]
+    south, north = points["box"]["latitude"]
+    assert west < -118.47
+    assert -118.0 < east < -117.3
+    assert south < 33.8
+    assert north > 34.28

@@ -332,6 +332,14 @@ def _nice(x: float) -> float:
     return float(f"{x:.4g}")
 
 
+def _outward(x: float, *, up: bool) -> float:
+    """``x`` to four significant digits, rounded away from the inside of a box (a frame edge stays outside its points)."""
+    if x == 0:
+        return 0.0
+    step = 10 ** (math.floor(math.log10(abs(x))) - 3)
+    return float(f"{(math.ceil if up else math.floor)(x / step) * step:.4g}")
+
+
 def _utc_iso(t: datetime) -> str:
     """
     ISO 8601 with an explicit zone.
@@ -1276,8 +1284,9 @@ def coordinates(
     """
     Where a table's points lie, when it has latitude and longitude columns.
 
-    The columns are found by ``coordinate_pair``. The box holds the middle 98% of each
-    coordinate, and ``us`` is the share of points in the United States (``US_BOXES``).
+    The columns are found by ``coordinate_pair``. The box holds every point but the
+    outliers (beyond the middle 90% by more than its span), padded 5%; ``us`` is the
+    share of points in the United States (``US_BOXES``).
     The site fits its map to the box and picks the Albers USA projection when nearly
     every point is in the US.
     """
@@ -1296,24 +1305,33 @@ def coordinates(
     land = us_land()
     us = sum(itertools.starmap(land.contains, both.select("lon", "lat").iter_rows()))
 
-    def quantiles(s: pl.Series) -> list[float]:
-        return [_nice(cast("float", s.quantile(q, "linear"))) for q in (0.01, 0.99)]
-
     shifted = shortest_arc(both["lon"])
-    west, east = quantiles(shifted)
-    south, north = quantiles(both["lat"])
-    # Rows outside the box a fitted map frames: it clips them, and the site says how many.
-    outside_box = cast(
-        "int",
-        pl.DataFrame({"lon": shifted, "lat": both["lat"]})
-        .select(
-            (
-                ~pl.col("lon").is_between(west, east)
-                | ~pl.col("lat").is_between(south, north)
-            ).sum()
+    points = pl.DataFrame({"lon": shifted, "lat": both["lat"]})
+    # Outliers only: a point beyond the middle 90% of the others by more than that middle's
+    # own span (or a quarter of the whole range, when the middle is one place), along either
+    # axis (a death recorded 40 km east of the rest). The edge of a tight cluster (London's
+    # outer boroughs) is no outlier: the frame holds every other point.
+    far = pl.lit(value=False)
+    for c in ("lon", "lat"):
+        low, high = (
+            cast("float", points[c].quantile(q, "linear")) for q in (0.05, 0.95)
         )
-        .item(),
-    )
+        whole = cast("float", points[c].max()) - cast("float", points[c].min())
+        span = max(high - low, whole / 4)
+        far |= (pl.col(c) < low - span) | (pl.col(c) > high + span)
+    flagged = points.with_columns(far.alias("__far__"))
+    kept = flagged.filter(~pl.col("__far__"))
+    # Rows outside the frame (the outliers): the map clips them, and the site says how many.
+    outside_box = flagged.height - kept.height
+
+    def padded(c: str) -> list[float]:
+        # Every kept point inside, none on the edge: 5% of the span each side (at least 0.01 degrees).
+        low, high = cast("float", kept[c].min()), cast("float", kept[c].max())
+        pad = max((high - low) * 0.05, 0.01)
+        return [_outward(low - pad, up=False), _outward(high + pad, up=True)]
+
+    west, east = padded("lon")
+    south, north = padded("lat")
     if west >= 180:
         west, east = _nice(west - 360), _nice(east - 360)
     return {

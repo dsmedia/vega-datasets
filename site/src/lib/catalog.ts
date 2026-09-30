@@ -148,7 +148,7 @@ export interface Dataset {
   totalValues?: Record<string, Record<string, string[]>>;
   /** Pairs of number fields that move together (|r| ≥ 0.9), as `[a, b, r]`. */
   correlated?: [string, string, number][];
-  /** A table with latitude and longitude columns: the box holding the middle 98% of each, and the share of points in the US. */
+  /** A table with latitude and longitude columns: the box holding every point but the outliers (padded), how many are outliers, and the share of points in the US. */
   points?: { latitude: string; longitude: string; box: { longitude: [number, number]; latitude: [number, number] }; us: number; outsideUs?: number; outsideBox?: number };
   image?: string;
   /** The table schema's keys and missing-value markers, when the metadata has them. */

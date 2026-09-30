@@ -473,10 +473,10 @@ function pointMap(d: Dataset, base: Spec, lat: Field, lon: Field, color: Field |
     ? where.us >= 0.95
     : !!box && box.longitude[0] >= -180 && box.longitude[1] <= -60 && box.latitude[0] >= 15 && box.latitude[1] <= 72;
   const wide = !!box && Math.max(box.longitude[1] - box.longitude[0], box.latitude[1] - box.latitude[0]) >= BASEMAP_MIN_DEGREES;
-  // Close together (a city): a Mercator map fitted to the middle 98% of the points, over the
+  // Close together (a city): a Mercator map fitted to the points but their outliers, over the
   // most detailed basemap that holds them (S9). The rest of the points are left out, and said so.
   const close = !!box && !wide;
-  // A world projection fits the middle 98% of the points, so a few far ones don't shrink the
+  // A world projection fits the points but their outliers, so a few far ones don't shrink the
   // rest; Albers USA fits the country.
   const fit = box && (close || (!us && where && wide)) ? { fit: boxFeature(where?.box ?? box) } : {};
   const direction = measures.find((m) => DIRECTION.test(m.name) && m.profile.kind === "quantitative" && m.profile.min >= 0 && m.profile.max <= 360);
@@ -772,7 +772,9 @@ function fitted(m: Field, band: boolean): Enc {
   if (scaleType(m) !== "log") return scaled(m, band ? { zero: false } : {});
   // Labels at the decades only (Vega's log ticks also mark 2 to 9 of each, which crowd).
   const decade = "abs(log(datum.value) / LN10 - round(log(datum.value) / LN10)) < 1e-6";
-  return { scale: { type: "log", nice: true }, axis: { labelExpr: `${decade} ? (${POWER_LABEL}) : ''` } };
+  // Grid lines and ticks at the labeled decades only (the 2 to 9 between them are busy).
+  const atDecade = { condition: { test: decade, value: 1 }, value: 0 };
+  return { scale: { type: "log", nice: true }, axis: { labelExpr: `${decade} ? (${POWER_LABEL}) : ''`, gridOpacity: atDecade, tickOpacity: atDecade } };
 }
 
 /** A rate among a count's fields (the same rows as a percentage): what a heatmap colors by (S13). */

@@ -89,6 +89,41 @@ describe('chart standards, pass 2 (site/CHART-STANDARDS.md)', () => {
     expect(JSON.stringify(centroids.spec)).toContain('londonBoroughs.json');
   });
 
+  test('S9: a fitted map frames every point but the outliers, none on its edge', () => {
+    // An outlier: beyond the middle 90% of the points by more than that middle's span, along either axis.
+    const quantile = (xs: number[], q: number) => {
+      const v = [...xs].sort((a, b) => a - b);
+      const i = (v.length - 1) * q;
+      return v[Math.floor(i)]! + (v[Math.ceil(i)]! - v[Math.floor(i)]!) * (i - Math.floor(i));
+    };
+    const problems: string[] = [];
+    let checked = 0;
+    for (const { d, spec } of charts) {
+      const fit = (spec.projection as { fit?: { geometry: { coordinates: [number, number][] } } } | undefined)?.fit;
+      if (!fit || !d.points || d.points.box.longitude[1] > 180) continue;
+      const rows = vega.read(readDataUrl(d.url), { type: d.format as 'csv' | 'json' }) as Record<string, unknown>[];
+      const pts = rows.map((r) => [Number(r[d.points!.longitude]), Number(r[d.points!.latitude])] as const).filter(([x, y]) => Number.isFinite(x) && Number.isFinite(y));
+      const far = (i: 0 | 1) => {
+        const v = pts.map((p) => p[i]);
+        const [lo, hi] = [quantile(v, 0.05), quantile(v, 0.95)];
+        // Or a quarter of the whole range, when the middle is one place.
+        const span = Math.max(hi - lo, (Math.max(...v) - Math.min(...v)) / 4);
+        return (x: number) => x < lo - span || x > hi + span;
+      };
+      const [farX, farY] = [far(0), far(1)];
+      const xs = fit.geometry.coordinates.map((c) => c[0]);
+      const ys = fit.geometry.coordinates.map((c) => c[1]);
+      const [w, e, south, n] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+      checked++;
+      const cropped = pts.filter(([x, y]) => !farX(x) && !farY(y) && !(x > w && x < e && y > south && y < n));
+      if (cropped.length) problems.push(`${d.name}: ${cropped.length} points that are no outliers lie on or outside the frame`);
+    }
+    expect(problems).toEqual([]);
+    expect(checked).toBeGreaterThanOrEqual(3);
+    // London's 33 boroughs, all shown.
+    expect(datasets.find((d) => d.name === 'london_centroids')!.points?.outsideBox).toBe(0);
+  });
+
   test('S11: a time axis ends within a tick of the data', async () => {
     const problems: string[] = [];
     let checked = 0;
@@ -272,6 +307,37 @@ describe('chart standards, pass 2 (site/CHART-STANDARDS.md)', () => {
     expect(problems).toEqual([]);
     expect(JSON.stringify(charts.find((c) => c.d.name === 'crimea' && isTime(c.spec))?.spec ?? {})).toContain('"fold"');
   });
+
+  test('S4: a log axis draws grid lines only where it has labels (the decades)', async () => {
+    type Item = { role?: string; items?: Item[]; datum?: { value?: number }; text?: string; opacity?: number; strokeOpacity?: number };
+    const problems: string[] = [];
+    let checked = 0;
+    for (const { d, mode, spec } of charts) {
+      if ((encodingOf(spec).y?.scale as { type?: string } | undefined)?.type !== 'log') continue;
+      const view = await render({ ...spec, width: 640 });
+      try {
+        const grid: number[] = [];
+        const labeled: number[] = [];
+        const walk = (node: Item, role?: string) => {
+          for (const item of node.items ?? []) {
+            const r = item.role ?? role;
+            const v = item.datum?.value;
+            if (typeof v === 'number' && r === 'axis-grid' && (item.opacity ?? 1) > 0 && (item.strokeOpacity ?? 1) > 0) grid.push(v);
+            if (typeof v === 'number' && r === 'axis-label' && item.text && (item.opacity ?? 1) > 0) labeled.push(v);
+            walk(item, r);
+          }
+        };
+        walk((view.scenegraph() as unknown as { root: Item }).root);
+        checked++;
+        const unlabeled = grid.filter((g) => !labeled.some((l) => Math.abs(l - g) <= 1e-9 * Math.abs(g)));
+        if (unlabeled.length) problems.push(`${d.name} ${mode}: grid lines at ${unlabeled.slice(0, 4).join(', ')} with no label`);
+      } finally {
+        view.finalize();
+      }
+    }
+    expect(problems).toEqual([]);
+    expect(checked).toBeGreaterThanOrEqual(2);
+  }, 60_000);
 
   test('S4: a log axis over part of the rows fits whole decades around them', async () => {
     const problems: string[] = [];

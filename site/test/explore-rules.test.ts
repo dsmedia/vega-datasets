@@ -568,12 +568,12 @@ describe('Codex round 2', () => {
     expect(starterSpec(d)!.transform).toBeUndefined();
   });
 
-  test('#11 a fitted world map says how many points it leaves outside the frame', () => {
+  test('#11 a fitted world map says how many points it leaves outside the frame (its outliers, S9)', () => {
     const d = table([quant('latitude', 0, 60), quant('longitude', 0, 120)], 100, {
       points: { latitude: 'latitude', longitude: 'longitude', box: { longitude: [0, 20], latitude: [0, 20] }, us: 0, outsideUs: 100, outsideBox: 1 },
     });
     expect((starterSpec(d)!.projection as Record<string, unknown>).fit).toBeDefined();
-    expect(mapNote(d)).toBe('The map frames the middle 98% of the points; 1 of 100 rows lies outside the frame.');
+    expect(mapNote(d)).toBe('The map leaves out 1 of 100 rows, far from the rest: framing it would shrink the others.');
   });
 });
 

@@ -76,7 +76,9 @@ whose documented range reaches zero. A mean (a line of monthly averages) and a
 heatmap's color keep the measure's scale; a sum does not (its range is not the
 measure's). A chart of part of the rows (the Total mode's totals) fits its log axis to
 whole decades around those rows, not the column's full range: disasters' totals run from
-about 300 to 3.7 million, so the axis starts at 100, not at 1.
+about 300 to 3.7 million, so the axis starts at 100, not at 1. Such an axis labels its
+decades, and draws grid lines and ticks only there (not at 2 to 9 times each decade,
+which crowd the plot).
 
 Why: a linear axis squeezes the bulk of a heavy-tailed distribution against zero and
 gives the axis to a few outliers. Few recommends log scales for data spanning orders of
@@ -86,7 +88,7 @@ power-of-ten ticks make that plain.
 Tests: `explore-invariants.test.ts` (S4: log only on positive values, symlog only where
 zero is in range, a heavy tail or its mean on its scale, on generated and real datasets),
 `chart-standards.test.ts` (a log axis over part of the rows fits whole decades around
-them, from the rendered view), `explore-rules.test.ts` (G-2: log and symlog axes; log ticks).
+them; a log axis draws grid lines only where it has labels; both from the rendered view), `explore-rules.test.ts` (G-2: log and symlog axes; log ticks).
 
 ## S5. A jagged series is points, not a line
 
@@ -154,10 +156,14 @@ datasets, wide and on a phone).
 ## S9. A point map has a basemap
 
 Points with coordinates always sit on a basemap. Points close together (within 10
-degrees) get a Mercator map fitted to the middle 98% of them, over the most detailed
+degrees) get a Mercator map fitted to them, over the most detailed
 basemap vega-datasets has that holds them: Greater London's boroughs, the United States'
-counties, else the world's countries. Rows the frame leaves out are said below the chart,
-as the Albers USA map says its rows outside the 50 states. The builder finds the
+counties, else the world's countries. The frame holds every point but the outliers (a
+point beyond the middle 90% of the points by more than that middle's span, along either
+axis), with 5% to spare on each side, so no point sits on the edge: London's outer boroughs
+are the edge of the data, not outliers, and all 33 show. Outliers left out are said below
+the chart, as the Albers USA map says its rows outside the 50 states (la_riots: one death
+recorded 40 km east of the rest). The builder finds the
 coordinate columns (`coordinate_pair`): named latitude and longitude, a centroid's `cx`
 and `cy`, or `x` and `y` only when their descriptions say longitude and latitude, with
 every value in range.
@@ -166,8 +172,9 @@ Why: points with no map are a scatter plot with no place in it (la_riots' deaths
 Los Angeles; london_centroids drawn as x and y). The outline is what makes a position a
 place.
 
-Tests: `chart-standards.test.ts` (S9 on every real point map), `test_build_site_catalog.py`
-(the coordinate pair).
+Tests: `chart-standards.test.ts` (S9 on every real point map: a basemap, the frame's
+note, and no point but an outlier outside the frame, from the data files),
+`test_build_site_catalog.py` (the coordinate pair, the frame).
 
 ## S10. Labels read
 
