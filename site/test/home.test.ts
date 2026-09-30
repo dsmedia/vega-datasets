@@ -104,11 +104,22 @@ test('card summaries are the first paragraph as plain text', () => {
 });
 
 test('the showcase mixes all three galleries without repeats', () => {
-  const picks = showcase(catalog, 16);
+  const picks = showcase(catalog, 16).map((p) => p.example);
   expect(picks).toHaveLength(16);
   expect(new Set(picks.map((e) => e.id)).size).toBe(16);
   expect(new Set(picks.map((e) => e.gallery)).size).toBe(3);
   expect(picks.every((e) => e.thumb && e.thumbSize && e.thumbSize[0] > e.thumbSize[1])).toBe(true);
+});
+
+test('each showcase thumbnail stands for a different dataset that its example uses', () => {
+  // The strip links to datasets, not out to the galleries: this is a datasets site.
+  const picks = showcase(catalog, 16);
+  expect(new Set(picks.map((p) => p.dataset)).size).toBe(16);
+  for (const { example, dataset } of picks) {
+    const d = catalog.datasets.find((x) => x.name === dataset);
+    expect(d, dataset).toBeTruthy();
+    expect(catalog.examplesFor(d!).map((e) => e.id)).toContain(example.id);
+  }
 });
 
 test('About quotes README sections that exist', () => {

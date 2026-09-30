@@ -482,12 +482,18 @@ button.link:hover { text-decoration: underline; }
 .home-title { margin: 0.6em 0 0.25em; font-size: 40px; font-weight: 300; line-height: 1.2; color: var(--ink-strong); }
 .home-title b { font-weight: bold; }
 
-/* Gallery thumbnails in two rows, clipped at the edges; drawn on white in both themes. */
+/* Gallery thumbnails in two rows, clipped at the edges; drawn on white in both themes.
+   Each links to the dataset it shows, named in its corner. */
 .showcase {
   display: grid; grid-template-columns: repeat(8, 180px); grid-auto-rows: 100px; justify-content: center;
   overflow: hidden; margin-top: 16px;
 }
-.showcase a { display: block; background: #ffffff; outline: 1px solid var(--rule-soft); outline-offset: -1px; padding: 6px; }
+.showcase a { position: relative; display: block; background: #ffffff; outline: 1px solid var(--rule-soft); outline-offset: -1px; padding: 6px; }
+.showcase-name {
+  position: absolute; left: 6px; bottom: 6px; max-width: calc(100% - 12px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 1px 5px; font-size: 11px; line-height: 16px; background: rgb(255 255 255 / 0.92); color: #374151;
+}
+.showcase a:hover .showcase-name { text-decoration: underline; }
 .showcase img { display: block; width: 100%; height: 100%; object-fit: contain; }
 
 .intro { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 520px); gap: 60px; padding-top: 36px; align-items: start; }
