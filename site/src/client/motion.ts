@@ -140,7 +140,7 @@ async function start(section: HTMLElement): Promise<void> {
   await render();
   io.observe(chartHost);
   ro.observe(chartHost);
-  // The bubbles' colors come from the theme's tokens, so a theme switch redraws.
+  // Redraw when forced colors change so the chart follows the system palette.
   onThemeChange(() => void render());
 }
 

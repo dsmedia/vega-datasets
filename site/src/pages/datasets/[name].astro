@@ -120,7 +120,7 @@ const notSpecified = license === "Not specified";
 const { preview: _preview, ...clientData } = d;
 const title = datasetTitle(d);
 ---
-<Base title={title} description={datasetMetaDescription(d)} path={datasetPath(d.name)} section="dataset" jsonLd={[datasetJsonLd(c, d), breadcrumbJsonLd(d)]}>
+<Base title={title} description={datasetMetaDescription(d)} path={datasetPath(d.name)} jsonLd={[datasetJsonLd(c, d), breadcrumbJsonLd(d)]}>
   <Fragment slot="head">
     <link rel="prev" href={page(prev.name)}>
     <link rel="next" href={page(next.name)}>

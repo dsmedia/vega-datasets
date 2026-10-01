@@ -1,7 +1,7 @@
 /*
  * The Field Guide on the Vega family chrome: the tokens, type and header of
- * vega.github.io/vega, /vega-lite and altair-viz.github.io, with dark values
- * from Altair's pydata theme. Colors come only from the tokens below.
+ * vega.github.io/vega, /vega-lite and altair-viz.github.io.
+ * Colors come only from the tokens below.
  *
  * Gallery colors are the first slots of Vega's default categorical scheme
  * (tableau10), always paired with the gallery's name:
@@ -25,7 +25,7 @@
   --motion-neutral: #c4c4c4; --motion-watermark: #eeeeee;
   --shadow-menu: 0 0 20px 5px rgb(0 0 0 / 0.2); --shadow-pop: 0 4px 14px rgb(0 0 0 / 0.16);
 
-  /* Fixed in both themes: the site's own header hue (Vega is plum, Vega-Lite blue) and its ink. */
+  /* The site's own header hue (Vega is plum, Vega-Lite blue) and its ink. */
   --header: #234a3b; --header-ink: #eeeeee; --header-ink-active: #ffffff; --header-hover: #e5b928;
 
   --g-vegalite: var(--chart-1); --g-vega: var(--chart-2); --g-altair: var(--chart-4);
@@ -39,21 +39,7 @@
    the small labels this site sets in it (#666 is 5.7:1). */
 /* --link is the family's own button blue (#3771ad, 5.1:1 on white, 4.6:1 or more on every light
    ground here), not the family sites' steelblue #4682b4, which is 4.1:1 on white and under AA
-   for the small link text this site uses. Dark keeps Altair's #5d9bb6 (5.8:1). */
-/* The page starts light (index.html sets data-theme="light"); theme-init.js and the toggle set dark. */
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --surface: #14181e; --surface-alt: #222832; --surface-code: #29313d; --surface-pre: #222832; --surface-menu: #29313d;
-  --surface-card: #222832;
-  --ink: #ced6dd; --ink-strong: #f3f4f5; --ink-heading-4: #ced6dd; --ink-muted: #9ca4af; --ink-nav: #9ca4af; --ink-faint: #9ca4af;
-  --link: #5d9bb6; --rule: #48566b; --rule-soft: #364150; --rule-faint: #29313d;
-  --button-secondary: #29313d; --button-secondary-border: #48566b; --button-secondary-hover: #364150;
-  --selected: #8fbfd6; --selected-bg: #1c2a38; --selected-border: #5d9bb6; --tab-accent: #5d9bb6;
-  --warn-border: #8a4a12; --warn-bg: #3b2410; --warn-ink: #f8d9b4;
-  --success: #5fb488; --focus: #3fb1c5; --missing: #e78894;
-  --motion-neutral: #4f5b6c; --motion-watermark: #222832;
-  --shadow-pop: 0 4px 14px rgb(0 0 0 / 0.5);
-}
+   for the small link text this site uses. */
 
 /* --- Base -------------------------------------------------------------------- */
 *, *::before, *::after { box-sizing: border-box; }
@@ -113,13 +99,6 @@ code, .mono { font-family: var(--font-mono); font-size: 0.85em; }
 .vg-switcher:hover .vg-switcher-menu, .vg-switcher:focus-within .vg-switcher-menu { display: grid; }
 .vg-header .vg-switcher-menu a { color: var(--ink-nav); font-weight: 600; line-height: 2.4; padding: 0 20px; }
 .vg-header .vg-switcher-menu a:hover, .vg-header .vg-switcher-menu a:focus-visible { color: var(--ink-strong); }
-.vg-theme {
-  display: inline-grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%;
-  background: transparent; color: var(--header-ink); cursor: pointer;
-}
-.vg-theme:hover, .vg-theme:focus-visible { color: var(--header-hover); }
-.vg-theme .icon-sun, [data-theme="dark"] .vg-theme .icon-moon { display: none; }
-[data-theme="dark"] .vg-theme .icon-sun { display: block; }
 
 /* --- Footer ------------------------------------------------------------------- */
 .vg-footer { border-top: 1px solid var(--rule-faint); margin-top: 48px; }
@@ -156,16 +135,15 @@ code, .mono { font-family: var(--font-mono); font-size: 0.85em; }
   background: var(--surface); color: var(--ink); border: 1px solid var(--rule); border-radius: var(--radius-button);
   box-shadow: 2px 2px 4px rgb(0 0 0 / 0.1); font-family: var(--font-sans); font-size: 12px; line-height: 1.4;
 }
-[data-theme="dark"] .tip, [data-theme="dark"] #vg-tooltip-element.vg-tooltip.custom-theme { background: var(--surface-menu); box-shadow: var(--shadow-pop); }
 .tip { position: fixed; z-index: 1000; pointer-events: none; max-width: 280px; display: grid; gap: 1px; padding: 6px 8px; }
 .tip strong { color: var(--ink-strong); }
 .tip span { color: var(--ink-muted); font-family: var(--font-mono); font-size: 11.5px; font-variant-numeric: tabular-nums; }
 #vg-tooltip-element.custom-theme td.key { color: var(--ink-muted); }
 #vg-tooltip-element.custom-theme td.value { font-family: var(--font-mono); color: var(--ink-strong); }
 
-/* Vega's SVG, restyled from the tokens so charts follow light and dark without being drawn
-   again (Vega writes colors as presentation attributes, which any CSS rule overrides). This
-   covers the static charts drawn at build time and live SVG charts alike. */
+/* Vega's SVG uses the page tokens consistently for static and live charts.
+   CSS overrides Vega's presentation attributes; the forced-colors rules below adapt
+   both kinds of chart to the viewer's system palette without redrawing the SVG. */
 :where(.catalog-chart, .explore-chart) svg .role-axis-label text,
 :where(.catalog-chart, .explore-chart) svg .role-legend-label text { fill: var(--ink-muted); }
 :where(.catalog-chart, .explore-chart) svg .role-axis-title text,
@@ -186,7 +164,6 @@ code, .mono { font-family: var(--font-mono); font-size: 0.85em; }
   background: var(--surface); border: 1px solid var(--rule-soft); border-radius: var(--radius-button);
   box-shadow: var(--shadow-pop); font-family: var(--font-sans);
 }
-[data-theme="dark"] .vega-embed .vega-actions { background: var(--surface-menu); border-color: var(--rule); }
 .vega-embed .vega-actions a { color: var(--ink); font-family: var(--font-sans); }
 .vega-embed .vega-actions a:hover { background: var(--button-secondary-hover); color: var(--ink-strong); }
 .vega-embed .vega-actions::before, .vega-embed .vega-actions::after { display: none; }
@@ -338,7 +315,7 @@ td.f-miss { font-size: 12.5px; color: var(--ink-muted); }
 }
 .f-add:hover { color: var(--link); }
 
-/* --- Metadata status page ------------------------------------------------------------ */
+/* --- Metadata coverage page ---------------------------------------------------------- */
 .status-head { display: flex; flex-direction: column; gap: 10px; padding-top: 20px; }
 .status-head h1 { font-size: 40px; font-weight: 400; line-height: 1.1; color: var(--ink-strong); }
 .status-intro { max-width: 66ch; font-size: 15px; }
@@ -396,8 +373,8 @@ table.status tbody tr:target > * { background: var(--selected-bg); }
 /* Examples */
 .ex-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; }
 .ex { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-/* Gallery thumbnails are drawn on white; they stay on white in dark mode. overflow: hidden lets
-   aspect-ratio hold for tall thumbnails (it otherwise grows to fit its content). */
+/* Gallery thumbnails are drawn on white. overflow: hidden lets aspect-ratio hold for
+   tall thumbnails (it otherwise grows to fit its content). */
 .ex-thumb { display: block; aspect-ratio: 4 / 3; overflow: hidden; margin-bottom: 2px; padding: 6px; background: #ffffff; outline: 1px solid var(--rule-soft); outline-offset: -1px; }
 .ex-thumb:hover { outline: 2px solid var(--link); }
 .ex-thumb img { display: block; width: 100%; height: 100%; object-fit: contain; }
@@ -424,7 +401,6 @@ table.status tbody tr:target > * { background: var(--selected-bg); }
 .rail-use .tab { padding: 8px; font-size: 14px; }
 /* Long URLs and code lines wrap at hyphens and spaces first; mid-word only when a piece can't fit. */
 .rail-use .snippet { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
-[data-theme="dark"] .rail-use .snippet { background: var(--surface); }
 .rail-stack .usage, .rail-stack .stack { display: flex; width: 100%; height: 10px; }
 .rail-usage { display: grid; grid-template-columns: auto 1fr auto; gap: 6px 8px; align-items: center; font-size: 14px; }
 .rail-usage .mono { font-size: 12px; color: var(--ink); }
@@ -580,7 +556,7 @@ button.link:hover { text-decoration: underline; }
 .card .stack { width: 120px; }
 .cards-empty { color: var(--ink-muted); }
 /* Long lists show their first items, and the page's script expands them; without scripts
-   (no `js` class from theme-init.js) everything shows and the controls that need a script hide. */
+   (no `js` class from page-init.js) everything shows and the controls that need a script hide. */
 html.js .cards:not([data-managed]):not([data-expanded]) > .card:nth-child(n+10) { display: none; }
 html.js .ex-grid:not([data-managed]) > .ex:nth-child(n+9) { display: none; }
 html:not(.js) :is(.filters, .browse-foot .more, #examples .seg, #examples .more, .motion-controls, .motion-regions, .explore) { display: none; }
@@ -658,13 +634,12 @@ html:not(.js) :is(.filters, .browse-foot .more, #examples .seg, #examples .more,
   .use-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-/* Phone header (as on the family sites): the title and the theme switch on one row, the links below. */
+/* Phone header (as on the family sites): the title on one row, the links below. */
 @media (max-width: 640px) {
   .vg-nav { padding: 6px 16px 8px; gap: 2px 18px; min-height: 0; }
   .vg-primary, .vg-secondary { display: contents; }
   .vg-header a { line-height: 28px; font-size: 15px; }
   .vg-header a.vg-title { font-size: 19px; line-height: 40px; padding: 0; }
-  .vg-theme { order: 1; margin-left: auto; width: 44px; height: 44px; margin-right: -10px; }
   .vg-nav::after { content: ""; order: 2; flex-basis: 100%; }
   .vg-primary a { order: 3; }
   .vg-secondary a { order: 4; }

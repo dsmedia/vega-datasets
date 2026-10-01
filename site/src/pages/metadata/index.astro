@@ -1,8 +1,8 @@
 ---
 /**
- * The metadata status page, for contributors (DECISIONS D6): what "fully described" means,
+ * The metadata coverage page, for contributors: what "fully described" means,
  * a few calm totals, and every dataset against the checklist (components/StatusTable.astro).
- * Dataset pages with gaps link here; the home page's Contribute box does too.
+ * Linked from the site menu, dataset pages with gaps and the home page's Contribute box.
  */
 import StatusTable from "../../components/StatusTable.astro";
 import Base from "../../layouts/Base.astro";
@@ -17,7 +17,7 @@ const s = summarize(c.datasets);
 const of = (n: number, total: number) => `${formatCount(n)} of ${formatCount(total)}`;
 const description = "Which datasets in vega-datasets are fully described (title, description, source, license and field descriptions), and where to fill in the rest.";
 ---
-<Base title={`${STATUS_TITLE} · ${SITE_NAME}`} description={description} path={STATUS_PATH} section="none">
+<Base title={`${STATUS_TITLE} · ${SITE_NAME}`} description={description} path={STATUS_PATH}>
   <div class="wrap ds-bar">
     <nav class="crumbs" aria-label="Breadcrumb">
       <a href={base}>Datasets</a>

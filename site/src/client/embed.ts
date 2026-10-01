@@ -70,7 +70,7 @@ function setUp([embed, interp, vega]: Modules): VegaModules {
 }
 
 /**
- * Options for a chart drawn with `renderer`. SVG charts follow a theme switch through
+ * Options for a chart drawn with `renderer`. SVG charts follow forced-color changes through
  * site.css; canvas charts bake the colors in, so they are drawn again (see onThemeChange).
  */
 export function embedOptions(v: VegaModules, renderer: "svg" | "canvas", actions: EmbedOptions["actions"], onLoadError?: (uri: string, err: unknown) => void): EmbedOptions {

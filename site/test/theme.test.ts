@@ -108,14 +108,21 @@ test("the cars scatter plot draws its chrome in the system colors and its points
   expect(forced.points).toEqual(light.points);
 });
 
-describe('charts redraw when forced colors turn on or off', () => {
+describe('charts redraw only when the system palette changes', () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  test('a change of the forced-colors media query calls the listener; the same state does not', () => {
+  test('forced colors and palette changes redraw; ordinary OS scheme changes and unchanged palettes do not', () => {
     let forced = false;
+    let dark = false;
     const listeners: Record<string, (() => void)[]> = {};
+    vi.stubGlobal('getComputedStyle', () => ({
+      color: dark ? 'rgb(255, 255, 255)' : 'rgb(0, 0, 0)',
+      backgroundColor: dark ? 'rgb(0, 0, 0)' : 'rgb(255, 255, 255)',
+      borderTopColor: 'rgb(128, 128, 128)',
+      borderBottomColor: 'rgb(0, 0, 255)',
+    }));
     vi.stubGlobal('matchMedia', (query: string) => ({
-      get matches() { return query === '(forced-colors: active)' ? forced : false; },
+      get matches() { return query === '(forced-colors: active)' ? forced : dark; },
       media: query,
       addEventListener: (_: string, fn: () => void) => (listeners[query] ??= []).push(fn),
       removeEventListener: (_: string, fn: () => void) => { listeners[query] = (listeners[query] ?? []).filter((f) => f !== fn); },
@@ -123,18 +130,29 @@ describe('charts redraw when forced colors turn on or off', () => {
     const fn = vi.fn();
     const stop = onThemeChange(fn);
     const fire = () => listeners['(forced-colors: active)']?.forEach((f) => f());
+    const schemeChange = () => listeners['(prefers-color-scheme: dark)']?.forEach((f) => f());
     fire();
+    expect(fn).not.toHaveBeenCalled();
+    dark = true;
+    schemeChange();
     expect(fn).not.toHaveBeenCalled();
     forced = true;
     fire();
     expect(fn).toHaveBeenCalledTimes(1);
+    dark = false;
+    schemeChange();
+    expect(fn).toHaveBeenCalledTimes(2);
+    schemeChange();
+    expect(fn).toHaveBeenCalledTimes(2);
     forced = false;
     fire();
-    expect(fn).toHaveBeenCalledTimes(2);
+    expect(fn).toHaveBeenCalledTimes(3);
     stop();
     forced = true;
     fire();
-    expect(fn).toHaveBeenCalledTimes(2);
+    dark = true;
+    schemeChange();
+    expect(fn).toHaveBeenCalledTimes(3);
   });
 });
 
@@ -148,11 +166,8 @@ describe('the density ramp runs from the ground to the densest bin', () => {
   const rows = Array.from({ length: 2000 }, (_, i) => ({ a: i % 97, b: (i * 7) % 53 + (i % 5 === 0 ? 0 : 20) }));
   const grid = densityGrid(rows, 'a', 'b');
   const d = loadCatalog().dataset('flights_200k_json')!;
-  // The dark theme's tokens (site.css).
-  const DARK: ChartInk = { forced: false, ink: '#ced6dd', strong: '#f3f4f5', muted: '#9ca4af', rule: '#48566b', grid: '#29313d', surface: '#14181e', brush: '#ced6dd' };
   const grounds: [string, ChartInk][] = [
     ['light', LIGHT],
-    ['dark', DARK],
     ['forced, dark ground', forcedInk(SYSTEM)],
     ['forced, light ground', forcedInk({ canvasText: 'rgb(0, 0, 0)', canvas: 'rgb(255, 255, 255)', grayText: 'rgb(96, 96, 96)', highlight: 'rgb(0, 0, 160)' })],
   ];
