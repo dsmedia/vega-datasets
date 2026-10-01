@@ -18,6 +18,7 @@ import {
   homeCounts,
   homeIndex,
   indexCatalog,
+  isFiltered,
   listDatasets,
   NO_FILTERS,
   plainSummary,
@@ -75,15 +76,23 @@ describe('the card list', () => {
     expect(q('no dataset has this')).toEqual([]);
   });
 
-  test('chips in one group widen, groups narrow', () => {
+  test('formats filter datasets while galleries only change their usage counts', () => {
     const topo = listDatasets(catalog, { ...NO_FILTERS, formats: new Set(['TopoJSON']) });
     expect(topo).toHaveLength(counts.formats.TopoJSON);
     const either = listDatasets(catalog, { ...NO_FILTERS, formats: new Set(['TopoJSON', 'CSV']) });
     expect(either).toHaveLength(counts.formats.TopoJSON + counts.formats.CSV);
     const vega = listDatasets(catalog, { ...NO_FILTERS, galleries: new Set(['vega']) });
-    expect(vega).toHaveLength(counts.galleries.vega);
+    expect(vega).toHaveLength(counts.datasets);
     const both = listDatasets(catalog, { ...NO_FILTERS, formats: new Set(['TopoJSON']), galleries: new Set(['vega']) });
-    expect(both.every((d) => d.format === 'topojson' && catalog.usage(d).vega > 0)).toBe(true);
+    expect(both).toHaveLength(counts.formats.TopoJSON);
+    expect(both.every((d) => d.format === 'topojson')).toBe(true);
+    expect(isFiltered({ ...NO_FILTERS, galleries: new Set(['vega']) })).toBe(false);
+    expect(listDatasets(catalog, { ...NO_FILTERS, query: 'birdstrikes', galleries: new Set(['vega']) }).map((d) => d.name)).toContain('birdstrikes');
+  });
+
+  test('selecting every gallery keeps the same datasets and ranking as selecting none', () => {
+    expect(listDatasets(catalog, { ...NO_FILTERS, galleries: new Set(GALLERIES) })).toEqual(listDatasets(catalog, NO_FILTERS));
+    expect(catalog.datasets.some((d) => d.usedBy.length === 0)).toBe(true);
   });
 
   test('the chart brush keeps datasets inside it, in either drag direction', () => {
@@ -195,7 +204,15 @@ describe('the catalog chart', () => {
       expect(svg).not.toMatch(/NaN|undefined/);
       expect(svg.includes('role-legend')).toBe('legend' in o && o.legend === true);
       expect(svg).toContain('cars: JSON, 100 KB, Gallery examples: 52');
+      expect(svg).toContain('(square root scale)');
       expect(svg).toContain('10 MB');
+      // Counts remain in data units: the native scale spaces a quarter of the domain halfway up.
+      const y = view.scale('y');
+      const [lo, hi] = y.domain();
+      const [bottom, top] = y.range();
+      expect(lo).toBe(0);
+      expect(y(0)).toBe(bottom);
+      expect(y(hi / 4)).toBeCloseTo((bottom + top) / 2);
       const labels = [...svg.matchAll(/<text[^>]*font-family="monospace"[^>]*>([^<]+)<\/text>/g)].map((m) => m[1]);
       expect(labels).toHaveLength(o.labels);
       expect(labels).toContain('cars');
@@ -231,7 +248,7 @@ describe('the catalog chart', () => {
 
   const selections: Gallery[][] = [[], ['vega'], ['vega-lite'], ['altair'], ['vega-lite', 'vega'], ['vega', 'altair'], ['vega-lite', 'altair'], [...GALLERIES]];
 
-  test('Vega recomputes counts, ranks, descriptions and point visibility for every gallery combination under CSP', async () => {
+  test('Vega recounts and ranks every dataset including zeros for every gallery combination under CSP', async () => {
     const compiled = compile({ ...catalogSpec(rows, options), width: 800 } as TopLevelSpec).spec;
     const view = new vega.View(vega.parse(compiled, {}, { ast: true }), { renderer: 'none', expr: expressionInterpreter });
     try {
@@ -241,14 +258,14 @@ describe('the catalog chart', () => {
         const svg = await view.toSVG();
         const galleries = new Set(selected);
         const listed = listDatasets(catalog, { ...NO_FILTERS, galleries });
+        expect(listed).toHaveLength(counts.datasets);
         const values = listed.map((d) => usageCount(catalog, d, galleries));
         expect(values).toEqual([...values].sort((a, b) => b - a));
         for (const d of catalog.datasets) {
           const n = selected.length ? catalog.examplesFor(d).filter((e) => selected.includes(e.gallery)).length : d.usedBy.length;
           expect(usageCount(catalog, d, galleries)).toBe(n);
           const description = `aria-label="${d.name}: `;
-          if (selected.length && !n) expect(svg).not.toContain(description);
-          else expect(svg).toContain(`${description}${rows.find((r) => r.name === d.name)!.format}, ${formatBytes(d.bytes)}, ${usageTitle(galleries)}: ${n}"`);
+          expect(svg).toContain(`${description}${rows.find((r) => r.name === d.name)!.format}, ${formatBytes(d.bytes)}, ${usageTitle(galleries)}: ${n}"`);
         }
         expect(svg).not.toMatch(/NaN|undefined/);
         expect(svg).toContain(usageTitle(galleries));
@@ -272,7 +289,10 @@ describe('the catalog chart', () => {
       await view.signal('matched', ['cars']).runAsync();
       expect(toBrush(view.signal('brush'))).toEqual(brush);
       expect(await view.toSVG()).toContain('cars: JSON, 100 KB, Vega examples: 6');
-      expect(await view.toSVG()).toContain('role-legend');
+      const svg = await view.toSVG();
+      expect(svg).toContain('role-legend');
+      expect(svg).toContain('(square root scale)');
+      expect(svg).toContain('birdstrikes: CSV, 1.2 MB, Vega examples: 0');
     } finally { view.finalize(); }
   });
 
@@ -281,6 +301,13 @@ describe('the catalog chart', () => {
     const filters = { ...NO_FILTERS, galleries: new Set<Gallery>(['vega']), brush: { bytes: [cars.bytes! - 1, cars.bytes! + 1] as [number, number], examples: [5, 7] as [number, number] } };
     expect(listDatasets(catalog, filters).map((d) => d.name)).toContain('cars');
     expect(listDatasets(catalog, { ...filters, galleries: new Set() }).map((d) => d.name)).not.toContain('cars');
+  });
+
+  test('brushing the zero baseline finds every dataset unused by the selected gallery', () => {
+    const filters = { ...NO_FILTERS, galleries: new Set<Gallery>(['vega']), brush: { bytes: [50, 2e7] as [number, number], examples: [0, 0] as [number, number] } };
+    const unused = listDatasets(catalog, filters);
+    expect(unused.length).toBe(counts.datasets - counts.galleries.vega);
+    expect(unused.every((d) => catalog.usage(d).vega === 0)).toBe(true);
   });
 });
 

@@ -54,7 +54,12 @@ export function catalogSpec(rows: ChartRow[], o: ChartOptions): Spec {
     scale: { type: "log", domain: [50, 2e7] },
     axis: { title: "File size (log scale)", values: [1e2, 1e3, 1e4, 1e5, 1e6, 1e7], labelExpr: BYTES_LABEL, grid: false },
   };
-  const y = { field: "examples", type: "quantitative", axis: { title: { expr: "galleryTitle" }, tickMinStep: 1 } };
+  const y = {
+    field: "examples",
+    type: "quantitative",
+    scale: { type: "sqrt", zero: true },
+    axis: { title: { expr: "[galleryTitle, '(square root scale)']" }, tickMinStep: 1 },
+  };
   const label = (test: string, align: "left" | "right") => ({
     transform: [{ filter: `datum.usageRank <= ${o.labels} && ${test}` }],
     // Names repeat the points' descriptions, so screen readers skip them.
@@ -73,10 +78,9 @@ export function catalogSpec(rows: ChartRow[], o: ChartOptions): Spec {
       { name: "galleryTitle", expr: "!length(galleries) || length(galleries) === 3 ? 'Gallery examples' : replace(replace(replace(join(galleries, ' + '), 'vega-lite', 'Vega-Lite'), 'vega', 'Vega'), 'altair', 'Altair') + ' examples'" },
       { name: "matched", value: o.matched ?? null },
     ],
-    // Vega owns the recount, exclusion of unused datasets, ranking and accessible descriptions.
+    // Vega owns the recount, ranking and accessible descriptions, including zero-use datasets.
     transform: [
       { calculate: `!length(galleries) ? datum.total : ${selectedCount}`, as: "examples" },
-      { filter: "!length(galleries) || datum.examples > 0" },
       { window: [{ op: "row_number", as: "usageRank" }], sort: [{ field: "examples", order: "descending" }, { field: "name", order: "ascending" }] },
       { calculate: "galleryTitle", as: "scope" },
       { calculate: "datum.name + ': ' + datum.format + ', ' + datum.size + ', ' + galleryTitle + ': ' + datum.examples", as: "description" },

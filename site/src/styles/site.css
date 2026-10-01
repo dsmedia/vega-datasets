@@ -701,6 +701,7 @@ html:not(.js) :is(.filters, .browse-foot .more, #examples .seg, #examples .more,
   .filters input[type="search"] { width: 100%; height: 44px; font-size: 16px; }
   .chip-row { flex-wrap: wrap; }
   .chip-group { flex-wrap: wrap; }
+  .gallery-scope .chip-label { display: block; flex-basis: 100%; }
   .chip { min-height: 44px; }
   .sort { margin-left: 0; }
   .sort select { height: 36px; }
