@@ -11,19 +11,22 @@ interface Props {
   id: string;
   url: string;
   snippets: Snippet[];
+  /** A compact quickstart can offer the URL as a tab instead of a separate block. */
+  urlTab?: boolean;
 }
-const { id, url, snippets } = Astro.props;
+const { id, url, snippets, urlTab = false } = Astro.props;
+const tabs = urlTab ? [{ name: "URL", code: url }, ...snippets] : snippets;
 ---
-<div class="snippets" data-snippets>
-  <pre class="snippet snippet-url" data-snippet-url aria-label="URL"><code>{url}</code></pre>
-  {snippets.length > 0 && (
-    <div class="tabs" role="tablist" aria-label="Tool">
-      {snippets.map((s, i) => (
-        <button class="tab" role="tab" type="button" id={`${id}-tab-${i}`} data-tool={s.name} aria-controls={`${id}-panel-${i}`} aria-selected={i === 0 ? "true" : "false"} tabindex={i === 0 ? 0 : -1}>{s.name}</button>
+<div class:list={["snippets", { "snippets-compact": urlTab }]} data-snippets>
+  {!urlTab && <pre class="snippet snippet-url" data-snippet-url aria-label="URL"><code>{url}</code></pre>}
+  {tabs.length > 0 && (
+    <div class="tabs" role="tablist" aria-label={urlTab ? "Load data" : "Tool"}>
+      {tabs.map((s, i) => (
+        <button class="tab" role="tab" type="button" id={`${id}-tab-${i}`} data-tool={s.name === "URL" ? undefined : s.name} aria-controls={`${id}-panel-${i}`} aria-selected={i === 0 ? "true" : "false"} tabindex={i === 0 ? 0 : -1}>{s.name}</button>
       ))}
     </div>
   )}
-  {snippets.map((s, i) => (
+  {tabs.map((s, i) => (
     <pre class="snippet" role="tabpanel" id={`${id}-panel-${i}`} aria-labelledby={`${id}-tab-${i}`} tabindex="0" hidden={i !== 0}><code>{s.code}</code></pre>
   ))}
 </div>

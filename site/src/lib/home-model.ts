@@ -2,7 +2,7 @@
  * What the home page shows, as plain data: counts, the catalog chart's rows, and
  * the card list after search, filters and sort. No DOM, so it is unit-tested.
  */
-import { Catalog, type CatalogFile, type Dataset, type Example, type Gallery, GALLERIES } from "./catalog";
+import { Catalog, type CatalogFile, type Dataset, type Example, type Gallery, GALLERIES, GALLERY_LABEL } from "./catalog";
 
 /** The chart's color groups: the three common formats, everything else together. */
 export const FORMAT_GROUPS = ["JSON", "CSV", "TopoJSON", "Other"] as const;
@@ -43,6 +43,19 @@ export interface Filters {
 
 export const NO_FILTERS: Filters = { query: "", formats: new Set(), galleries: new Set(), brush: null, sort: "used" };
 
+/** No gallery selected means all galleries; multiple selections combine their examples. */
+export function usageCount(c: Catalog, d: Dataset, galleries: ReadonlySet<Gallery>): number {
+  if (!galleries.size) return d.usedBy.length;
+  const usage = c.usage(d);
+  return GALLERIES.reduce((n, g) => n + (galleries.has(g) ? usage[g] : 0), 0);
+}
+
+export function usageTitle(galleries: ReadonlySet<Gallery>): string {
+  return galleries.size && galleries.size < GALLERIES.length
+    ? `${GALLERIES.filter((g) => galleries.has(g)).map((g) => GALLERY_LABEL[g]).join(" + ")} examples`
+    : "Gallery examples";
+}
+
 export function isFiltered(f: Filters): boolean {
   return f.query.trim() !== "" || f.formats.size > 0 || f.galleries.size > 0 || f.brush !== null;
 }
@@ -62,26 +75,24 @@ function matches(d: Dataset, needle: string): boolean {
 /** The datasets to list: every active filter must match (within a chip group, any chip). */
 export function listDatasets(c: Catalog, f: Filters): Dataset[] {
   const needle = f.query.trim().toLowerCase();
+  const uses = new Map(c.datasets.map((d) => [d.name, usageCount(c, d, f.galleries)]));
   const list = c.datasets.filter((d) => {
     if (needle && !matches(d, needle)) return false;
     if (f.formats.size && !f.formats.has(formatGroup(d))) return false;
-    if (f.galleries.size) {
-      const usage = c.usage(d);
-      if (![...f.galleries].some((g) => usage[g] > 0)) return false;
-    }
-    if (f.brush && !(within(d.bytes ?? 0, f.brush.bytes) && within(d.usedBy.length, f.brush.examples))) return false;
+    if (f.galleries.size && !uses.get(d.name)) return false;
+    if (f.brush && !(within(d.bytes ?? 0, f.brush.bytes) && within(uses.get(d.name)!, f.brush.examples))) return false;
     return true;
   });
   // c.datasets is A to Z, and sort() is stable, so ties stay alphabetical.
-  if (f.sort === "used") list.sort((a, b) => b.usedBy.length - a.usedBy.length);
+  if (f.sort === "used") list.sort((a, b) => uses.get(b.name)! - uses.get(a.name)!);
   if (f.sort === "size") list.sort((a, b) => (b.bytes ?? 0) - (a.bytes ?? 0));
   return list;
 }
 
 /**
  * The datasets the search and chips match, ignoring the brush: the chart shows these at
- * full strength, and the brush then narrows the cards within them. The chart never drops
- * points, so its axes don't move under a brush.
+ * full strength, and the brush then narrows the cards within them. Search and format
+ * chips don't move the axes; changing galleries recomputes the chart and clears its brush.
  */
 export function baseMatches(c: Catalog, f: Filters): Dataset[] {
   return listDatasets(c, { ...f, brush: null });
@@ -97,7 +108,7 @@ export interface HomeCounts {
   galleries: Record<Gallery, number>;
 }
 
-/** Datasets per format group (the chart legend's and the chips' counts). */
+/** Datasets per format group (the format chips' counts). */
 export function formatCounts(c: Catalog): Record<FormatGroup, number> {
   const formats = Object.fromEntries(FORMAT_GROUPS.map((g) => [g, 0])) as Record<FormatGroup, number>;
   for (const d of c.datasets) formats[formatGroup(d)]++;
@@ -124,7 +135,8 @@ export interface ChartRow {
   name: string;
   bytes: number;
   size: string;
-  examples: number;
+  total: number;
+  usage: Record<Gallery, number>;
   format: FormatGroup;
   href: string;
 }
@@ -137,7 +149,8 @@ export function chartRows(c: Catalog, size: (bytes: number) => string): ChartRow
       name: d.name,
       bytes: d.bytes!,
       size: size(d.bytes!),
-      examples: d.usedBy.length,
+      total: d.usedBy.length,
+      usage: c.usage(d),
       format: formatGroup(d),
       href: `datasets/${encodeURIComponent(d.name)}/`,
     }));

@@ -7,8 +7,9 @@
  * The spec is drawn twice: to static SVG when the site is built (so the chart is
  * in the HTML), then live in the browser (client/catalog-chart.ts).
  */
-import type { Brush, ChartRow, FormatGroup } from "./home-model";
+import type { Brush, ChartRow } from "./home-model";
 import { FORMAT_COLORS, FORMAT_GROUPS } from "./home-model";
+import { GALLERIES, type Gallery } from "./catalog";
 
 type Spec = Record<string, unknown>;
 
@@ -18,10 +19,12 @@ export interface ChartOptions {
   height: number;
   /** How many of the most used datasets get a name label. */
   labels: number;
-  /** Put the legend above the plot (narrow screens) instead of at the right. */
-  legendTop: boolean;
-  /** Legend entries per row when it sits on top: 2 on the narrowest phones, so it clears the menu button. */
-  legendColumns?: number;
+  /** Initial parameter values, also used by standalone exports and the Editor. */
+  galleries?: Gallery[];
+  matched?: string[] | null;
+  initialBrush?: Brush | null;
+  /** The page uses format chips as its key; standalone charts need their own legend. */
+  legend?: boolean;
   /** Font for the name labels (the page's mono stack). */
   monoFont: string;
 }
@@ -32,13 +35,8 @@ const BYTES_LABEL = "datum.value >= 1e6 ? datum.value / 1e6 + ' MB' : datum.valu
 /** Labels right of their point, or left of it near the right edge. */
 const LABEL_FLIP = 5e5;
 
-export function catalogSpec(rows: ChartRow[], counts: Record<FormatGroup, number>, o: ChartOptions): Spec {
-  const labeled = new Set([...rows].sort((a, b) => b.examples - a.examples || a.name.localeCompare(b.name)).slice(0, o.labels).map((r) => r.name));
-  const values = rows.map((r) => ({
-    ...r,
-    label: labeled.has(r.name),
-    description: `${r.name}: ${r.format}, ${r.size}, ${r.examples} gallery ${r.examples === 1 ? "example" : "examples"}`,
-  }));
+export function catalogSpec(rows: ChartRow[], o: ChartOptions): Spec {
+  const selectedCount = GALLERIES.map((g) => `(indexof(galleries, '${g}') >= 0 ? datum.usage['${g}'] : 0)`).join(" + ");
   // Points outside the search and chip filters fade (the `matched` param, set by the page);
   // on wide screens, so do points outside the brush.
   const dim = {
@@ -50,35 +48,49 @@ export function catalogSpec(rows: ChartRow[], counts: Record<FormatGroup, number
       value: o.brush ? 0.18 : 1,
     },
   };
-  const legendLabel = FORMAT_GROUPS.reduceRight(
-    (rest, g) => `datum.label === '${g}' ? '${g} ${counts[g]}' : ${rest}`,
-    "datum.label",
-  );
   const x = {
     field: "bytes",
     type: "quantitative",
     scale: { type: "log", domain: [50, 2e7] },
     axis: { title: "File size (log scale)", values: [1e2, 1e3, 1e4, 1e5, 1e6, 1e7], labelExpr: BYTES_LABEL, grid: false },
   };
-  const y = { field: "examples", type: "quantitative", title: "Gallery examples", axis: { tickMinStep: 1 } };
+  const y = { field: "examples", type: "quantitative", axis: { title: { expr: "galleryTitle" }, tickMinStep: 1 } };
   const label = (test: string, align: "left" | "right") => ({
-    transform: [{ filter: `datum.label && ${test}` }],
+    transform: [{ filter: `datum.usageRank <= ${o.labels} && ${test}` }],
     // Names repeat the points' descriptions, so screen readers skip them.
     mark: { type: "text", align, dx: align === "left" ? 8 : -8, baseline: "middle", fontSize: 11, font: o.monoFont, aria: false },
     encoding: { x, y, text: { field: "name" }, href: { field: "href" }, ...dim },
   });
   return {
     $schema: "https://vega.github.io/schema/vega-lite/v6.json",
-    description: "Every vega-datasets file by size and by the number of gallery examples that use it, colored by format. Drag to filter the list; click a point to open its dataset.",
+    description: "Datasets by file size and example counts in the selected galleries, colored by format. Drag to filter the list; click a point to open its dataset.",
     width: "container",
     height: o.height,
     autosize: { type: "fit-x", contains: "padding" },
-    data: { values },
-    // Names of the datasets the page's filters match; null when nothing is filtered.
-    params: [{ name: "matched", value: null }],
+    data: { values: rows },
+    params: [
+      { name: "galleries", value: o.galleries ?? [] },
+      { name: "galleryTitle", expr: "!length(galleries) || length(galleries) === 3 ? 'Gallery examples' : replace(replace(replace(join(galleries, ' + '), 'vega-lite', 'Vega-Lite'), 'vega', 'Vega'), 'altair', 'Altair') + ' examples'" },
+      { name: "matched", value: o.matched ?? null },
+    ],
+    // Vega owns the recount, exclusion of unused datasets, ranking and accessible descriptions.
+    transform: [
+      { calculate: `!length(galleries) ? datum.total : ${selectedCount}`, as: "examples" },
+      { filter: "!length(galleries) || datum.examples > 0" },
+      { window: [{ op: "row_number", as: "usageRank" }], sort: [{ field: "examples", order: "descending" }, { field: "name", order: "ascending" }] },
+      { calculate: "galleryTitle", as: "scope" },
+      { calculate: "datum.name + ': ' + datum.format + ', ' + datum.size + ', ' + galleryTitle + ': ' + datum.examples", as: "description" },
+    ],
     layer: [
       {
-        ...(o.brush ? { params: [{ name: "brush", select: { type: "interval", encodings: ["x", "y"] } }] } : {}),
+        ...(o.brush ? { params: [{
+          name: "brush",
+          select: {
+            type: "interval", encodings: ["x", "y"],
+            clear: "dblclick, window:catalogclear",
+          },
+          ...(o.initialBrush ? { value: { x: o.initialBrush.bytes, y: o.initialBrush.examples } } : {}),
+        }] } : {}),
         mark: { type: "circle", size: 64, opacity: 1 },
         encoding: {
           x,
@@ -88,9 +100,7 @@ export function catalogSpec(rows: ChartRow[], counts: Record<FormatGroup, number
             type: "nominal",
             title: "Format",
             scale: { domain: [...FORMAT_GROUPS], range: FORMAT_GROUPS.map((g) => FORMAT_COLORS[g]) },
-            legend: o.legendTop
-              ? { orient: "top", direction: "horizontal", columns: o.legendColumns ?? 4, title: null, labelExpr: legendLabel, columnPadding: 10, symbolSize: 50, offset: 6 }
-              : { labelExpr: legendLabel },
+            legend: o.legend ? { orient: "top", direction: "horizontal", columns: 2, title: "Format" } : null,
           },
           ...dim,
           href: { field: "href" },
@@ -99,7 +109,8 @@ export function catalogSpec(rows: ChartRow[], counts: Record<FormatGroup, number
             { field: "name", title: "Dataset" },
             { field: "format", title: "Format" },
             { field: "size", title: "Size" },
-            { field: "examples", title: "Gallery examples" },
+            { field: "scope", title: "Counting" },
+            { field: "examples", title: "Examples" },
           ],
         },
       },

@@ -9,7 +9,7 @@ function box(names: string[]): HTMLElement {
   const b = boxes++;
   const root = document.createElement('div');
   root.dataset.snippets = '';
-  root.innerHTML = `<div role="tablist">${names.map((n, i) => `<button role="tab" data-tool="${n}" aria-controls="b${b}p${i}" aria-selected="${i === 0}">${n}</button>`).join('')}</div>`
+  root.innerHTML = `<div role="tablist">${names.map((n, i) => `<button role="tab"${n === 'URL' ? '' : ` data-tool="${n}"`} aria-controls="b${b}p${i}" aria-selected="${i === 0}">${n}</button>`).join('')}</div>`
     + names.map((n, i) => `<pre role="tabpanel" id="b${b}p${i}"${i === 0 ? '' : ' hidden'}><code>${n} code</code></pre>`).join('');
   document.body.append(root);
   return root;
@@ -47,4 +47,19 @@ test('blocked storage still switches tabs', () => {
   enhanceSnippets(root);
   root.querySelectorAll<HTMLButtonElement>('[role=tab]')[1]!.click();
   expect(selected(root)).toBe('Vega');
+});
+
+test('copying the URL tab does not replace the remembered tool, and keyboard navigation includes it', () => {
+  localStorage.setItem(TOOL_KEY, 'Altair');
+  const root = box(['URL', 'Vega-Lite', 'Vega', 'Altair', 'JavaScript']);
+  enhanceSnippets(root);
+  expect(selected(root)).toBe('Altair');
+  const url = root.querySelector<HTMLButtonElement>('[role=tab]')!;
+  url.click();
+  expect(selected(root)).toBe('URL');
+  expect(localStorage.getItem(TOOL_KEY)).toBe('Altair');
+  url.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+  expect(selected(root)).toBe('Vega-Lite');
+  expect(document.activeElement?.textContent).toBe('Vega-Lite');
+  expect(root.querySelectorAll('[role=tabpanel] .copy-btn')).toHaveLength(5);
 });

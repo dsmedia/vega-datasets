@@ -22,6 +22,14 @@ const order = () => [...document.querySelectorAll<HTMLElement>('.cards a.card')]
 const card = (name: string) => document.querySelector<HTMLAnchorElement>(`.cards a.card[data-name="${name}"]`)!;
 const settle = () => new Promise((r) => setTimeout(r, 300));
 const scrollIntoView = vi.fn();
+const mounted = vi.hoisted(() => ({ redraw: vi.fn(async () => {}), setMatches: vi.fn(), setGalleries: vi.fn(), clearBrush: vi.fn(), destroy: vi.fn() }));
+let brushChange: (b: import('../src/lib/home-model').Brush | null) => void;
+vi.mock('../src/client/catalog-chart', () => ({
+  mountCatalogChart: vi.fn(async (_host, _rows, _options, onBrush) => {
+    brushChange = onBrush;
+    return mounted;
+  }),
+}));
 
 beforeAll(async () => {
   const html = readFileSync(path.join(REPO, 'site', 'dist', 'index.html'), 'utf8');
@@ -110,4 +118,35 @@ test('a legacy #name set after load opens that dataset\'s page', () => {
   window.dispatchEvent(new HashChangeEvent('hashchange'));
   expect(here.replace).toHaveBeenCalledTimes(1);
   expect(here.replace).toHaveBeenCalledWith('https://vega.github.io/vega-datasets/datasets/cars/');
+});
+
+test('gallery selection keeps card counts, ranking, chart parameters and brush scope consistent', async () => {
+  here.hash = '';
+  const sort = document.querySelector<HTMLSelectElement>('#home-sort')!;
+  sort.value = 'used';
+  sort.dispatchEvent(new Event('change'));
+  document.querySelector<HTMLButtonElement>('[data-gallery="vega"]')!.click();
+  await settle();
+  expect(mounted.setGalleries).toHaveBeenLastCalledWith(['vega']);
+  expect(card('cars').querySelector('[data-usage-count]')!.textContent).toBe('6');
+  expect(card('cars').querySelector<HTMLElement>('[data-usage-gallery="altair"]')!.hidden).toBe(true);
+  expect(document.querySelector('[data-usage-scope]')!.textContent).toBe('Vega examples');
+  const shown = () => [...document.querySelectorAll<HTMLAnchorElement>('.cards .card')].filter((a) => !a.hidden);
+  const counts = shown().map((a) => Number(a.querySelector('[data-usage-count]')!.textContent));
+  expect(counts).toEqual([...counts].sort((a, b) => b - a));
+
+  brushChange({ bytes: [0, 1], examples: [0, 1] });
+  expect(shown()).toHaveLength(0);
+  document.querySelector<HTMLButtonElement>('[data-gallery="altair"]')!.click();
+  await settle();
+  expect(shown().length).toBeGreaterThan(0);
+  expect(mounted.setGalleries).toHaveBeenLastCalledWith(['vega', 'altair']);
+  expect(card('cars').querySelector('[data-usage-count]')!.textContent).toBe('25');
+  expect(document.querySelector('.status')!.textContent).not.toContain('filtered by chart');
+
+  document.querySelector<HTMLButtonElement>('.status button')!.click();
+  await settle();
+  expect(mounted.setGalleries).toHaveBeenLastCalledWith([]);
+  expect(card('cars').querySelector('[data-usage-count]')!.textContent).toBe('52');
+  expect(card('cars').querySelector<HTMLElement>('[data-usage-gallery="altair"]')!.hidden).toBe(false);
 });
