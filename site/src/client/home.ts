@@ -4,7 +4,7 @@
  * filters live in the URL (`?q=…&format=CSV&used=vega&sort=az&all=1`), so a filtered
  * list can be shared and Back from a dataset returns to it.
  */
-import { type Catalog, GALLERIES, type Gallery } from "../lib/catalog";
+import { type Catalog, GALLERIES, GALLERY_LABEL, type Gallery } from "../lib/catalog";
 import { formatBytes, formatCount } from "../lib/format";
 import {
   baseMatches,
@@ -13,7 +13,6 @@ import {
   type Filters,
   FORMAT_GROUPS,
   type FormatGroup,
-  formatCounts,
   type HomeIndex,
   indexCatalog,
   isFiltered,
@@ -23,6 +22,8 @@ import {
   SORT_LABEL,
   SORT_NOTE,
   type Sort,
+  usageCount,
+  usageTitle,
 } from "../lib/home-model";
 import { mountCatalogChart, type MountedChart } from "./catalog-chart";
 import { $, h, placeInOrder, whenIdle } from "./dom";
@@ -52,6 +53,7 @@ const status = $(".browse .status");
 const empty = $(".cards-empty");
 const more = $<HTMLButtonElement>(".browse-foot .more");
 const chartHost = $("[data-chart]");
+const usageScope = $("[data-usage-scope]");
 const formatChips = [...document.querySelectorAll<HTMLButtonElement>(".chip[data-format]")];
 const galleryChips = [...document.querySelectorAll<HTMLButtonElement>(".chip[data-gallery]")];
 
@@ -106,10 +108,37 @@ function load(): Promise<Catalog> {
 
 // --- The list ------------------------------------------------------------------------------
 let chart: MountedChart | null = null;
+let cardScope: string | null = null;
+
+function updateUsage(c: Catalog): void {
+  const selected = GALLERIES.filter((g) => filters.galleries.has(g));
+  chart?.setGalleries(selected);
+  const key = selected.join("|");
+  if (cardScope === key) return;
+  cardScope = key;
+  usageScope.textContent = `${usageTitle(filters.galleries)}${selected.length && selected.length < GALLERIES.length ? "" : " across all three libraries"}`;
+  const max = Math.max(...c.datasets.map((d) => usageCount(c, d, filters.galleries)), 1);
+  for (const d of c.datasets) {
+    const card = cardFor.get(d.name)!;
+    const n = usageCount(c, d, filters.galleries);
+    const usage = c.usage(d);
+    card.querySelector("[data-usage-count]")!.textContent = formatCount(n);
+    card.querySelector(".card-ex")!.textContent = n === 1 ? " example" : " examples";
+    card.querySelectorAll<HTMLElement>("[data-usage-gallery]").forEach((bar) => {
+      const g = bar.dataset.usageGallery as Gallery;
+      bar.hidden = selected.length > 0 && !filters.galleries.has(g);
+      bar.style.width = `${100 * usage[g] / max}%`;
+    });
+    const detail = GALLERIES.filter((g) => usage[g] && (!selected.length || filters.galleries.has(g)))
+      .map((g) => `${GALLERY_LABEL[g]} ${usage[g]}`).join(", ");
+    card.querySelector("[data-usage-detail]")!.textContent = detail ? ` (${detail})` : "";
+  }
+}
 
 function update(): void {
   if (!catalog) return;
   const c = catalog;
+  updateUsage(c);
   const list = listDatasets(c, filters);
   chart?.setMatches(isFiltered({ ...filters, brush: null }) ? baseMatches(c, filters).map((d) => d.name) : null);
   const limit = phone.matches ? CARDS.phone : CARDS.wide;
@@ -154,7 +183,7 @@ function clearAll(): void {
   const hadBrush = filters.brush !== null;
   Object.assign(filters, { ...NO_FILTERS, formats: new Set(), galleries: new Set() });
   syncControls();
-  if (hadBrush) void chart?.redraw();
+  if (hadBrush) chart?.clearBrush();
   refilter();
 }
 
@@ -174,7 +203,11 @@ const toggle = <T>(set: Set<T>, value: T, button: HTMLButtonElement) => {
   refilter();
 };
 formatChips.forEach((b) => b.addEventListener("click", () => toggle(filters.formats, b.dataset.format as FormatGroup, b)));
-galleryChips.forEach((b) => b.addEventListener("click", () => toggle(filters.galleries, b.dataset.gallery as Gallery, b)));
+galleryChips.forEach((b) => b.addEventListener("click", () => {
+  // The y values change meaning. Vega's clear event stream resets the visible brush too.
+  filters.brush = null;
+  toggle(filters.galleries, b.dataset.gallery as Gallery, b);
+}));
 more.addEventListener("click", () => {
   expanded = true;
   if (catalog) update();
@@ -201,12 +234,11 @@ function hydrate(): Promise<void> {
       brush: !phone.matches,
       height: phone.matches ? 214 : 240,
       labels: phone.matches ? 5 : 9,
-      legendTop: phone.matches,
-      legendColumns: chartHost.clientWidth < 340 ? 2 : 4,
+      galleries: GALLERIES.filter((g) => filters.galleries.has(g)),
       monoFont: token("--font-mono"),
     });
     try {
-      chart = await mountCatalogChart(chartHost, chartRows(c, formatBytes), formatCounts(c), options, onBrush);
+      chart = await mountCatalogChart(chartHost, chartRows(c, formatBytes), options, onBrush);
       update();
     } catch (err) {
       chartHost.append(h("p", { class: "muted" }, `The live chart didn't load: ${err instanceof Error ? err.message : String(err)}`));
@@ -253,5 +285,8 @@ openTarget(location.hash, true);
 // Filters from the URL (a shared link, or Back from a dataset): apply them straight away.
 readUrl();
 syncControls();
-if (isFiltered(filters) || filters.sort !== "used" || expanded) void load().then(update);
+if (isFiltered(filters) || filters.sort !== "used" || expanded) void load().then(() => {
+  update();
+  if (isFiltered(filters)) void hydrate();
+});
 else whenIdle(() => void load());

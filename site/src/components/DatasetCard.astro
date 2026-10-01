@@ -25,6 +25,6 @@ const geo = d.format === "topojson" || d.format === "geojson";
       {geo && <span>Geographic</span>}
       <span class="card-size">{formatBytes(d.bytes)}</span>
     </div>
-    <span class="card-usage"><UsageStack counts={catalog.usage(d)} max={max} /><span class="mono">{n ? formatCount(n) : "0"}<span class="card-ex">{n === 1 ? " example" : " examples"}</span></span></span>
+    <span class="card-usage"><UsageStack counts={catalog.usage(d)} max={max} /><span class="mono"><span data-usage-count>{formatCount(n)}</span><span class="card-ex">{n === 1 ? " example" : " examples"}</span></span></span>
   </div>
 </a>

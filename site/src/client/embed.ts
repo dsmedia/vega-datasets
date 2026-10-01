@@ -16,6 +16,7 @@ import { chartInk, token } from "./theme";
 import { dismissTipsOnTouch } from "./tooltip";
 
 export interface VegaModules {
+  View: typeof import("vega").View;
   vegaEmbed: typeof import("vega-embed").default;
   expressionInterpreter: typeof import("vega-interpreter").expressionInterpreter;
   /** A loader for one chart; `onError` hears of each file that failed to load. */
@@ -65,7 +66,7 @@ function setUp([embed, interp, vega]: Modules): VegaModules {
     };
     return l;
   };
-  return { vegaEmbed: embed.default, expressionInterpreter: interp.expressionInterpreter, loader };
+  return { View: vega.View, vegaEmbed: embed.default, expressionInterpreter: interp.expressionInterpreter, loader };
 }
 
 /**

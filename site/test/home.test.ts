@@ -7,7 +7,8 @@ import * as vega from 'vega';
 import { compile, type TopLevelSpec } from 'vega-lite';
 import { describe, expect, test } from 'vitest';
 import { catalogSpec, toBrush } from '../src/lib/catalog-chart';
-import { Catalog } from '../src/lib/catalog';
+import { Catalog, GALLERIES, type Gallery } from '../src/lib/catalog';
+import { expressionInterpreter } from 'vega-interpreter';
 import { formatBytes } from '../src/lib/format';
 import {
   baseMatches,
@@ -22,6 +23,8 @@ import {
   plainSummary,
   readmeSection,
   showcase,
+  usageCount,
+  usageTitle,
 } from '../src/lib/home-model';
 import { loadCatalog, REPO } from './catalog';
 
@@ -161,12 +164,7 @@ test('links to README sections use anchors GitHub gives its headings', () => {
 
 describe('the catalog chart', () => {
   const rows = chartRows(catalog, formatBytes);
-  const options = { brush: true, height: 240, labels: 9, legendTop: false, monoFont: 'monospace' };
-
-  test('describes each point for screen readers without internals', () => {
-    const values = (catalogSpec(rows, counts.formats, options).data as { values: { name: string; description: string }[] }).values;
-    expect(values.find((v) => v.name === 'cars')!.description).toMatch(/^cars: JSON, \d+ KB, \d+ gallery examples$/);
-  });
+  const options = { brush: true, height: 240, labels: 9, monoFont: 'monospace' };
 
   test('has a row per dataset, linking to its page', () => {
     expect(rows).toHaveLength(counts.datasets);
@@ -175,8 +173,8 @@ describe('the catalog chart', () => {
 
   test.each([
     ['wide, with brush', options],
-    ['phone, tap only', { ...options, brush: false, height: 214, labels: 5, legendTop: true }],
-    ['narrowest phone', { ...options, brush: false, height: 214, labels: 5, legendTop: true, legendColumns: 2 }],
+    ['phone, tap only', { ...options, brush: false, height: 214, labels: 5 }],
+    ['standalone export', { ...options, legend: true }],
   ])('%s: compiles without warnings and draws every point', async (_name, o) => {
     const warnings: string[] = [];
     const logger = {
@@ -186,7 +184,7 @@ describe('the catalog chart', () => {
       info: () => logger,
       debug: () => logger,
     };
-    const spec = { ...catalogSpec(rows, counts.formats, o), width: 800 };
+    const spec = { ...catalogSpec(rows, o), width: 800 };
     const { spec: vgSpec } = compile(spec as TopLevelSpec, { logger: logger as never });
     expect(warnings).toEqual([]);
     const view = new vega.View(vega.parse(vgSpec), { renderer: 'none' });
@@ -195,7 +193,8 @@ describe('the catalog chart', () => {
       const svg = await view.toSVG();
       expect(svg.match(/<path [^>]*class="[^"]*"|<path\b/g)?.length ?? 0).toBeGreaterThan(rows.length);
       expect(svg).not.toMatch(/NaN|undefined/);
-      for (const g of FORMAT_GROUPS) expect(svg).toContain(`${g} ${counts.formats[g]}`);
+      expect(svg.includes('role-legend')).toBe('legend' in o && o.legend === true);
+      expect(svg).toContain('cars: JSON, 100 KB, Gallery examples: 52');
       expect(svg).toContain('10 MB');
       const labels = [...svg.matchAll(/<text[^>]*font-family="monospace"[^>]*>([^<]+)<\/text>/g)].map((m) => m[1]);
       expect(labels).toHaveLength(o.labels);
@@ -206,7 +205,7 @@ describe('the catalog chart', () => {
   });
 
   test('filters fade the points they exclude, and the axes stay put', async () => {
-    const view = new vega.View(vega.parse(compile({ ...catalogSpec(rows, counts.formats, options), width: 800 } as TopLevelSpec).spec), { renderer: 'none' });
+    const view = new vega.View(vega.parse(compile({ ...catalogSpec(rows, options), width: 800 } as TopLevelSpec).spec), { renderer: 'none' });
     try {
       await view.runAsync();
       const ticks = (svg: string) => [...svg.matchAll(/<text[^>]*>([\d.,]+(?: [KM]?B)?)<\/text>/g)].map((m) => m[1]).join('|');
@@ -228,6 +227,60 @@ describe('the catalog chart', () => {
     expect(toBrush({ bytes: [1, 2], examples: [3, 4] })).toEqual({ bytes: [1, 2], examples: [3, 4] });
     expect(toBrush({})).toBeNull();
     expect(toBrush(null)).toBeNull();
+  });
+
+  const selections: Gallery[][] = [[], ['vega'], ['vega-lite'], ['altair'], ['vega-lite', 'vega'], ['vega', 'altair'], ['vega-lite', 'altair'], [...GALLERIES]];
+
+  test('Vega recomputes counts, ranks, descriptions and point visibility for every gallery combination under CSP', async () => {
+    const compiled = compile({ ...catalogSpec(rows, options), width: 800 } as TopLevelSpec).spec;
+    const view = new vega.View(vega.parse(compiled, {}, { ast: true }), { renderer: 'none', expr: expressionInterpreter });
+    try {
+      // Reverse as well: returning to all galleries must recover the original totals.
+      for (const selected of [...selections, ...selections.toReversed()]) {
+        await view.signal('galleries', selected).runAsync();
+        const svg = await view.toSVG();
+        const galleries = new Set(selected);
+        const listed = listDatasets(catalog, { ...NO_FILTERS, galleries });
+        const values = listed.map((d) => usageCount(catalog, d, galleries));
+        expect(values).toEqual([...values].sort((a, b) => b - a));
+        for (const d of catalog.datasets) {
+          const n = selected.length ? catalog.examplesFor(d).filter((e) => selected.includes(e.gallery)).length : d.usedBy.length;
+          expect(usageCount(catalog, d, galleries)).toBe(n);
+          const description = `aria-label="${d.name}: `;
+          if (selected.length && !n) expect(svg).not.toContain(description);
+          else expect(svg).toContain(`${description}${rows.find((r) => r.name === d.name)!.format}, ${formatBytes(d.bytes)}, ${usageTitle(galleries)}: ${n}"`);
+        }
+        expect(svg).not.toMatch(/NaN|undefined/);
+        expect(svg).toContain(usageTitle(galleries));
+        const labels = [...svg.matchAll(/<text[^>]*font-family="monospace"[^>]*>([^<]+)<\/text>/g)].map((m) => m[1]);
+        expect(new Set(labels)).toEqual(new Set(listed.slice(0, options.labels).map((d) => d.name)));
+      }
+    } finally { view.finalize(); }
+  });
+
+  test('standalone charts restore gallery counts, the legend and native brush without page controls', async () => {
+    const initialBrush = { bytes: [50_000, 150_000] as [number, number], examples: [5, 7] as [number, number] };
+    const compiled = compile({ ...catalogSpec(rows, { ...options, galleries: ['vega'], initialBrush, legend: true }), width: 800 } as TopLevelSpec).spec;
+    const view = new vega.View(vega.parse(compiled), { renderer: 'none' });
+    try {
+      await view.runAsync();
+      const brush = toBrush(view.signal('brush'))!;
+      expect(brush.bytes[0]).toBeCloseTo(initialBrush.bytes[0]);
+      expect(brush.bytes[1]).toBeCloseTo(initialBrush.bytes[1]);
+      expect(brush.examples[0]).toBeCloseTo(initialBrush.examples[0]);
+      expect(brush.examples[1]).toBeCloseTo(initialBrush.examples[1]);
+      await view.signal('matched', ['cars']).runAsync();
+      expect(toBrush(view.signal('brush'))).toEqual(brush);
+      expect(await view.toSVG()).toContain('cars: JSON, 100 KB, Vega examples: 6');
+      expect(await view.toSVG()).toContain('role-legend');
+    } finally { view.finalize(); }
+  });
+
+  test('brush filtering uses the selected galleries count, not the lifetime total', () => {
+    const cars = catalog.dataset('cars')!;
+    const filters = { ...NO_FILTERS, galleries: new Set<Gallery>(['vega']), brush: { bytes: [cars.bytes! - 1, cars.bytes! + 1] as [number, number], examples: [5, 7] as [number, number] } };
+    expect(listDatasets(catalog, filters).map((d) => d.name)).toContain('cars');
+    expect(listDatasets(catalog, { ...filters, galleries: new Set() }).map((d) => d.name)).not.toContain('cars');
   });
 });
 

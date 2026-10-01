@@ -463,6 +463,9 @@ table.status tbody tr:target > * { background: var(--selected-bg); }
    tabs never moves the page; a hidden panel keeps its space but isn't shown or reachable. */
 .snippets { display: grid; grid-template-columns: minmax(0, 1fr); }
 .snippets > .snippet[role="tabpanel"] { grid-row: 3; grid-column: 1; }
+.snippets-compact > .snippet[role="tabpanel"] { grid-row: 2; }
+.snippets-compact .tabs { flex-wrap: wrap; gap: 0; }
+.snippets-compact .tab { padding-inline: 10px; }
 /* The URL, above the tools' tabs: every tool uses it. */
 .snippets > .snippet-url { margin-bottom: 8px; border-top: 1px solid var(--rule-faint); }
 /* !important: beats the global [hidden] rule, which would drop the panel's space. */
@@ -485,6 +488,9 @@ button.link:hover { text-decoration: underline; }
 .chip .n { font: 12px var(--font-mono); color: var(--ink-muted); }
 .chip[aria-pressed="true"] { border-color: var(--selected-border); background: var(--selected-bg); color: var(--selected); }
 .chip .gtag { font-size: inherit; color: inherit; }
+.format-swatch { display: inline-block; flex: none; width: 9px; height: 9px; border-radius: 50%; forced-color-adjust: none; }
+.format-key { display: flex; flex-wrap: wrap; gap: 16px; font-size: 13px; }
+.format-key > span { display: inline-flex; align-items: center; gap: 6px; }
 
 /* --- Home page ----------------------------------------------------------------------- */
 .home-heading { padding-top: 24px; padding-bottom: 22px; }
@@ -511,11 +517,17 @@ button.link:hover { text-decoration: underline; }
 .showcase-name { min-width: 0; overflow-wrap: anywhere; font-size: 12px; line-height: 1.5; }
 .showcase-arrow { flex: none; color: var(--ink-muted); font-size: 14px; }
 
-.intro { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 520px); gap: 32px; padding-top: 24px; align-items: start; }
+.intro { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; padding-top: 24px; align-items: center; }
 .intro-text { display: flex; flex-direction: column; gap: 12px; }
 .intro .lead { font-size: 15px; line-height: 1.5; color: var(--ink-muted); }
 .release { font-size: 13px; color: var(--ink-muted); white-space: pre-wrap; }
-.lead-buttons { display: flex; flex-wrap: wrap; gap: 12px; }
+.lead-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.quickstart-link { padding: 8px 0; font-size: 14px; white-space: nowrap; }
+.quickstart { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 520px); gap: 32px; margin-top: 24px; }
+.quickstart-intro { display: flex; flex-direction: column; align-items: start; gap: 12px; }
+.quickstart-intro h3 { font-size: 20px; color: var(--ink-strong); }
+.quickstart-intro p { max-width: 44ch; font-size: 15px; }
+#quickstart { scroll-margin-top: var(--header-height); }
 .quickstart .note { margin-top: 8px; font-size: 13px; color: var(--ink-muted); }
 .quickstart .note code { margin: 0 1px; padding: 0 4px; background: var(--surface-code); border: 1px solid var(--rule-soft); color: var(--ink); }
 
@@ -525,6 +537,7 @@ button.link:hover { text-decoration: underline; }
 .use h2 { border-bottom: 1px solid var(--rule); padding-bottom: 1px; }
 .sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--rule); padding-bottom: 1px; }
 .status { font-size: 13px; color: var(--ink-muted); white-space: pre-wrap; text-align: right; }
+.usage-scope { font-size: 13px; color: var(--ink-muted); }
 .catalog-chart { position: relative; min-height: var(--chart-h, 240px); }
 /* The chart as the build drew it, until the live one replaces it (client/catalog-chart.ts). */
 .chart-static svg { display: block; width: 100%; height: auto; }
@@ -638,7 +651,8 @@ html:not(.js) :is(.filters, .browse-foot .more, #examples .seg, #examples .more,
   .ex-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .showcase { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .showcase > li:nth-child(n+7) { display: none; }
-  .intro { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+  .intro { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .quickstart { grid-template-columns: minmax(0, 1fr); gap: 20px; }
   .about { grid-template-columns: minmax(0, 1fr); }
   .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .use-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -685,9 +699,9 @@ html:not(.js) :is(.filters, .browse-foot .more, #examples .seg, #examples .more,
   .chart-static-phone { display: block; }
   html.js .cards:not([data-managed]):not([data-expanded]) > .card:nth-child(n+5) { display: none; }
   .filters input[type="search"] { width: 100%; height: 44px; font-size: 16px; }
-  .chip-row { flex-wrap: nowrap; overflow-x: auto; margin-right: -16px; padding-right: 16px; scrollbar-width: none; }
-  .chip-group { flex: none; }
-  .chip { min-height: 36px; }
+  .chip-row { flex-wrap: wrap; }
+  .chip-group { flex-wrap: wrap; }
+  .chip { min-height: 44px; }
   .sort { margin-left: 0; }
   .sort select { height: 36px; }
   .cards { grid-template-columns: minmax(0, 1fr); }
