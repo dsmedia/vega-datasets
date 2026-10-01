@@ -7,6 +7,7 @@ import * as vega from 'vega';
 import { compile, type TopLevelSpec } from 'vega-lite';
 import { describe, expect, test } from 'vitest';
 import { catalogSpec, toBrush } from '../src/lib/catalog-chart';
+import { Catalog } from '../src/lib/catalog';
 import { formatBytes } from '../src/lib/format';
 import {
   baseMatches,
@@ -104,22 +105,38 @@ test('card summaries are the first paragraph as plain text', () => {
 });
 
 test('the showcase mixes all three galleries without repeats', () => {
-  const picks = showcase(catalog, 16).map((p) => p.example);
-  expect(picks).toHaveLength(16);
-  expect(new Set(picks.map((e) => e.id)).size).toBe(16);
+  const picks = showcase(catalog).map((p) => p.example);
+  expect(picks).toHaveLength(10);
+  expect(new Set(picks.map((e) => e.id)).size).toBe(10);
   expect(new Set(picks.map((e) => e.gallery)).size).toBe(3);
-  expect(picks.every((e) => e.thumb && e.thumbSize && e.thumbSize[0] > e.thumbSize[1])).toBe(true);
+  expect(picks.every((e) => e.thumb && e.thumbSize && e.thumbSize.every((size) => size > 0))).toBe(true);
 });
 
 test('each showcase thumbnail stands for a different dataset that its example uses', () => {
-  // The strip links to datasets, not out to the galleries: this is a datasets site.
-  const picks = showcase(catalog, 16);
-  expect(new Set(picks.map((p) => p.dataset)).size).toBe(16);
+  const picks = showcase(catalog);
+  expect(new Set(picks.map((p) => p.dataset)).size).toBe(10);
   for (const { example, dataset } of picks) {
     const d = catalog.datasets.find((x) => x.name === dataset);
     expect(d, dataset).toBeTruthy();
     expect(catalog.examplesFor(d!).map((e) => e.id)).toContain(example.id);
   }
+});
+
+test('a missing featured thumbnail falls back to another example of the same dataset', () => {
+  const first = showcase(catalog)[0]!;
+  const degraded = new Catalog({ ...catalog, examples: catalog.examples.map((e) => e.id === first.example.id ? { ...e, thumb: null } : e) });
+  const replacement = showcase(degraded).find((p) => p.dataset === first.dataset)!;
+  expect(replacement.example.id).not.toBe(first.example.id);
+  expect(replacement.example.thumb).toBeTruthy();
+  expect(replacement.example.datasets).toContain(first.dataset);
+});
+
+test('unavailable datasets and examples never produce broken showcase tiles', () => {
+  const first = showcase(catalog)[0]!;
+  const missingDataset = new Catalog({ ...catalog, datasets: catalog.datasets.filter((d) => d.name !== first.dataset) });
+  expect(showcase(missingDataset).some((p) => p.dataset === first.dataset)).toBe(false);
+  const missingThumbnails = new Catalog({ ...catalog, examples: catalog.examples.map((e) => ({ ...e, thumb: null })) });
+  expect(showcase(missingThumbnails)).toEqual([]);
 });
 
 test('About quotes README sections that exist', () => {
