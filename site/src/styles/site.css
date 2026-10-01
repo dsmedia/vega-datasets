@@ -328,8 +328,8 @@ a.tab, a.tab:hover { text-decoration: none; display: inline-block; }
 .f-sum { font-size: 13.5px; }
 .f-sum.mono { font-size: 12.5px; }
 .dict th.f-miss, .f-miss { text-align: right; white-space: nowrap; padding-right: 0; }
+/* Missing values are part of these example datasets; present their counts as neutral metadata. */
 td.f-miss { font-size: 12.5px; color: var(--ink-muted); }
-td.f-miss.any { color: var(--missing); }
 .spark { display: block; }
 /* A field without a description: a quiet link to its dataset's entry in the metadata file. */
 .f-add {
