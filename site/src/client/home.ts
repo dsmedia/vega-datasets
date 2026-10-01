@@ -148,11 +148,12 @@ function update(): void {
     status.append(
       `${formatCount(list.length)} of ${formatCount(c.datasets.length)}`,
       filters.brush ? "  ·  filtered by chart" : "",
-      "  ·  ",
-      h("button", { class: "link", type: "button", onclick: clearAll }, "Clear"),
     );
   } else {
     status.append(SORT_NOTE[filters.sort]);
+  }
+  if (isFiltered(filters) || filters.galleries.size) {
+    status.append("  ·  ", h("button", { class: "link", type: "button", onclick: clearAll }, "Clear"));
   }
   // The cards are the page's own: reorder them and hide the rest (the stylesheet's
   // "first nine" rule steps aside once the script manages the list).
@@ -175,7 +176,7 @@ function refilter(): void {
   expanded = false;
   void load().then(() => {
     update();
-    if (isFiltered(filters)) void hydrate();
+    if (isFiltered(filters) || filters.galleries.size) void hydrate();
   });
 }
 
@@ -200,13 +201,17 @@ const toggle = <T>(set: Set<T>, value: T, button: HTMLButtonElement) => {
   button.setAttribute("aria-pressed", String(on));
   if (on) set.add(value);
   else set.delete(value);
-  refilter();
 };
-formatChips.forEach((b) => b.addEventListener("click", () => toggle(filters.formats, b.dataset.format as FormatGroup, b)));
+formatChips.forEach((b) => b.addEventListener("click", () => {
+  toggle(filters.formats, b.dataset.format as FormatGroup, b);
+  refilter();
+}));
 galleryChips.forEach((b) => b.addEventListener("click", () => {
   // The y values change meaning. Vega's clear event stream resets the visible brush too.
   filters.brush = null;
   toggle(filters.galleries, b.dataset.gallery as Gallery, b);
+  // Counting a different gallery keeps the reader's Show All choice.
+  void load().then(() => { update(); void hydrate(); });
 }));
 more.addEventListener("click", () => {
   expanded = true;
@@ -285,8 +290,8 @@ openTarget(location.hash, true);
 // Filters from the URL (a shared link, or Back from a dataset): apply them straight away.
 readUrl();
 syncControls();
-if (isFiltered(filters) || filters.sort !== "used" || expanded) void load().then(() => {
+if (isFiltered(filters) || filters.galleries.size || filters.sort !== "used" || expanded) void load().then(() => {
   update();
-  if (isFiltered(filters)) void hydrate();
+  if (isFiltered(filters) || filters.galleries.size) void hydrate();
 });
 else whenIdle(() => void load());

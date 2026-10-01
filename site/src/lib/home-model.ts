@@ -57,7 +57,7 @@ export function usageTitle(galleries: ReadonlySet<Gallery>): string {
 }
 
 export function isFiltered(f: Filters): boolean {
-  return f.query.trim() !== "" || f.formats.size > 0 || f.galleries.size > 0 || f.brush !== null;
+  return f.query.trim() !== "" || f.formats.size > 0 || f.brush !== null;
 }
 
 function within(v: number, [lo, hi]: [number, number]): boolean {
@@ -72,14 +72,13 @@ function matches(d: Dataset, needle: string): boolean {
     || d.description.toLowerCase().includes(needle);
 }
 
-/** The datasets to list: every active filter must match (within a chip group, any chip). */
+/** Search, format and brush narrow the list. Galleries choose the counts, keeping zeros. */
 export function listDatasets(c: Catalog, f: Filters): Dataset[] {
   const needle = f.query.trim().toLowerCase();
   const uses = new Map(c.datasets.map((d) => [d.name, usageCount(c, d, f.galleries)]));
   const list = c.datasets.filter((d) => {
     if (needle && !matches(d, needle)) return false;
     if (f.formats.size && !f.formats.has(formatGroup(d))) return false;
-    if (f.galleries.size && !uses.get(d.name)) return false;
     if (f.brush && !(within(d.bytes ?? 0, f.brush.bytes) && within(uses.get(d.name)!, f.brush.examples))) return false;
     return true;
   });

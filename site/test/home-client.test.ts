@@ -20,7 +20,8 @@ const here = {
 };
 const order = () => [...document.querySelectorAll<HTMLElement>('.cards a.card')].map((a) => a.dataset.name);
 const card = (name: string) => document.querySelector<HTMLAnchorElement>(`.cards a.card[data-name="${name}"]`)!;
-const settle = () => new Promise((r) => setTimeout(r, 300));
+// Let the event handlers' promise continuations finish, without a fixed UI delay.
+const settle = () => new Promise((r) => setTimeout(r, 0));
 const scrollIntoView = vi.fn();
 const mounted = vi.hoisted(() => ({ redraw: vi.fn(async () => {}), setMatches: vi.fn(), setGalleries: vi.fn(), clearBrush: vi.fn(), destroy: vi.fn() }));
 let brushChange: (b: import('../src/lib/home-model').Brush | null) => void;
@@ -131,6 +132,8 @@ test('gallery selection keeps card counts, ranking, chart parameters and brush s
   expect(card('cars').querySelector('[data-usage-count]')!.textContent).toBe('6');
   expect(card('cars').querySelector<HTMLElement>('[data-usage-gallery="altair"]')!.hidden).toBe(true);
   expect(document.querySelector('[data-usage-scope]')!.textContent).toBe('Vega examples');
+  expect(document.querySelector('.status')!.textContent).toBe('Most used first  ·  Clear');
+  expect(mounted.setMatches).toHaveBeenLastCalledWith(null);
   const shown = () => [...document.querySelectorAll<HTMLAnchorElement>('.cards .card')].filter((a) => !a.hidden);
   const counts = shown().map((a) => Number(a.querySelector('[data-usage-count]')!.textContent));
   expect(counts).toEqual([...counts].sort((a, b) => b - a));
@@ -149,4 +152,28 @@ test('gallery selection keeps card counts, ranking, chart parameters and brush s
   expect(mounted.setGalleries).toHaveBeenLastCalledWith([]);
   expect(card('cars').querySelector('[data-usage-count]')!.textContent).toBe('52');
   expect(card('cars').querySelector<HTMLElement>('[data-usage-gallery="altair"]')!.hidden).toBe(false);
+});
+
+test('zero-use datasets stay visible, searchable and expanded when changing the count scope', async () => {
+  const shown = () => [...document.querySelectorAll<HTMLAnchorElement>('.cards .card')].filter((a) => !a.hidden);
+  document.querySelector<HTMLButtonElement>('[data-gallery="vega"]')!.click();
+  await settle();
+  document.querySelector<HTMLButtonElement>('.browse-foot .more')!.click();
+  expect(shown()).toHaveLength(catalog.datasets.length);
+  expect(card('birdstrikes').hidden).toBe(false);
+  expect(card('birdstrikes').querySelector('[data-usage-count]')!.textContent).toBe('0');
+
+  document.querySelector<HTMLButtonElement>('[data-gallery="vega-lite"]')!.click();
+  await settle();
+  expect(shown()).toHaveLength(catalog.datasets.length);
+  expect(card('cars').querySelector('[data-usage-count]')!.textContent).toBe('33');
+
+  const search = document.querySelector<HTMLInputElement>('#home-q')!;
+  search.value = 'birdstrikes';
+  search.dispatchEvent(new Event('input'));
+  await settle();
+  expect(shown().map((a) => a.dataset.name)).toEqual(['birdstrikes']);
+  expect(card('birdstrikes').querySelector('[data-usage-count]')!.textContent).toBe('0');
+  document.querySelector<HTMLButtonElement>('.status button')!.click();
+  await settle();
 });
