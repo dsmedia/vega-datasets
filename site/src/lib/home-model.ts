@@ -182,43 +182,38 @@ export function indexCatalog(index: HomeIndex): Catalog {
   return new Catalog({ ...index, readme: "" } as unknown as CatalogFile);
 }
 
-/** Thumbnails at least this much wider than tall fill the strip's 180 by 100 slots. */
-const LANDSCAPE = 1.25;
-
-function landscape(e: Example): boolean {
-  return e.thumb !== null && e.thumbSize !== null && e.thumbSize[0] >= LANDSCAPE * e.thumbSize[1];
-}
-
-/** A thumbnail in the strip under the title and the dataset it stands for. */
+/** A featured example and the dataset its thumbnail links to. */
 export interface ShowcasePick {
   example: Example;
   dataset: string;
 }
 
 /**
- * Thumbnails for the strip under the title: the most used datasets' landscape
- * examples, taking the galleries in turn so all three show. Each stands for a
- * different dataset, which it links to.
+ * Deliberately varied charts, rather than the first example of each popular dataset.
+ * The first four also form the phone layout; the first six form the tablet layout.
  */
-export function showcase(c: Catalog, n: number): ShowcasePick[] {
-  const queues = GALLERIES.map((g) =>
-    [...c.datasets]
-      .sort((a, b) => b.usedBy.length - a.usedBy.length)
-      .flatMap((d) => c.examplesFor(d).filter((e) => e.gallery === g && landscape(e)).slice(0, 1).map((example) => ({ example, dataset: d.name }))));
-  const examples = new Set<string>();
-  const datasets = new Set<string>();
-  const out: ShowcasePick[] = [];
-  for (let i = 0; out.length < n && queues.some((q) => i < q.length); i++) {
-    for (const q of queues) {
-      const p = q[i];
-      if (p && !examples.has(p.example.id) && !datasets.has(p.dataset) && out.length < n) {
-        examples.add(p.example.id);
-        datasets.add(p.dataset);
-        out.push(p);
-      }
-    }
-  }
-  return out;
+const FEATURED_EXAMPLES = [
+  ["cars", "altair/scatter_matrix"],
+  ["us_10m", "vega/county-unemployment"],
+  ["stocks", "altair/line_chart_with_custom_legend"],
+  ["penguins", "vega/violin-plot"],
+  ["seattle_weather", "vega-lite/rect_heatmap_weather"],
+  ["population", "vega/population-pyramid"],
+  ["unemployment_across_industries", "vega-lite/stacked_area_stream"],
+  ["movies", "altair/histogram_heatmap"],
+  ["miserables", "vega/force-directed-layout"],
+  ["barley", "altair/comet_chart"],
+] as const;
+
+/** Keep a useful link if a gallery removes a preferred example; never emit an empty image. */
+export function showcase(c: Catalog): ShowcasePick[] {
+  return FEATURED_EXAMPLES.flatMap(([dataset, id]) => {
+    const d = c.dataset(dataset);
+    if (!d) return [];
+    const available = c.examplesFor(d).filter((e) => e.thumb && e.thumbSize);
+    const example = available.find((e) => e.id === id) ?? available[0];
+    return example ? [{ dataset, example }] : [];
+  });
 }
 
 /** The first paragraph of a Markdown description as plain text, for a card. */

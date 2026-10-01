@@ -48,14 +48,29 @@ const about = readmeItems.flatMap(([id, title, hint, heading]) => {
 });
 ---
 <Base title={HOME_TITLE} description={HOME_DESCRIPTION} path="" section="home" jsonLd={catalogJsonLd(c)}>
-  <div class="wrap"><h1 class="home-title"><b>Vega Datasets</b></h1></div>
-  <div class="showcase" aria-hidden="true">
-    {showcase(c, 8).map((p) => <a href={`${import.meta.env.BASE_URL}${datasetPath(p.dataset)}`} tabindex="-1"><Thumb example={p.example} eager /><span class="showcase-name mono">{p.dataset}</span></a>)}
-  </div>
+  <header class="wrap home-heading">
+    <h1 class="home-title"><b>Vega Datasets</b></h1>
+    <p class="home-lead">Explore the data behind {formatCount(counts.examplesWithData)} examples from the Vega, Vega-Lite and Altair galleries.</p>
+  </header>
+  <nav class="wrap" aria-label="Featured datasets">
+    <ul class="showcase">
+      {showcase(c).map((p, i) => (
+        <li>
+          <a href={`${import.meta.env.BASE_URL}${datasetPath(p.dataset)}`} aria-label={`${p.dataset}: ${p.example.name}. Explore dataset`}>
+            <Thumb example={p.example} eager={i < 4} alt="" />
+            <span class="showcase-caption">
+              <span class="showcase-name mono">{p.dataset.split("_").map((word, index) => <Fragment>{index > 0 && <Fragment>_<wbr /></Fragment>}{word}</Fragment>)}</span>
+              <span class="showcase-arrow" aria-hidden="true">→</span>
+            </span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  </nav>
 
   <section class="wrap intro" aria-label="Introduction">
     <div class="intro-text">
-      <p class="lead">The example data behind the Vega, Vega-Lite and Altair galleries. Each dataset documents its fields, source and license, and links to every gallery example that uses it: {formatCount(counts.datasets)} datasets and {formatCount(counts.examplesWithData)} examples in all.</p>
+      <p class="lead">{formatCount(counts.datasets)} datasets · Documented fields, sources and licenses</p>
       <p class="release mono">Release {c.package.version}  ·  Data Package v2<span class="wide-only">  ·  BSD-3-Clause code</span></p>
       <div class="lead-buttons">
         <a class="btn btn-primary" href="#browse" data-browse>Browse Datasets</a>
