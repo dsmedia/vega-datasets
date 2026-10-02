@@ -90,14 +90,25 @@ code, .mono { font-family: var(--font-mono); font-size: 0.85em; }
 .vg-header :focus-visible { outline-color: var(--header-hover); }
 .vg-primary, .vg-secondary { display: flex; flex-wrap: wrap; align-items: center; gap: 0 2em; }
 .vg-secondary { margin-left: auto; }
-.vg-switcher { position: relative; }
+.vg-switcher { position: relative; display: flex; align-items: center; }
 .vg-header a.vg-title { display: inline-block; font-weight: bold; font-size: 1.4em; color: var(--header-ink); }
+.vg-projects > summary {
+  display: grid; place-items: center; width: 44px; height: 44px; margin-left: 2px;
+  list-style: none; cursor: pointer; color: var(--header-ink);
+}
+.vg-projects > summary::-webkit-details-marker { display: none; }
+.vg-projects > summary::marker { content: ""; }
+.vg-projects > summary::after {
+  content: ""; width: 7px; height: 7px; border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor; transform: translateY(-2px) rotate(45deg);
+}
+.vg-projects[open] > summary { background: rgb(255 255 255 / 0.12); }
+.vg-projects[open] > summary::after { transform: translateY(2px) rotate(225deg); }
 .vg-switcher-menu {
-  position: absolute; top: 100%; left: -20px; min-width: 190px; padding: 6px 0; display: none; z-index: 10;
+  position: absolute; top: 100%; left: -20px; min-width: 190px; padding: 6px 0; display: grid; z-index: 10;
   background: var(--surface-menu); box-shadow: var(--shadow-menu);
 }
-.vg-switcher:hover .vg-switcher-menu, .vg-switcher:focus-within .vg-switcher-menu { display: grid; }
-.vg-header .vg-switcher-menu a { color: var(--ink-nav); font-weight: 600; line-height: 2.4; padding: 0 20px; }
+.vg-header .vg-switcher-menu a { color: var(--ink-nav); font-weight: 600; line-height: 44px; padding: 0 20px; }
 .vg-header .vg-switcher-menu a:hover, .vg-header .vg-switcher-menu a:focus-visible { color: var(--ink-strong); }
 
 /* --- Footer ------------------------------------------------------------------- */
@@ -231,6 +242,8 @@ table.preview tr:last-child td { border-bottom: 0; }
   :is(.catalog-chart, .explore-chart) svg .role-axis-grid line { stroke: GrayText !important; }
   .catalog-chart svg [class*="brush_brush_bg"] path { fill: Highlight !important; }
   .catalog-chart svg [class*="brush_brush"]:not([class*="brush_brush_bg"]) path { stroke: Highlight !important; }
+  .catalog-chart svg .mark-symbol path:active,
+  .catalog-chart svg .mark-symbol a:active path { stroke: Highlight !important; }
 }
 
 /* --- Layout ------------------------------------------------------------------------ */
@@ -515,6 +528,11 @@ button.link:hover { text-decoration: underline; }
 .status { font-size: 13px; color: var(--ink-muted); white-space: pre-wrap; text-align: right; }
 .usage-scope { font-size: 13px; color: var(--ink-muted); }
 .catalog-chart { position: relative; min-height: var(--chart-h, 240px); }
+/* SVG's delegated handlers can make the browser highlight the entire chart on tap.
+   Keep feedback on the linked mark, without suppressing keyboard focus or scrolling. */
+.catalog-chart svg { -webkit-tap-highlight-color: transparent; }
+.catalog-chart svg .mark-symbol path:active,
+.catalog-chart svg .mark-symbol a:active path { stroke: var(--focus); stroke-width: 3; }
 /* The chart as the build drew it, until the live one replaces it (client/catalog-chart.ts). */
 .chart-static svg { display: block; width: 100%; height: auto; }
 .chart-static-wide { padding-right: 38px; }

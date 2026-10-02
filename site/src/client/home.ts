@@ -250,7 +250,14 @@ function hydrate(): Promise<void> {
     }
   }));
 }
-for (const type of ["pointerenter", "focusin", "touchstart"]) chartHost.addEventListener(type, () => void hydrate(), { once: true, passive: true });
+// A phone's first tap uses the static SVG's native link. Replacing it between
+// pointerdown and click loses the tap; filtering can safely load the live chart.
+chartHost.addEventListener("pointerenter", (event) => {
+  if (event.pointerType === "mouse") void hydrate();
+}, { passive: true });
+chartHost.addEventListener("focusin", (event) => {
+  if (event.target instanceof Element && event.target.matches(":focus-visible")) void hydrate();
+});
 
 phone.addEventListener("change", () => {
   update();
