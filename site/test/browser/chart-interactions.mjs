@@ -2,7 +2,7 @@
 // First build and serve the site, then run:
 //   node site/test/browser/chart-interactions.mjs --base http://127.0.0.1:8000/vega-datasets/
 // Add --measure --output report.json for three cold/approached mobile activation runs
-// and six mode switches, at 4x CPU, 1.6 Mbps down / 750 Kbps up and 150 ms latency.
+// and six mode switches, at 4x CPU, ~1.68 Mbps down / 768 Kbps up and 150 ms latency.
 // PUPPETEER_CORE and CHROME_PATH follow the other browser checks in this directory.
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
@@ -123,6 +123,18 @@ try {
         assert.ok(Math.abs(resized.height - after.height * resized.width / after.width) <= 2, 'Live chart follows the same responsive height after resizing');
         results.checks.push({ name: 'Active chart refits from 1000px to 800px', before: after, after: resized });
       }
+      if ([390, 641].includes(width)) {
+        await page.click('[data-gallery="vega"]');
+        await page.waitForFunction(() => document.querySelector('.chart-live svg.marks').textContent.includes('Vega examples'));
+        await frames(page);
+        const labels = await page.$$eval('.chart-live svg.marks .role-mark text', (nodes) => nodes.filter((e) => e.textContent).map((e) => ({ text: e.textContent, ...e.getBoundingClientRect().toJSON() })));
+        assert.ok(labels.length > 0);
+        for (let i = 0; i < labels.length; i++) for (const b of labels.slice(i + 1)) {
+          const a = labels[i];
+          assert.equal(a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top, false, `Labels overlap at ${width}px: ${a.text} / ${b.text}`);
+        }
+        results.checks.push({ name: `Vega labels stay apart at ${width}px`, labels: labels.map((e) => e.text) });
+      }
       await context.close();
     }
     const { page, context, errors } = await open('datasets/cars/');
@@ -154,7 +166,7 @@ try {
     results.checks.push({ name: 'Cars retains two views, input nodes and chosen fields; hidden views refit on resize', ...kept });
     await context.close();
   } else {
-    results.conditions = { cpu: 4, downloadMbps: 1.6, uploadKbps: 750, latencyMs: 150, width: 390, height: 844, deviceScaleFactor: 3, cache: false, kind: 'lab; not field INP or a physical phone' };
+    results.conditions = { cpu: 4, downloadMbps: 1.6 * 1024 * 1024 / 1e6, uploadKbps: 750 * 1024 / 1000, latencyMs: 150, width: 390, height: 844, deviceScaleFactor: 3, cache: false, kind: 'lab; not field INP or a physical phone' };
     for (const approachMs of [0, 2000]) for (let run = 1; run <= 3; run++) {
       const { page, context, errors } = await open('', 390, true);
       await page.$eval('.filters', (e) => e.scrollIntoView({ block: 'center' }));

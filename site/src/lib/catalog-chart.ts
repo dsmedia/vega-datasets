@@ -17,7 +17,7 @@ export interface ChartOptions {
   /** Offer the interval brush (wide screens only). */
   brush: boolean;
   height: number;
-  /** Maximum number of the most used datasets to label (phones omit crowded labels). */
+  /** Maximum number of the most used datasets to label; omit crowded labels. */
   labels: number;
   /** Initial parameter values, also used by standalone exports and the Editor. */
   galleries?: Gallery[];
@@ -66,10 +66,10 @@ export function catalogSpec(rows: ChartRow[], o: ChartOptions): Spec {
     mark: { type: "text", align, dx: align === "left" ? 8 : -8, baseline: "middle", fontSize: 11, font: o.monoFont, aria: false },
     encoding: {
       x, y,
-      // On a narrow plot, leave a text line between labels. Compare consecutive
+      // Leave a text line between labels as the plot resizes. Compare consecutive
       // ranks across BOTH layers so equal counts and left/right labels cannot collide.
       // This stays in the public Vega-Lite spec, including exported/Editor charts.
-      text: o.brush ? { field: "name" } : {
+      text: {
         condition: { test: "datum.usageRank === 1 || abs(scale('y', datum.previousExamples) - scale('y', datum.examples)) >= 14", field: "name" },
         value: "",
       },
