@@ -1,7 +1,7 @@
 /**
  * How to load a file (components/SnippetTabs.astro): switching tabs (ARIA tabs: arrow
  * keys, Home and End), a Copy button on the URL and on each panel (if the clipboard is
- * blocked, Copy selects the code for Ctrl/⌘+C), and the reader's tool, remembered across
+ * blocked or unavailable, Copy selects the text), and the reader's tool, remembered across
  * pages in this browser.
  */
 import { h } from "./dom";
@@ -26,28 +26,30 @@ function rememberTool(tool: string): void {
 }
 
 function copyButton(code: HTMLElement): HTMLButtonElement {
-  const btn = h("button", { class: "copy-btn", type: "button" }, "Copy");
-  btn.addEventListener("click", () => {
-    navigator.clipboard.writeText(code.textContent ?? "").then(
-      () => {
-        btn.textContent = "Copied";
-        btn.dataset.copied = "true";
-        setTimeout(() => {
-          btn.textContent = "Copy";
-          delete btn.dataset.copied;
-        }, 1600);
-      },
-      () => {
-        const sel = window.getSelection();
-        if (sel) {
-          const range = document.createRange();
-          range.selectNodeContents(code);
-          sel.removeAllRanges();
-          sel.addRange(range);
-        }
-        btn.textContent = "Press Ctrl/⌘+C";
-      },
-    );
+  const btn = h("button", { class: "copy-btn", type: "button", "aria-live": "polite" }, "Copy");
+  let reset: ReturnType<typeof setTimeout> | undefined;
+  btn.addEventListener("click", async () => {
+    clearTimeout(reset);
+    delete btn.dataset.copied;
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(code.textContent ?? "");
+      btn.textContent = "Copied";
+      btn.dataset.copied = "true";
+      reset = setTimeout(() => {
+        btn.textContent = "Copy";
+        delete btn.dataset.copied;
+      }, 1600);
+    } catch {
+      const sel = window.getSelection();
+      if (sel) {
+        const range = document.createRange();
+        range.selectNodeContents(code);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+      btn.textContent = "Copy selected text";
+    }
   });
   return btn;
 }

@@ -68,6 +68,12 @@ a:hover { text-decoration: underline; }
 }
 
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.skip-link {
+  position: fixed; top: 8px; left: var(--page-gutter); z-index: 30;
+  padding: 8px 12px; background: var(--surface); color: var(--link);
+  transform: translateY(calc(-100% - 12px));
+}
+.skip-link:focus { transform: none; }
 
 h1, h2, h3, h4 { text-wrap: balance; margin: 0; }
 p { margin: 0; }
@@ -170,7 +176,8 @@ code, .mono { font-family: var(--font-mono); font-size: 0.85em; }
 
 /* vega-embed actions menu */
 .vega-embed { width: 100%; }
-.vega-embed summary { opacity: 0.6; }
+/* Embed injects a faded default later; keep this control visible without hover on touch. */
+.vega-embed.has-actions > details > summary { opacity: 1; }
 .vega-embed .vega-actions {
   background: var(--surface); border: 1px solid var(--rule-soft); border-radius: var(--radius-button);
   box-shadow: var(--shadow-pop); font-family: var(--font-sans);

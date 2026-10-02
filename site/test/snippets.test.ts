@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // The snippet tabs remember the reader's tool (client/snippets.ts): a pick on one page
 // opens the same tab on the next, and a blocked storage only loses the memory.
-import { beforeEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { enhanceSnippets, TOOL_KEY } from '../src/client/snippets';
 
 let boxes = 0;
@@ -15,11 +15,35 @@ function box(names: string[]): HTMLElement {
   return root;
 }
 const selected = (root: HTMLElement) => root.querySelector('[aria-selected="true"]')!.textContent;
+afterEach(() => vi.unstubAllGlobals());
 
 beforeEach(() => {
   document.body.replaceChildren();
   localStorage.clear();
   vi.restoreAllMocks();
+});
+
+test.each(['missing', 'denied', 'throws'])('Copy selects usable text when the clipboard is %s', async (failure) => {
+  const writeText = failure === 'throws' ? vi.fn(() => { throw new Error('unavailable'); }) : vi.fn().mockRejectedValue(new Error('denied'));
+  vi.stubGlobal('navigator', failure === 'missing' ? {} : { clipboard: { writeText } });
+  const root = box(['URL']);
+  enhanceSnippets(root);
+  const copy = root.querySelector<HTMLButtonElement>('.copy-btn')!;
+  copy.click();
+  await vi.waitFor(() => expect(copy.textContent).toBe('Copy selected text'));
+  expect(window.getSelection()?.toString()).toBe('URL code');
+  expect(copy.dataset.copied).toBeUndefined();
+});
+
+test('Copy reports success only after the clipboard accepts the text', async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  vi.stubGlobal('navigator', { clipboard: { writeText } });
+  const root = box(['URL']);
+  enhanceSnippets(root);
+  const copy = root.querySelector<HTMLButtonElement>('.copy-btn')!;
+  copy.click();
+  await vi.waitFor(() => expect(copy.dataset.copied).toBe('true'));
+  expect(writeText).toHaveBeenCalledWith('URL code');
 });
 
 test('a picked tool opens first on the next box', () => {

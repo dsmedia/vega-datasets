@@ -17,7 +17,7 @@ import { allowed, BAND_POLICY, type DensityGrid, densityPageSpec, tableBand } fr
 import { editorUrl, starterSpec } from "../lib/starter";
 import { pointSource } from "../lib/vega-data";
 import { $, h, readJson } from "./dom";
-import { ChartCodeError, embedOptions, labelActions, loadVega } from "./embed";
+import { ChartCodeError, embedOptions, labelActions, loadVega, runView } from "./embed";
 import { onThemeChange } from "./theme";
 
 type Spec = Record<string, unknown>;
@@ -140,8 +140,9 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
       const follow = (axis: "x" | "y") => (_name: string, value: unknown) => {
         state[axis] = String(value);
         // A zoom on the old fields would hide the new ones: clear it (the scale domains read this store).
-        if (zoom()) void view.change("zoom_store", view.changeset().remove(() => true)).runAsync();
-        void view.runAsync().then(recount);
+        void runView(view, () => {
+          if (zoom()) view.change("zoom_store", view.changeset().remove(() => true));
+        }).then(recount).catch(() => void render());
       };
       view.addSignalListener("xField", follow("x"));
       view.addSignalListener("yField", follow("y"));

@@ -6,7 +6,7 @@
  * with `vega.formats()`, and a loader fetches the public data URLs from the site's own
  * `data/`. Tooltips take the page's look.
  */
-import type { Loader } from "vega";
+import type { Loader, View } from "vega";
 import type { EmbedOptions } from "vega-embed";
 import { onceUnlessFailed } from "../lib/once";
 import { chartConfig } from "../lib/vega-theme";
@@ -27,7 +27,17 @@ export interface VegaModules {
 export class ChartCodeError extends Error {
   constructor(cause: unknown) {
     super("Couldn't load the chart code.", { cause });
+    this.name = "ChartCodeError";
   }
+}
+
+/**
+ * Apply changes and remeasure axes in one evaluation: a newly selected field can have
+ * wider tick labels. Vega 6 documents prerun, but its View types omit the arguments.
+ */
+export function runView(view: View, before: () => void): Promise<View> {
+  const run = view.runAsync as (encode?: string, prerun?: () => void) => Promise<View>;
+  return run.call(view, undefined, () => { before(); view.resize(); });
 }
 
 type Modules = [typeof import("vega-embed"), typeof import("vega-interpreter"), typeof import("vega")];
