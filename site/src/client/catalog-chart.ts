@@ -1,7 +1,7 @@
 /**
  * The home page's catalog chart, live. The page arrives with the chart drawn to SVG at
  * build time (links on its points work without scripts); the first time the reader
- * points at it, focuses it or filters the list, the live view (brush, tooltips, menu)
+ * uses a mouse, keyboard or filters the list, the live view (brush, tooltips, menu)
  * replaces the static drawing in the same box, so nothing below moves.
  */
 import { type ChartOptions, catalogSpec, toBrush } from "../lib/catalog-chart";

@@ -214,7 +214,8 @@ describe('the catalog chart', () => {
       expect(y(0)).toBe(bottom);
       expect(y(hi / 4)).toBeCloseTo((bottom + top) / 2);
       const labels = [...svg.matchAll(/<text[^>]*font-family="monospace"[^>]*>([^<]+)<\/text>/g)].map((m) => m[1]);
-      expect(labels).toHaveLength(o.labels);
+      if (o.brush) expect(labels).toHaveLength(o.labels);
+      else expect(labels.length).toBeLessThanOrEqual(o.labels);
       expect(labels).toContain('cars');
     } finally {
       view.finalize();
@@ -247,6 +248,34 @@ describe('the catalog chart', () => {
   });
 
   const selections: Gallery[][] = [[], ['vega'], ['vega-lite'], ['altair'], ['vega-lite', 'vega'], ['vega', 'altair'], ['vega-lite', 'altair'], [...GALLERIES]];
+
+  test.each([288, 358, 398, 608])('phone labels stay apart at width %i when the gallery changes', async (width) => {
+    const compiled = compile({ ...catalogSpec(rows, { ...options, brush: false, height: 214, labels: 5 }), width } as TopLevelSpec).spec;
+    const view = new vega.View(vega.parse(compiled, {}, { ast: true }), { renderer: 'none', expr: expressionInterpreter });
+    type Item = { text?: string; font?: string; bounds: { x1: number; x2: number; y1: number; y2: number }; items?: Item[] };
+    const textItems = (item: Item): Item[] => [
+      ...(item.font === 'monospace' && item.text ? [item] : []),
+      ...(item.items ?? []).flatMap(textItems),
+    ];
+    try {
+      for (const selected of [...selections, []]) {
+        await view.signal('galleries', selected).runAsync();
+        const labels = textItems(view.scenegraph().root as unknown as Item);
+        expect(labels.length).toBeGreaterThan(0);
+        expect(labels.length).toBeLessThanOrEqual(5);
+        for (let i = 0; i < labels.length; i++) {
+          for (const other of labels.slice(i + 1)) {
+            const a = labels[i]!.bounds, b = other.bounds;
+            const overlaps = a.x1 < b.x2 && a.x2 > b.x1 && a.y1 < b.y2 && a.y2 > b.y1;
+            expect(overlaps, `${selected}: ${labels[i]!.text} / ${other.text}`).toBe(false);
+          }
+        }
+        // Omitting a crowded label must never omit its point or dataset link.
+        const svg = await view.toSVG();
+        expect((svg.match(/aria-roledescription="circle"/g) ?? []).length).toBe(rows.length);
+      }
+    } finally { view.finalize(); }
+  });
 
   test('Vega recounts and ranks every dataset including zeros for every gallery combination under CSP', async () => {
     const compiled = compile({ ...catalogSpec(rows, options), width: 800 } as TopLevelSpec).spec;

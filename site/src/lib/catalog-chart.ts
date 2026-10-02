@@ -17,7 +17,7 @@ export interface ChartOptions {
   /** Offer the interval brush (wide screens only). */
   brush: boolean;
   height: number;
-  /** How many of the most used datasets get a name label. */
+  /** Maximum number of the most used datasets to label (phones omit crowded labels). */
   labels: number;
   /** Initial parameter values, also used by standalone exports and the Editor. */
   galleries?: Gallery[];
@@ -64,7 +64,17 @@ export function catalogSpec(rows: ChartRow[], o: ChartOptions): Spec {
     transform: [{ filter: `datum.usageRank <= ${o.labels} && ${test}` }],
     // Names repeat the points' descriptions, so screen readers skip them.
     mark: { type: "text", align, dx: align === "left" ? 8 : -8, baseline: "middle", fontSize: 11, font: o.monoFont, aria: false },
-    encoding: { x, y, text: { field: "name" }, href: { field: "href" }, ...dim },
+    encoding: {
+      x, y,
+      // On a narrow plot, leave a text line between labels. Compare consecutive
+      // ranks across BOTH layers so equal counts and left/right labels cannot collide.
+      // This stays in the public Vega-Lite spec, including exported/Editor charts.
+      text: o.brush ? { field: "name" } : {
+        condition: { test: "datum.usageRank === 1 || abs(scale('y', datum.previousExamples) - scale('y', datum.examples)) >= 14", field: "name" },
+        value: "",
+      },
+      href: { field: "href" }, ...dim,
+    },
   });
   return {
     $schema: "https://vega.github.io/schema/vega-lite/v6.json",
@@ -81,7 +91,7 @@ export function catalogSpec(rows: ChartRow[], o: ChartOptions): Spec {
     // Vega owns the recount, ranking and accessible descriptions, including zero-use datasets.
     transform: [
       { calculate: `!length(galleries) ? datum.total : ${selectedCount}`, as: "examples" },
-      { window: [{ op: "row_number", as: "usageRank" }], sort: [{ field: "examples", order: "descending" }, { field: "name", order: "ascending" }] },
+      { window: [{ op: "row_number", as: "usageRank" }, { op: "lag", field: "examples", as: "previousExamples" }], sort: [{ field: "examples", order: "descending" }, { field: "name", order: "ascending" }] },
       { calculate: "galleryTitle", as: "scope" },
       { calculate: "datum.name + ': ' + datum.format + ', ' + datum.size + ', ' + galleryTitle + ': ' + datum.examples", as: "description" },
     ],
