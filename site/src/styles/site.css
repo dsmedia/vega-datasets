@@ -242,6 +242,8 @@ table.preview tr:last-child td { border-bottom: 0; }
   :is(.catalog-chart, .explore-chart) svg .role-axis-grid line { stroke: GrayText !important; }
   .catalog-chart svg [class*="brush_brush_bg"] path { fill: Highlight !important; }
   .catalog-chart svg [class*="brush_brush"]:not([class*="brush_brush_bg"]) path { stroke: Highlight !important; }
+  .catalog-chart svg .mark-symbol path:active,
+  .catalog-chart svg .mark-symbol a:active path { stroke: Highlight !important; }
 }
 
 /* --- Layout ------------------------------------------------------------------------ */
