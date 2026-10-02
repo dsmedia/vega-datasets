@@ -58,6 +58,7 @@ async function carsReady(page) {
 async function arm(page, kind) {
   await page.evaluate((kind) => {
     window.__clickResult = null;
+    window.__armedAt = performance.now();
     const selector = kind === 'home' ? '[data-gallery="vega"]' : '#explore [data-mode]';
     const current = () => kind === 'home'
       ? document.querySelector('.chart-live:not(.pending) svg.marks')
@@ -83,8 +84,13 @@ async function result(page) {
   await page.waitForFunction(() => window.__clickResult, { timeout: 60_000 });
   await pause(150); // Event Timing is delivered after the next paint.
   return page.evaluate(() => {
-    const click = window.__events.find((e) => e.type === 'click' && Math.abs(e.at - window.__clickResult.at) < 2);
-    return { ...window.__clickResult, events: click ? window.__events.filter((e) => e.id === click.id) : [] };
+    const events = window.__events.filter((e) => e.at >= window.__armedAt);
+    const click = events.find((e) => e.type === 'click' && Math.abs(e.at - window.__clickResult.at) < 2);
+    // A short click may fall below Event Timing's 16 ms minimum even if its pointer
+    // events were slower. Include the whole interaction, not just its click entry.
+    const interaction = click ?? events.findLast((e) => /^(pointerdown|pointerup)$/.test(e.type) && e.at <= window.__clickResult.at);
+    const group = interaction ? events.filter((e) => e.id === interaction.id) : [];
+    return { ...window.__clickResult, events: group, interactionMs: group.length ? Math.max(...group.map((e) => e.duration)) : null };
   });
 }
 
@@ -114,7 +120,8 @@ try {
         await page.waitForFunction((height) => document.querySelector('.chart-live svg.marks').getBoundingClientRect().height < height, { timeout: 15_000 }, after.height);
         const resized = await page.evaluate(geometry);
         assert.equal(resized.overflow, 0);
-        assert.ok(resized.height < after.height, 'Live chart follows the same responsive height after resizing');
+        assert.ok(Math.abs(resized.height - after.height * resized.width / after.width) <= 2, 'Live chart follows the same responsive height after resizing');
+        results.checks.push({ name: 'Active chart refits from 1000px to 800px', before: after, after: resized });
       }
       await context.close();
     }
@@ -172,7 +179,7 @@ try {
       await page.tap(`#explore [data-mode="${mode}"]`);
       const sample = await result(page);
       results.cars.push(sample);
-      console.log(`Cars ${mode}: ${sample.readyMs.toFixed(0)}ms to chart, ${Math.max(0, ...sample.events.map((e) => e.duration))}ms interaction`);
+      console.log(`Cars ${mode}: ${sample.readyMs.toFixed(0)}ms to chart, ${sample.interactionMs ?? '<16'}ms interaction`);
     }
     if (args.output) await page.tracing.stop();
     assert.deepEqual(errors, []);
