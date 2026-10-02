@@ -118,6 +118,10 @@ test('large datasets keep only one live view', async () => {
   enhanceExplore(section(), cars);
   await settled();
   const first = await mocks.embed.mock.results[0]!.value;
+  mocks.embed.mockImplementationOnce(async () => {
+    expect(first.finalize).toHaveBeenCalledTimes(1);
+    return drawing();
+  });
   mode('time'); await settled();
   expect(first.finalize).toHaveBeenCalledTimes(1);
   expect(document.querySelectorAll('.explore-view')).toHaveLength(1);

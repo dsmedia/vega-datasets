@@ -111,7 +111,7 @@ try {
       if (args.output && [390, 1000].includes(width)) await (await page.$('[data-chart]')).screenshot({ path: args.output.replace(/\.json$/, `-${width}.png`) });
       if (width === 1000) {
         await page.setViewport({ width: 800, height: 844 });
-        await pause(500);
+        await page.waitForFunction((height) => document.querySelector('.chart-live svg.marks').getBoundingClientRect().height < height, { timeout: 15_000 }, after.height);
         const resized = await page.evaluate(geometry);
         assert.equal(resized.overflow, 0);
         assert.ok(resized.height < after.height, 'Live chart follows the same responsive height after resizing');

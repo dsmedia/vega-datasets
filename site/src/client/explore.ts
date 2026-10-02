@@ -162,6 +162,8 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
     await afterPaint();
     if (version !== revision) return;
     const spec = currentSpec();
+    // Don't keep two large dataflows alive even temporarily while changing modes.
+    if (!retain) forget();
     const plot = h("div", { class: "explore-view pending" });
     const inputs = h("div");
     host.append(plot);
@@ -182,7 +184,6 @@ export function enhanceExplore(section: HTMLElement, d: Dataset): void {
       if (failed.length) throw new LoadError(failed[0]!.split("/").pop()!);
       return;
     }
-    if (!retain) forget();
     labelActions(plot);
     // A select narrowed to fit its row clips a long field name: its tooltip gives it in full.
     inputs.querySelectorAll("select").forEach((select) => {
