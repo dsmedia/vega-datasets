@@ -48,6 +48,15 @@ export function whenIdle(fn: () => void, timeout = 2000): void {
   else setTimeout(fn, 200);
 }
 
+/** Let a control's feedback paint before starting an expensive, first-time drawing. */
+export function afterPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    // rAF can pause in a background tab; don't leave an already requested chart pending.
+    const fallback = setTimeout(resolve, 100);
+    requestAnimationFrame(() => setTimeout(() => { clearTimeout(fallback); resolve(); }, 0));
+  });
+}
+
 /**
  * Put `nodes` into `parent` in this order, moving only the ones out of place: a node already
  * after the one before it stays put, so it keeps focus (moving a node blurs it). Children not

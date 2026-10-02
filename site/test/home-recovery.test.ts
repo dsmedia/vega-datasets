@@ -7,6 +7,7 @@ import { homeIndex } from '../src/lib/home-model';
 import { loadCatalog, REPO } from './catalog';
 
 const mount = vi.hoisted(() => vi.fn());
+vi.mock('../src/client/embed', () => ({ loadVega: vi.fn(async () => ({})) }));
 vi.mock('../src/client/catalog-chart', () => ({ mountCatalogChart: mount }));
 afterEach(() => vi.unstubAllGlobals());
 

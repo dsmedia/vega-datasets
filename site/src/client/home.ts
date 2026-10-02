@@ -28,6 +28,8 @@ import {
 import { onceUnlessFailed } from "../lib/once";
 import type { MountedChart } from "./catalog-chart";
 import { $, h, placeInOrder, whenIdle } from "./dom";
+import { loadVega } from "./embed";
+import { prepareOnIntent } from "./intent";
 import { token } from "./theme";
 
 const PHONE = "(max-width: 640px)";
@@ -54,6 +56,19 @@ const status = $(".browse .status");
 const empty = $(".cards-empty");
 const more = $<HTMLButtonElement>(".browse-foot .more");
 const chartHost = $("[data-chart]");
+// The fallback SVG scales with its column. Preserve that outer height when it becomes
+// live, allowing for the unscaled axis labels; a fixed plot height visibly grew on hover.
+const chartFrames = ["wide", "phone"].map((size) => {
+  const svg = $<SVGSVGElement>(`.chart-static-${size} svg`, chartHost);
+  return { width: Number(svg.getAttribute("width")), height: Number(svg.getAttribute("height")) };
+});
+const chartHeight = () => {
+  const small = phone.matches;
+  const frame = chartFrames[small ? 1 : 0]!;
+  const plot = small ? 214 : 240;
+  const width = chartHost.clientWidth - (small ? 0 : 38);
+  return width > 0 ? Math.max(80, Math.round(frame.height * width / frame.width - (frame.height - plot))) : plot;
+};
 const usageScope = $("[data-usage-scope]");
 const formatChips = [...document.querySelectorAll<HTMLButtonElement>(".chip[data-format]")];
 const galleryChips = [...document.querySelectorAll<HTMLButtonElement>(".chip[data-gallery]")];
@@ -235,6 +250,13 @@ more.addEventListener("click", () => {
 // --- The chart -----------------------------------------------------------------------------
 let hydrating: Promise<void> | null = null;
 let chartCodeFailed = false;
+// Fetch the controller and its runtime together, rather than waiting for one script
+// before discovering the next. Preparing code never replaces a linked static point.
+const prepareChart = onceUnlessFailed(async () => {
+  const [controller] = await Promise.all([import("./catalog-chart"), loadVega()]);
+  return controller;
+});
+prepareOnIntent($(".filters"), chartHost, () => prepareChart());
 function chartError(): void {
   hydrating = null;
   chartHost.querySelector(".load-error")?.remove();
@@ -254,7 +276,10 @@ function hydrate(): Promise<void> {
       update();
       return;
     }
-    const c = await load();
+    const [c, { mountCatalogChart }] = await Promise.all([load(), prepareChart().catch((err) => {
+      chartCodeFailed = true;
+      throw err;
+    })]);
     const onBrush = (b: Brush | null) => {
       // Every redraw reports "no brush"; only a real change refilters.
       if (JSON.stringify(b) === JSON.stringify(filters.brush)) return;
@@ -264,14 +289,10 @@ function hydrate(): Promise<void> {
     };
     const options = () => ({
       brush: !phone.matches,
-      height: phone.matches ? 214 : 240,
+      height: chartHeight(),
       labels: phone.matches ? 5 : 9,
       galleries: GALLERIES.filter((g) => filters.galleries.has(g)),
       monoFont: token("--font-mono"),
-    });
-    const { mountCatalogChart } = await import("./catalog-chart").catch((err) => {
-      chartCodeFailed = true;
-      throw err;
     });
     chart = await mountCatalogChart(chartHost, chartRows(c, formatBytes), options, onBrush, chartError);
     update();

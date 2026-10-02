@@ -113,6 +113,19 @@ export async function mountCatalogChart(
     });
   };
   const redraw = () => enqueue(draw);
+  let resizeTimer: ReturnType<typeof setTimeout>;
+  let lastHeight = options().height;
+  const resize = () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      const height = options().height;
+      if (height === lastHeight) return;
+      lastHeight = height;
+      void enqueue(async () => {
+        if (result) await runView(result.view, () => { result!.view.height(height); });
+      }).catch(onError);
+    }, 100);
+  };
   let scheduled = false;
   let resetBrush = false;
   const scheduleSignals = () => {
@@ -132,6 +145,7 @@ export async function mountCatalogChart(
     }).catch(onError);
   };
   await redraw();
+  window.addEventListener("resize", resize);
   return {
     redraw,
     setGalleries: (next) => {
@@ -151,6 +165,8 @@ export async function mountCatalogChart(
     },
     destroy: () => {
       destroyed = true;
+      clearTimeout(resizeTimer);
+      window.removeEventListener("resize", resize);
       result?.finalize();
       live?.remove();
     },
