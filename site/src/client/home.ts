@@ -25,7 +25,8 @@ import {
   usageCount,
   usageTitle,
 } from "../lib/home-model";
-import { mountCatalogChart, type MountedChart } from "./catalog-chart";
+import { onceUnlessFailed } from "../lib/once";
+import type { MountedChart } from "./catalog-chart";
 import { $, h, placeInOrder, whenIdle } from "./dom";
 import { token } from "./theme";
 
@@ -71,7 +72,7 @@ function readUrl(): void {
   filters.formats = new Set(p.getAll("format").filter((g): g is FormatGroup => (FORMAT_GROUPS as readonly string[]).includes(g)));
   filters.galleries = new Set(p.getAll("used").filter((g): g is Gallery => (GALLERIES as readonly string[]).includes(g)));
   const s = p.get("sort");
-  filters.sort = s && s in SORT_LABEL ? (s as Sort) : "used";
+  filters.sort = s && Object.hasOwn(SORT_LABEL, s) ? (s as Sort) : "used";
   expanded = p.get("all") === "1";
 }
 
@@ -96,14 +97,24 @@ function syncControls(): void {
 
 // --- The catalog: fetched once, the first time the list or the chart is used ------------
 let catalog: Catalog | null = null;
-let loading: Promise<Catalog> | null = null;
-function load(): Promise<Catalog> {
-  return (loading ??= fetch("home-index.json")
+const load = onceUnlessFailed(() => fetch("home-index.json")
     .then((res) => {
       if (!res.ok) throw new Error(`Could not load the dataset index (HTTP ${res.status})`);
       return res.json() as Promise<HomeIndex>;
     })
     .then((index) => (catalog = indexCatalog(index))));
+
+/** A failed background fetch stays quiet; an explicit action always has a way back. */
+async function refresh(): Promise<void> {
+  try {
+    await load();
+    update();
+    if (isFiltered(filters) || filters.galleries.size) void hydrate();
+  } catch {
+    status.replaceChildren("Couldn't load filters. ", h("button", {
+      class: "link", type: "button", onclick: () => void refresh(),
+    }, "Retry"));
+  }
 }
 
 // --- The list ------------------------------------------------------------------------------
@@ -174,10 +185,7 @@ function update(): void {
 /** A filter changed: show the first cards of the new list. */
 function refilter(): void {
   expanded = false;
-  void load().then(() => {
-    update();
-    if (isFiltered(filters) || filters.galleries.size) void hydrate();
-  });
+  void refresh();
 }
 
 function clearAll(): void {
@@ -194,7 +202,7 @@ search.addEventListener("input", () => {
 });
 sort.addEventListener("change", () => {
   filters.sort = sort.value as Sort;
-  void load().then(update);
+  void refresh();
 });
 const toggle = <T>(set: Set<T>, value: T, button: HTMLButtonElement) => {
   const on = button.getAttribute("aria-pressed") !== "true";
@@ -211,7 +219,7 @@ galleryChips.forEach((b) => b.addEventListener("click", () => {
   filters.brush = null;
   toggle(filters.galleries, b.dataset.gallery as Gallery, b);
   // Counting a different gallery keeps the reader's Show All choice.
-  void load().then(() => { update(); void hydrate(); });
+  void refresh();
 }));
 more.addEventListener("click", () => {
   expanded = true;
@@ -226,8 +234,27 @@ more.addEventListener("click", () => {
 
 // --- The chart -----------------------------------------------------------------------------
 let hydrating: Promise<void> | null = null;
+let chartCodeFailed = false;
+function chartError(): void {
+  hydrating = null;
+  chartHost.querySelector(".load-error")?.remove();
+  const retry = h("button", { class: "btn", type: "button" }, "Retry chart");
+  retry.addEventListener("click", () => {
+    // Browsers can cache a failed module import until the document is reloaded.
+    if (chartCodeFailed && navigator.onLine) location.reload();
+    else void hydrate();
+  });
+  chartHost.append(h("p", { class: "muted load-error", role: "status" }, "The live chart couldn't load. ", retry));
+}
 function hydrate(): Promise<void> {
-  return (hydrating ??= load().then(async (c) => {
+  return (hydrating ??= (async () => {
+    chartHost.querySelector(".load-error")?.remove();
+    if (chart) {
+      await chart.redraw();
+      update();
+      return;
+    }
+    const c = await load();
     const onBrush = (b: Brush | null) => {
       // Every redraw reports "no brush"; only a real change refilters.
       if (JSON.stringify(b) === JSON.stringify(filters.brush)) return;
@@ -242,12 +269,17 @@ function hydrate(): Promise<void> {
       galleries: GALLERIES.filter((g) => filters.galleries.has(g)),
       monoFont: token("--font-mono"),
     });
-    try {
-      chart = await mountCatalogChart(chartHost, chartRows(c, formatBytes), options, onBrush);
-      update();
-    } catch (err) {
-      chartHost.append(h("p", { class: "muted" }, `The live chart didn't load: ${err instanceof Error ? err.message : String(err)}`));
-    }
+    const { mountCatalogChart } = await import("./catalog-chart").catch((err) => {
+      chartCodeFailed = true;
+      throw err;
+    });
+    chart = await mountCatalogChart(chartHost, chartRows(c, formatBytes), options, onBrush, chartError);
+    update();
+  })().catch((err: unknown) => {
+    // Loading Vega itself can also fail after the small chart controller is available.
+    chartCodeFailed ||= err instanceof Error && err.name === "ChartCodeError";
+    chartError();
+    hydrating = null;
   }));
 }
 // A phone's first tap uses the static SVG's native link. Replacing it between
@@ -261,7 +293,7 @@ chartHost.addEventListener("focusin", (event) => {
 
 phone.addEventListener("change", () => {
   update();
-  void chart?.redraw();
+  if (chart) void chart.redraw().catch(chartError);
 });
 
 // --- Links into the page ------------------------------------------------------------------
@@ -297,8 +329,5 @@ openTarget(location.hash, true);
 // Filters from the URL (a shared link, or Back from a dataset): apply them straight away.
 readUrl();
 syncControls();
-if (isFiltered(filters) || filters.galleries.size || filters.sort !== "used" || expanded) void load().then(() => {
-  update();
-  if (isFiltered(filters) || filters.galleries.size) void hydrate();
-});
-else whenIdle(() => void load());
+if (isFiltered(filters) || filters.galleries.size || filters.sort !== "used" || expanded) void refresh();
+else whenIdle(() => void load().catch(() => {}));

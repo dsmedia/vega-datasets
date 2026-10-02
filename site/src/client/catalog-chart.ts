@@ -8,7 +8,7 @@ import { type ChartOptions, catalogSpec, toBrush } from "../lib/catalog-chart";
 import type { Brush, ChartRow } from "../lib/home-model";
 import type { Gallery } from "../lib/catalog";
 import type { View } from "vega";
-import { embedOptions, labelActions, loadVega } from "./embed";
+import { embedOptions, labelActions, loadVega, runView } from "./embed";
 
 export interface MountedChart {
   /** Draw again for a layout change (clears the brush). */
@@ -34,19 +34,22 @@ export async function mountCatalogChart(
   rows: ChartRow[],
   options: () => ChartOptions,
   onBrush: (b: Brush | null) => void,
+  onError: () => void = () => {},
 ): Promise<MountedChart> {
   const v = await loadVega();
-  // Drawn out of sight over the static chart, then swapped in, so the page never shows both.
-  const live = document.createElement("div");
-  live.className = "chart-live pending";
-  host.append(live);
+  let live: HTMLElement | undefined;
   let result: Awaited<ReturnType<typeof v.vegaEmbed>> | undefined;
   let queue: Promise<void> = Promise.resolve();
   let destroyed = false;
   let matched: string[] | null = null;
   let galleries = options().galleries ?? [];
   let brush: Brush | null = null;
-  const enqueue = (work: () => Promise<void>) => (queue = queue.then(work));
+  const enqueue = (work: () => Promise<void>) => {
+    const task = queue.then(() => { if (!destroyed) return work(); });
+    // Report a failed operation to its caller without poisoning later updates.
+    queue = task.catch(() => {});
+    return task;
+  };
   const standalone = () => ({
     ...catalogSpec(rows.map((r) => ({ ...r, href: new URL(r.href, document.baseURI).href })), {
       ...options(), galleries, matched, initialBrush: brush, legend: true,
@@ -70,17 +73,31 @@ export async function mountCatalogChart(
   }
   const draw = async () => {
     if (destroyed) return;
-    result?.finalize();
+    // Keep the static or previous live chart until its replacement has drawn successfully.
+    const next = document.createElement("div");
+    next.className = "chart-live pending";
+    host.append(next);
     const o = options();
-    brush = null;
-    result = await v.vegaEmbed(live, catalogSpec(rows, { ...o, galleries, matched }) as never, {
-      ...embedOptions(v, "svg", { export: true, source: false, compiled: false, editor: true }),
-      viewClass: ExportableView,
-    });
+    let drawn: NonNullable<typeof result>;
+    try {
+      drawn = await v.vegaEmbed(next, catalogSpec(rows, { ...o, galleries, matched }) as never, {
+        ...embedOptions(v, "svg", { export: true, source: false, compiled: false, editor: true }),
+        viewClass: ExportableView,
+      });
+    } catch (err) {
+      next.remove();
+      throw err;
+    }
     if (destroyed) {
-      result.finalize();
+      drawn.finalize();
+      next.remove();
       return;
     }
+    result?.finalize();
+    live?.remove();
+    live = next;
+    result = drawn;
+    brush = null;
     labelActions(host);
     // Vega-Lite gives an interval brush's marks an ARIA role but no name; they're decoration.
     live.querySelectorAll('[class*="brush_brush"]').forEach((g) => g.setAttribute("aria-hidden", "true"));
@@ -96,38 +113,46 @@ export async function mountCatalogChart(
     });
   };
   const redraw = () => enqueue(draw);
+  let scheduled = false;
+  let resetBrush = false;
+  const scheduleSignals = () => {
+    if (scheduled || destroyed) return;
+    scheduled = true;
+    void enqueue(async () => {
+      scheduled = false;
+      const clear = resetBrush;
+      resetBrush = false;
+      // A filter action changes both signals. Apply the latest values together in one
+      // evaluation, after any previous run, rather than rendering intermediate states.
+      if (clear) window.dispatchEvent(new Event("catalogclear"));
+      if (result) await runView(result.view, () => {
+        result!.view.signal("galleries", galleries).signal("matched", matched);
+      });
+      syncEditor();
+    }).catch(onError);
+  };
   await redraw();
   return {
     redraw,
     setGalleries: (next) => {
       if (JSON.stringify(next) === JSON.stringify(galleries)) return;
       galleries = [...next];
-      void enqueue(async () => {
-        // A documented Vega event stream clears the selection's data and geometry.
-        // Avoid depending on the compiler's private brush_x / brush_y signal names.
-        window.dispatchEvent(new Event("catalogclear"));
-        await result?.view.signal("galleries", galleries).runAsync();
-        syncEditor();
-      });
+      resetBrush = true;
+      scheduleSignals();
     },
     clearBrush: () => {
-      void enqueue(async () => {
-        window.dispatchEvent(new Event("catalogclear"));
-        await result?.view.runAsync();
-        syncEditor();
-      });
+      resetBrush = true;
+      scheduleSignals();
     },
     setMatches: (names) => {
       if (JSON.stringify(names) === JSON.stringify(matched)) return;
-      matched = names;
-      void enqueue(async () => {
-        await result?.view.signal("matched", matched).runAsync();
-        syncEditor();
-      });
+      matched = names ? [...names] : null;
+      scheduleSignals();
     },
     destroy: () => {
       destroyed = true;
       result?.finalize();
+      live?.remove();
     },
   };
 }

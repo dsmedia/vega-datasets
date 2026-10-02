@@ -1,9 +1,11 @@
 // The Field Guide: a static site, one page per dataset, built from catalog.json
 // (scripts/build_site_catalog.py). `npm run site:build` runs both steps.
-import { createReadStream, statSync } from 'node:fs';
+import { createReadStream } from 'node:fs';
+import { pipeline } from 'node:stream';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'astro/config';
+import { publicFile } from './scripts/public-files.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -16,13 +18,16 @@ function repositoryData() {
       // Vite strips the base (/vega-datasets) before middleware runs, so both forms are matched.
       server.middlewares.use((req, res, next) => {
         const match = /^(?:\/vega-datasets)?\/data\/([^?]+)/.exec(req.url ?? '');
-        const file = match ? path.join(data, decodeURIComponent(match[1])) : '';
+        if (!match) return next();
+        let file;
         try {
-          if (!match || !file.startsWith(data + path.sep) || !statSync(file).isFile()) return next();
+          file = publicFile(data, decodeURIComponent(match[1]));
         } catch {
-          return next();
+          res.writeHead(400).end('Bad request');
+          return;
         }
-        createReadStream(file).pipe(res);
+        if (!file) return next();
+        pipeline(createReadStream(file), res, () => {});
       });
     },
   };

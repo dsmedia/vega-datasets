@@ -243,10 +243,10 @@ The Field Guide is generated from `datapackage.json`, `data/` and `data/gallery-
 ```bash
 npm run site:build        # catalog and thumbnails, then the pages, into site/dist
 npm run site:pages        # the pages only, after a change to site/ (the catalog is kept)
-npm run site:serve        # preview at http://localhost:8000/vega-datasets/, served like GitHub Pages
+npm run site:serve        # preview at http://127.0.0.1:8000/vega-datasets/
 npm run site:dev          # Astro's dev server, reloading as you edit (after one site:build)
 npm run site:check        # type-check the pages and scripts (astro check)
-npm run site:test         # unit tests and checks of the built pages, offline (Node 22.12+)
+npm run site:test         # unit tests and checks of the built pages, offline (Node 24.15+)
 npm run site:check-links  # every outbound link; needs the network
 ```
 
@@ -265,6 +265,10 @@ The site uses one light palette to limit maintenance and follows the [Vega](http
 The home link and project disclosure have separate targets, following the [WAI navigation disclosure guidance](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/examples/disclosure-navigation/) (checked 2026-10-01). Native `details` keeps the menu usable without scripts; the enhancement adds Escape, outside-click and focus-out dismissal. The catalog keeps its static links on an initial touch, because replacing the SVG during the gesture can lose its click. Mouse/keyboard interaction or filtering loads the live chart. Mobile labels omit ranks less than a text line apart using Vega-Lite expressions, so exported charts retain the same behavior; data points remain present. The [browser tap highlight](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/-webkit-tap-highlight-color) is suppressed only on the catalog SVG, with a pressed-point stroke as feedback and keyboard focus styles preserved.
 
 The page's Content Security Policy allows only same-origin scripts and no `eval`, so charts run Vega's expression interpreter (`ast: true`, `vega-interpreter`), and tables are read with d3-dsv's `parseRows` and handed to Vega as values rather than through Vega's CSV reader, which compiles a row function. Builds with `SITE_NOINDEX=1` (site.yml sets it outside `vega/vega-datasets`) add `noindex`, so a fork's deploy stays out of search results.
+
+The preview serves `site/dist`, `data/`, and explicitly named public documents on IPv4 loopback. It does not reproduce Jekyll's separate rendered documentation pages. The preview and Astro development data middleware resolve final files within their canonical public roots; do not restore a raw-checkout fallback. Node's [listen documentation](https://nodejs.org/api/net.html#serverlistenport-host-backlog-callback) explains why an omitted host is not a localhost restriction.
+
+Home filtering loads its chart controller on demand and retries a failed index request without discarding the static cards or chart. Related chart signals share one queued evaluation; a failed operation must not poison later updates. Replacements are drawn before the previous view is finalized. This follows the documented [Vega View lifecycle and asynchronous evaluation](https://vega.github.io/vega/docs/api/view/) (Vega 6.4.0 / Vega-Lite 6.4.3, checked 2026-10-01). The small `runView` adapter exposes the documented prerun callback omitted by the installed TypeScript declarations. Keep the [skip-to-content link](https://www.w3.org/WAI/WCAG22/Techniques/general/G1) keyboard-visible and preserve text-selection fallback when the [Clipboard API](https://developer.mozilla.org/en-US/docs/Web/API/Clipboard_API) is unavailable or denied.
 
 Where to add a test:
 
