@@ -134,7 +134,13 @@ export async function mountCatalogChart(
       if (height === lastHeight) return;
       lastHeight = height;
       void enqueue(async () => {
-        if (result) await runView(result.view, () => { result!.view.height(height); });
+        if (result) await runView(result.view, () => {
+          // After autosize, Vega's height signal holds the inner plot height. A new
+          // outer height can equal it, so an ordinary setter would skip the resize.
+          // Vega 6 accepts update options here; its View types omit that argument.
+          const signal = result!.view.signal as (name: string, value: number, options: { force: boolean }) => View;
+          signal.call(result!.view, "height", height, { force: true });
+        });
         syncEditor();
       }).catch(onError);
     }, 100);

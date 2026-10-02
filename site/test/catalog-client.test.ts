@@ -11,7 +11,6 @@ vi.mock('../src/client/embed', () => ({
 function drawing() {
   const view = {
     signal: vi.fn().mockReturnThis(), addSignalListener: vi.fn(),
-    height: vi.fn().mockReturnThis(),
     runAsync: vi.fn(async (_encode, before) => { before?.(); }),
   };
   return { view, spec: {}, finalize: vi.fn() };
@@ -83,7 +82,7 @@ test('the page fits its fallback height and initial search while the Editor keep
   expect(result.view.runAsync).not.toHaveBeenCalled();
   frameHeight = 200;
   window.dispatchEvent(new Event('resize'));
-  await vi.waitFor(() => expect(result.view.height).toHaveBeenCalledWith(200));
+  await vi.waitFor(() => expect(result.view.signal).toHaveBeenCalledWith('height', 200, { force: true }));
   expect(result.spec.height).toBe(214);
   chart.destroy();
 });
