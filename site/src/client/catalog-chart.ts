@@ -24,11 +24,6 @@ export interface MountedChart {
   destroy(): void;
 }
 
-interface LiveChartOptions extends ChartOptions {
-  /** Fit the page's live chart into the fallback's responsive outer height. */
-  frameHeight?: number;
-}
-
 /**
  * Embed the live chart in `host`, replacing its static drawing. `options` is read on
  * every draw, so it can follow the host's width; `onBrush` hears every brush change
@@ -37,7 +32,7 @@ interface LiveChartOptions extends ChartOptions {
 export async function mountCatalogChart(
   host: HTMLElement,
   rows: ChartRow[],
-  options: () => LiveChartOptions,
+  options: () => ChartOptions,
   onBrush: (b: Brush | null) => void,
   onError: () => void = () => {},
 ): Promise<MountedChart> {
@@ -57,7 +52,7 @@ export async function mountCatalogChart(
   };
   const standalone = () => ({
     ...catalogSpec(rows.map((r) => ({ ...r, href: new URL(r.href, document.baseURI).href })), {
-      ...options(), galleries, matched, initialBrush: brush, legend: true,
+      ...options(), layout: undefined, galleries, matched, initialBrush: brush, legend: true,
     }),
     width: Math.max(host.clientWidth - 38, 240),
   });
@@ -76,21 +71,17 @@ export async function mountCatalogChart(
       finally { output.finalize(); }
     }
   }
-  const draw = async () => {
+  const draw = async (preserveBrush = false) => {
     if (destroyed) return;
     // Keep the static or previous live chart until its replacement has drawn successfully.
     const next = document.createElement("div");
     next.className = "chart-live pending";
     host.append(next);
     const o = options();
+    const retainedBrush = preserveBrush && o.brush ? brush : null;
     let drawn: NonNullable<typeof result>;
     try {
-      const spec = {
-        ...catalogSpec(rows, { ...o, galleries, matched }),
-        // Vega measures the axes and fits the plot, without assuming fixed text metrics.
-        // Standalone exports keep their normal plot height and room for the legend.
-        ...(o.frameHeight === undefined ? {} : { height: o.frameHeight, autosize: { type: "fit", contains: "padding" } }),
-      };
+      const spec = catalogSpec(rows, { ...o, galleries, matched, initialBrush: retainedBrush });
       drawn = await v.vegaEmbed(next, spec as never, {
         ...embedOptions(v, "svg", { export: true, source: false, compiled: false, editor: true }),
         viewClass: ExportableView,
@@ -108,14 +99,16 @@ export async function mountCatalogChart(
     live?.remove();
     live = next;
     result = drawn;
-    brush = null;
+    drawnLayout = o.layout;
+    drawnBrush = o.brush;
+    brush = retainedBrush;
     labelActions(host);
     // Vega-Lite gives an interval brush's marks an ARIA role but no name; they're decoration.
     live.querySelectorAll('[class*="brush_brush"]').forEach((g) => g.setAttribute("aria-hidden", "true"));
     // The live view is drawn: the static drawing goes.
     host.querySelectorAll(".chart-static").forEach((el) => el.remove());
     live.classList.remove("pending");
-    onBrush(null);
+    onBrush(brush);
     syncEditor();
     if (o.brush) result.view.addSignalListener("brush", (_name, value) => {
       brush = toBrush(value);
@@ -123,24 +116,18 @@ export async function mountCatalogChart(
       syncEditor();
     });
   };
+  let drawnLayout: ChartOptions["layout"];
+  let drawnBrush: boolean;
   const redraw = () => enqueue(draw);
   let resizeTimer: ReturnType<typeof setTimeout>;
-  const pageHeight = () => { const o = options(); return o.frameHeight ?? o.height; };
-  let lastHeight = pageHeight();
   const resize = () => {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
-      const height = pageHeight();
-      if (height === lastHeight) return;
-      lastHeight = height;
       void enqueue(async () => {
-        if (result) await runView(result.view, () => {
-          // After autosize, Vega's height signal holds the inner plot height. A new
-          // outer height can equal it, so an ordinary setter would skip the resize.
-          // Vega 6 accepts update options here; its View types omit that argument.
-          const signal = result!.view.signal as (name: string, value: number, options: { force: boolean }) => View;
-          signal.call(result!.view, "height", height, { force: true });
-        });
+        const o = options();
+        // CSS handles continuous scaling. Only a reference layout or interaction
+        // mode change needs a new view, just as the static CSS selects a new SVG.
+        if (o.layout !== drawnLayout || o.brush !== drawnBrush) await draw(true);
         syncEditor();
       }).catch(onError);
     }, 100);
@@ -164,6 +151,8 @@ export async function mountCatalogChart(
     }).catch(onError);
   };
   await redraw();
+  const observer = new ResizeObserver(resize);
+  observer.observe(host);
   window.addEventListener("resize", resize);
   return {
     redraw,
@@ -185,6 +174,7 @@ export async function mountCatalogChart(
     destroy: () => {
       destroyed = true;
       clearTimeout(resizeTimer);
+      observer.disconnect();
       window.removeEventListener("resize", resize);
       result?.finalize();
       live?.remove();

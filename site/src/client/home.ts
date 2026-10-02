@@ -26,6 +26,7 @@ import {
   usageTitle,
 } from "../lib/home-model";
 import { onceUnlessFailed } from "../lib/once";
+import { catalogLayout } from "../lib/catalog-layout";
 import type { MountedChart } from "./catalog-chart";
 import { $, afterPaint, h, placeInOrder, whenIdle } from "./dom";
 import { loadVega } from "./embed";
@@ -56,18 +57,6 @@ const status = $(".browse .status");
 const empty = $(".cards-empty");
 const more = $<HTMLButtonElement>(".browse-foot .more");
 const chartHost = $("[data-chart]");
-// The fallback SVG scales with its column. Preserve that outer height when it becomes
-// live; a fixed plot height visibly grew on hover at narrower desktop widths.
-const chartFrames = ["wide", "phone"].map((size) => {
-  const svg = $<SVGSVGElement>(`.chart-static-${size} svg`, chartHost);
-  return { width: Number(svg.getAttribute("width")), height: Number(svg.getAttribute("height")) };
-});
-const chartFrameHeight = () => {
-  const small = phone.matches;
-  const frame = chartFrames[small ? 1 : 0]!;
-  const width = chartHost.clientWidth - (small ? 0 : 38);
-  return width > 0 ? Math.round(frame.height * width / frame.width) : frame.height;
-};
 const usageScope = $("[data-usage-scope]");
 const formatChips = [...document.querySelectorAll<HTMLButtonElement>(".chip[data-format]")];
 const galleryChips = [...document.querySelectorAll<HTMLButtonElement>(".chip[data-gallery]")];
@@ -289,8 +278,8 @@ function hydrate(): Promise<void> {
     const options = () => ({
       brush: !phone.matches,
       height: phone.matches ? 214 : 240,
-      frameHeight: chartFrameHeight(),
-      labels: phone.matches ? 5 : 9,
+      layout: catalogLayout(chartHost.getBoundingClientRect().width),
+      labels: catalogLayout(chartHost.getBoundingClientRect().width).labels,
       galleries: GALLERIES.filter((g) => filters.galleries.has(g)),
       matched: isFiltered({ ...filters, brush: null }) ? baseMatches(c, filters).map((d) => d.name) : null,
       monoFont: token("--font-mono"),
@@ -318,7 +307,6 @@ chartHost.addEventListener("focusin", (event) => {
 
 phone.addEventListener("change", () => {
   update();
-  if (chart) void chart.redraw().catch(chartError);
 });
 
 // --- Links into the page ------------------------------------------------------------------

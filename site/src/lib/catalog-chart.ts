@@ -10,6 +10,7 @@
 import type { Brush, ChartRow } from "./home-model";
 import { FORMAT_COLORS, FORMAT_GROUPS } from "./home-model";
 import { GALLERIES, type Gallery } from "./catalog";
+import type { CatalogLayout } from "./catalog-layout";
 
 type Spec = Record<string, unknown>;
 
@@ -27,6 +28,8 @@ export interface ChartOptions {
   legend?: boolean;
   /** Font for the name labels (the page's mono stack). */
   monoFont: string;
+  /** Page-only fixed geometry. Standalone charts retain native automatic layout. */
+  layout?: CatalogLayout;
 }
 
 /** File sizes on the axis: decimal units at powers of ten. */
@@ -36,6 +39,7 @@ const BYTES_LABEL = "datum.value >= 1e6 ? datum.value / 1e6 + ' MB' : datum.valu
 const LABEL_FLIP = 5e5;
 
 export function catalogSpec(rows: ChartRow[], o: ChartOptions): Spec {
+  const fontSize = o.layout?.fontSize ?? 11;
   const selectedCount = GALLERIES.map((g) => `(indexof(galleries, '${g}') >= 0 ? datum.usage['${g}'] : 0)`).join(" + ");
   // Points outside the search and chip filters fade (the `matched` param, set by the page);
   // on wide screens, so do points outside the brush.
@@ -52,25 +56,25 @@ export function catalogSpec(rows: ChartRow[], o: ChartOptions): Spec {
     field: "bytes",
     type: "quantitative",
     scale: { type: "log", domain: [50, 2e7] },
-    axis: { title: "File size (log scale)", values: [1e2, 1e3, 1e4, 1e5, 1e6, 1e7], labelExpr: BYTES_LABEL, grid: false },
+    axis: { title: "File size (log scale)", values: [1e2, 1e3, 1e4, 1e5, 1e6, 1e7], labelExpr: BYTES_LABEL, grid: false, labelFontSize: fontSize, titleFontSize: fontSize },
   };
   const y = {
     field: "examples",
     type: "quantitative",
     scale: { type: "sqrt", zero: true },
-    axis: { title: { expr: "[galleryTitle, '(square root scale)']" }, tickMinStep: 1 },
+    axis: { title: { expr: "[galleryTitle, '(square root scale)']" }, tickMinStep: 1, labelFontSize: fontSize, titleFontSize: fontSize },
   };
   const label = (test: string, align: "left" | "right") => ({
     transform: [{ filter: `datum.usageRank <= ${o.labels} && ${test}` }],
     // Names repeat the points' descriptions, so screen readers skip them.
-    mark: { type: "text", align, dx: align === "left" ? 8 : -8, baseline: "middle", fontSize: 11, font: o.monoFont, aria: false },
+    mark: { type: "text", align, dx: align === "left" ? 8 : -8, baseline: "middle", fontSize, font: o.monoFont, aria: false },
     encoding: {
       x, y,
       // Leave a text line between labels as the plot resizes. Compare consecutive
       // ranks across BOTH layers so equal counts and left/right labels cannot collide.
       // This stays in the public Vega-Lite spec, including exported/Editor charts.
       text: {
-        condition: { test: "datum.usageRank === 1 || abs(scale('y', datum.previousExamples) - scale('y', datum.examples)) >= 14", field: "name" },
+        condition: { test: `datum.usageRank === 1 || abs(scale('y', datum.previousExamples) - scale('y', datum.examples)) >= ${fontSize + 3}`, field: "name" },
         value: "",
       },
       href: { field: "href" }, ...dim,
@@ -82,6 +86,15 @@ export function catalogSpec(rows: ChartRow[], o: ChartOptions): Spec {
     width: "container",
     height: o.height,
     autosize: { type: "fit-x", contains: "padding" },
+    // Fixed public Vega-Lite geometry removes server/browser font-metric differences.
+    // Both renderers draw the same coordinates; CSS scales the entire SVG. Generous
+    // padding includes two-line y titles, ticks, and the uppermost dataset label.
+    ...(o.layout ? {
+      width: o.layout.width,
+      height: o.layout.height,
+      padding: { left: 76, right: 12, top: 18, bottom: 48 },
+      autosize: { type: "none", contains: "padding" },
+    } : {}),
     data: { values: rows },
     params: [
       { name: "galleries", value: o.galleries ?? [] },

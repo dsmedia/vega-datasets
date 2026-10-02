@@ -151,7 +151,7 @@ describe('metadata gaps (DECISIONS D6)', () => {
 test('the home page has every dataset card, and the chart drawn', () => {
   const text = html(path.join(dist, 'index.html'));
   expect(text.match(/<a class="card"/g)).toHaveLength(catalog.datasets.length);
-  expect(text.match(/class="chart-static /g)).toHaveLength(2);
+  expect(text.match(/class="chart-static"/g)).toHaveLength(4);
   expect(text).toContain('<a tabindex="-1" xlink:href="datasets/cars/"');
 });
 

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, test, vi } from 'vitest';
 import { mountCatalogChart } from '../src/client/catalog-chart';
+import { CATALOG_LAYOUTS, type CatalogLayout } from '../src/lib/catalog-layout';
 
 const mocks = vi.hoisted(() => ({ embed: vi.fn() }));
 vi.mock('../src/client/embed', () => ({
@@ -17,6 +18,7 @@ function drawing() {
 }
 beforeEach(() => {
   mocks.embed.mockReset();
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
   document.body.innerHTML = '<div data-chart><svg class="chart-static"></svg></div>';
 });
 const host = () => document.querySelector<HTMLElement>('[data-chart]')!;
@@ -67,22 +69,28 @@ test('a failed first render leaves only the usable static drawing', async () => 
   expect(host().querySelector('.chart-live')).toBeNull();
 });
 
-test('the page fits its fallback height and initial search while the Editor keeps space for its legend', async () => {
+test('page geometry stays fixed within a layout; crossing layouts redraws while the Editor keeps automatic layout', async () => {
   const result = drawing();
   mocks.embed.mockResolvedValue(result);
-  let frameHeight = 128;
-  const chart = await mountCatalogChart(host(), [], () => ({ brush: false, height: 214, labels: 5, monoFont: 'monospace', frameHeight, matched: ['cars'] }), vi.fn());
+  let layout: CatalogLayout = CATALOG_LAYOUTS[0];
+  const chart = await mountCatalogChart(host(), [], () => ({ brush: false, height: 214, labels: 5, monoFont: 'monospace', layout, matched: ['cars'] }), vi.fn());
   const spec = mocks.embed.mock.calls[0]![1];
-  expect(spec.height).toBe(128);
-  expect(spec.autosize).toEqual({ type: 'fit', contains: 'padding' });
+  expect(spec.height).toBe(layout.height);
+  expect(spec.width).toBe(layout.width);
+  expect(spec.autosize).toEqual({ type: 'none', contains: 'padding' });
   expect(spec.params.find((p) => p.name === 'matched').value).toEqual(['cars']);
   expect(result.spec.height).toBe(214);
   expect(result.spec.autosize.type).toBe('fit-x');
   chart.setMatches(['cars']);
   expect(result.view.runAsync).not.toHaveBeenCalled();
-  frameHeight = 200;
   window.dispatchEvent(new Event('resize'));
-  await vi.waitFor(() => expect(result.view.signal).toHaveBeenCalledWith('height', 200, { force: true }));
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  expect(mocks.embed).toHaveBeenCalledTimes(1);
+  expect(result.view.runAsync).not.toHaveBeenCalled();
+  layout = CATALOG_LAYOUTS[1];
+  window.dispatchEvent(new Event('resize'));
+  await vi.waitFor(() => expect(mocks.embed).toHaveBeenCalledTimes(2));
+  expect(mocks.embed.mock.calls[1]![1].width).toBe(layout.width);
   expect(result.spec.height).toBe(214);
   chart.destroy();
 });
