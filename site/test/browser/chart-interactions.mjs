@@ -117,10 +117,10 @@ try {
       if (args.output && [390, 1000].includes(width)) await (await page.$('[data-chart]')).screenshot({ path: args.output.replace(/\.json$/, `-${width}.png`) });
       if (width === 1000) {
         await page.setViewport({ width: 800, height: 844 });
-        await page.waitForFunction((height) => document.querySelector('.chart-live svg.marks').getBoundingClientRect().height < height, { timeout: 15_000 }, after.height);
+        await page.waitForFunction(() => document.querySelector('.chart-live:not(.pending) svg.marks')?.viewBox.baseVal.width === 640 && !document.querySelector('.chart-live.pending'), { timeout: 15_000 });
         const resized = await page.evaluate(geometry);
         assert.equal(resized.overflow, 0);
-        assert.ok(Math.abs(resized.height - after.height * resized.width / after.width) <= 2, 'Live chart follows the same responsive height after resizing');
+        assert.ok(resized.height > 150 && resized.height < 400, 'Compact layout stays usable after resizing');
         results.checks.push({ name: 'Active chart refits from 1000px to 800px', before: after, after: resized });
       }
       if ([390, 641].includes(width)) {

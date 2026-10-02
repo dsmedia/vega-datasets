@@ -13,6 +13,7 @@ import Thumb from "../components/Thumb.astro";
 import Base from "../layouts/Base.astro";
 import { GALLERIES, GALLERY_LABEL } from "../lib/catalog";
 import { catalogSpec } from "../lib/catalog-chart";
+import { CATALOG_LAYOUTS } from "../lib/catalog-layout";
 import { useSnippets } from "../lib/dataset-model";
 import { formatBytes, formatCount } from "../lib/format";
 import { chartRows, FORMAT_COLORS, FORMAT_GROUPS, homeCounts, listDatasets, NO_FILTERS, readmeSection, showcase, SORT_LABEL, SORT_NOTE, type Sort } from "../lib/home-model";
@@ -26,15 +27,19 @@ const major = c.package.version.split(".")[0];
 const cars = c.dataset("cars")!;
 const list = listDatasets(c, NO_FILTERS);
 
-// The catalog chart as the page first shows it: at the width of a 1360px window (the
-// live chart, drawn at the container's width, takes over on first interaction), and at
-// a 390px phone's width.
+// CSS chooses a reference drawing before any script runs. The live view uses the
+// same reference layout; neither renderer reflows at the scaled container width.
 const rows = chartRows(c, formatBytes);
 const monoFont = lightToken("--font-mono");
-const WIDE = 1242;
-const PHONE = 358;
-const wide = await staticChart({ ...catalogSpec(rows, { brush: true, height: 240, labels: 9, monoFont }), width: WIDE });
-const phone = await staticChart({ ...catalogSpec(rows, { brush: false, height: 214, labels: 5, monoFont }), width: PHONE });
+const charts = await Promise.all(CATALOG_LAYOUTS.map((layout) => staticChart(catalogSpec(rows, {
+  brush: false, height: layout.height, labels: layout.labels, monoFont, layout,
+}))));
+// Derive the CSS breakpoints from the same table as the live controller.
+const chartCSS = CATALOG_LAYOUTS.map((layout, i) => {
+  const lower = i ? `(width > ${CATALOG_LAYOUTS[i - 1]!.maxWidth}px)` : "";
+  const upper = Number.isFinite(layout.maxWidth) ? `(width <= ${layout.maxWidth}px)` : "";
+  return `@container catalog (${[lower, upper].filter(Boolean).join(" and ")}) { .chart-static[data-layout="${i}"] { display: block; } }`;
+}).join("\n");
 
 const readmeItems: [string, string, string, string][] = [
   ["about-metadata", "Metadata", "Data Package v2: schema, sources, licenses", "Dataset Information"],
@@ -97,9 +102,9 @@ const about = readmeItems.flatMap(([id, title, hint, heading]) => {
     </div>
     <noscript><div class="format-key" aria-label="Chart formats">{FORMAT_GROUPS.map((g) => <span><span class="format-swatch" style={`background-color: ${FORMAT_COLORS[g]}`} aria-hidden="true"></span>{g}</span>)}</div></noscript>
     <p class="usage-scope" data-usage-scope aria-live="polite">Gallery examples across all three libraries</p>
-    <div class="catalog-chart" data-chart style={`--chart-h: ${wide.height}px; --chart-h-phone: ${phone.height}px`}>
-      <div class="chart-static chart-static-wide" set:html={wide.svg} />
-      <div class="chart-static chart-static-phone" set:html={phone.svg} />
+    <style is:inline set:html={chartCSS} />
+    <div class="catalog-chart" data-chart>
+      {charts.map((chart, i) => <div class="chart-static" data-layout={i} set:html={chart.svg} />)}
     </div>
     <div class="chart-note">
       <span class="hint"><span class="wide-only">Drag across the chart to filter the list. Click a point to open its dataset.</span><span class="phone-only">Tap a point to open its dataset.</span></span>

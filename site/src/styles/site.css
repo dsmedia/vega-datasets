@@ -535,16 +535,16 @@ button.link:hover { text-decoration: underline; }
 .sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--rule); padding-bottom: 1px; }
 .status { font-size: 13px; color: var(--ink-muted); white-space: pre-wrap; text-align: right; }
 .usage-scope { font-size: 13px; color: var(--ink-muted); }
-.catalog-chart { position: relative; }
+.catalog-chart { position: relative; container: catalog / inline-size; }
 /* SVG's delegated handlers can make the browser highlight the entire chart on tap.
    Keep feedback on the linked mark, without suppressing keyboard focus or scrolling. */
 .catalog-chart svg { -webkit-tap-highlight-color: transparent; }
 .catalog-chart svg .mark-symbol path:active,
 .catalog-chart svg .mark-symbol a:active path { stroke: var(--focus); stroke-width: 3; }
 /* The chart as the build drew it, until the live one replaces it (client/catalog-chart.ts). */
-.chart-static svg { display: block; width: 100%; height: auto; }
-.chart-static-wide { padding-right: 38px; }
-.chart-static-phone { display: none; }
+.chart-static svg, .chart-live svg.marks { display: block; width: 100%; height: auto; }
+.chart-static { display: none; padding-right: 38px; }
+.catalog-chart .chart-live { width: 100%; }
 .chart-live.pending { position: absolute; inset: 0; visibility: hidden; }
 .chart-note { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; font-size: 13px; color: var(--ink-muted); }
 .chart-note .mono { font-size: 12px; white-space: nowrap; }
@@ -695,8 +695,7 @@ html:not(.js) :is(.filters, .browse-foot .more, #examples .seg, #examples .more,
   /* The legend sits above the plot, so the plot can use the width vega-embed keeps for its menu
      (vega-embed injects its own style after this sheet, hence the extra class). */
   .browse .catalog-chart .vega-embed.has-actions { padding-right: 0; }
-  .chart-static-wide { display: none; }
-  .chart-static-phone { display: block; }
+  .chart-static { padding-right: 0; }
   html.js .cards:not([data-managed]):not([data-expanded]) > .card:nth-child(n+5) { display: none; }
   .filters input[type="search"] { width: 100%; height: 44px; font-size: 16px; }
   .chip-row { flex-wrap: wrap; }
