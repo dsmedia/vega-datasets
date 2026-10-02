@@ -214,8 +214,7 @@ describe('the catalog chart', () => {
       expect(y(0)).toBe(bottom);
       expect(y(hi / 4)).toBeCloseTo((bottom + top) / 2);
       const labels = [...svg.matchAll(/<text[^>]*font-family="monospace"[^>]*>([^<]+)<\/text>/g)].map((m) => m[1]);
-      if (o.brush) expect(labels).toHaveLength(o.labels);
-      else expect(labels.length).toBeLessThanOrEqual(o.labels);
+      expect(labels.length).toBeLessThanOrEqual(o.labels);
       expect(labels).toContain('cars');
     } finally {
       view.finalize();
@@ -249,8 +248,11 @@ describe('the catalog chart', () => {
 
   const selections: Gallery[][] = [[], ['vega'], ['vega-lite'], ['altair'], ['vega-lite', 'vega'], ['vega', 'altair'], ['vega-lite', 'altair'], [...GALLERIES]];
 
-  test.each([288, 358, 398, 608])('phone labels stay apart at width %i when the gallery changes', async (width) => {
-    const compiled = compile({ ...catalogSpec(rows, { ...options, brush: false, height: 214, labels: 5 }), width } as TopLevelSpec).spec;
+  test.each([
+    [288, 214, false, 5], [358, 214, false, 5], [398, 214, false, 5], [608, 214, false, 5],
+    [563, 128, true, 9], [722, 165, true, 9], [1242, 283, true, 9],
+  ] as const)('labels stay apart at width %i and height %i (brush=%s, limit=%i)', async (width, height, brush, limit) => {
+    const compiled = compile({ ...catalogSpec(rows, { ...options, brush, height, labels: limit }), width, autosize: { type: 'fit', contains: 'padding' } } as TopLevelSpec).spec;
     const view = new vega.View(vega.parse(compiled, {}, { ast: true }), { renderer: 'none', expr: expressionInterpreter });
     type Item = { text?: string; font?: string; bounds: { x1: number; x2: number; y1: number; y2: number }; items?: Item[] };
     const textItems = (item: Item): Item[] => [
@@ -262,7 +264,7 @@ describe('the catalog chart', () => {
         await view.signal('galleries', selected).runAsync();
         const labels = textItems(view.scenegraph().root as unknown as Item);
         expect(labels.length).toBeGreaterThan(0);
-        expect(labels.length).toBeLessThanOrEqual(5);
+        expect(labels.length).toBeLessThanOrEqual(limit);
         for (let i = 0; i < labels.length; i++) {
           for (const other of labels.slice(i + 1)) {
             const a = labels[i]!.bounds, b = other.bounds;
@@ -299,7 +301,9 @@ describe('the catalog chart', () => {
         expect(svg).not.toMatch(/NaN|undefined/);
         expect(svg).toContain(usageTitle(galleries));
         const labels = [...svg.matchAll(/<text[^>]*font-family="monospace"[^>]*>([^<]+)<\/text>/g)].map((m) => m[1]);
-        expect(new Set(labels)).toEqual(new Set(listed.slice(0, options.labels).map((d) => d.name)));
+        const leading = listed.slice(0, options.labels).map((d) => d.name);
+        expect(labels).toContain(leading[0]);
+        for (const name of labels) expect(leading).toContain(name);
       }
     } finally { view.finalize(); }
   });

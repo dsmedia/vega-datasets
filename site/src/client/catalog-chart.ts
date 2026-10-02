@@ -24,6 +24,11 @@ export interface MountedChart {
   destroy(): void;
 }
 
+interface LiveChartOptions extends ChartOptions {
+  /** Fit the page's live chart into the fallback's responsive outer height. */
+  frameHeight?: number;
+}
+
 /**
  * Embed the live chart in `host`, replacing its static drawing. `options` is read on
  * every draw, so it can follow the host's width; `onBrush` hears every brush change
@@ -32,7 +37,7 @@ export interface MountedChart {
 export async function mountCatalogChart(
   host: HTMLElement,
   rows: ChartRow[],
-  options: () => ChartOptions,
+  options: () => LiveChartOptions,
   onBrush: (b: Brush | null) => void,
   onError: () => void = () => {},
 ): Promise<MountedChart> {
@@ -41,7 +46,7 @@ export async function mountCatalogChart(
   let result: Awaited<ReturnType<typeof v.vegaEmbed>> | undefined;
   let queue: Promise<void> = Promise.resolve();
   let destroyed = false;
-  let matched: string[] | null = null;
+  let matched: string[] | null = options().matched ?? null;
   let galleries = options().galleries ?? [];
   let brush: Brush | null = null;
   const enqueue = (work: () => Promise<void>) => {
@@ -80,7 +85,13 @@ export async function mountCatalogChart(
     const o = options();
     let drawn: NonNullable<typeof result>;
     try {
-      drawn = await v.vegaEmbed(next, catalogSpec(rows, { ...o, galleries, matched }) as never, {
+      const spec = {
+        ...catalogSpec(rows, { ...o, galleries, matched }),
+        // Vega measures the axes and fits the plot, without assuming fixed text metrics.
+        // Standalone exports keep their normal plot height and room for the legend.
+        ...(o.frameHeight === undefined ? {} : { height: o.frameHeight, autosize: { type: "fit", contains: "padding" } }),
+      };
+      drawn = await v.vegaEmbed(next, spec as never, {
         ...embedOptions(v, "svg", { export: true, source: false, compiled: false, editor: true }),
         viewClass: ExportableView,
       });
@@ -113,6 +124,27 @@ export async function mountCatalogChart(
     });
   };
   const redraw = () => enqueue(draw);
+  let resizeTimer: ReturnType<typeof setTimeout>;
+  const pageHeight = () => { const o = options(); return o.frameHeight ?? o.height; };
+  let lastHeight = pageHeight();
+  const resize = () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      const height = pageHeight();
+      if (height === lastHeight) return;
+      lastHeight = height;
+      void enqueue(async () => {
+        if (result) await runView(result.view, () => {
+          // After autosize, Vega's height signal holds the inner plot height. A new
+          // outer height can equal it, so an ordinary setter would skip the resize.
+          // Vega 6 accepts update options here; its View types omit that argument.
+          const signal = result!.view.signal as (name: string, value: number, options: { force: boolean }) => View;
+          signal.call(result!.view, "height", height, { force: true });
+        });
+        syncEditor();
+      }).catch(onError);
+    }, 100);
+  };
   let scheduled = false;
   let resetBrush = false;
   const scheduleSignals = () => {
@@ -132,6 +164,7 @@ export async function mountCatalogChart(
     }).catch(onError);
   };
   await redraw();
+  window.addEventListener("resize", resize);
   return {
     redraw,
     setGalleries: (next) => {
@@ -151,6 +184,8 @@ export async function mountCatalogChart(
     },
     destroy: () => {
       destroyed = true;
+      clearTimeout(resizeTimer);
+      window.removeEventListener("resize", resize);
       result?.finalize();
       live?.remove();
     },

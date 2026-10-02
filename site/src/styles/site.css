@@ -376,6 +376,7 @@ table.status tbody tr:target > * { background: var(--selected-bg); }
 /* The height the chart draws at (--chart-h, --chart-h-phone: measured when the site is built), held
    before it draws; a chart waiting for its button shows the button in the middle of that space. */
 .explore-chart { position: relative; min-height: var(--chart-h, 0); }
+.explore-view.pending { position: absolute; inset: 0; visibility: hidden; }
 @media (max-width: 640px) { .explore-chart { min-height: var(--chart-h-phone, var(--chart-h, 0)); } }
 .explore-chart > .btn.draw:only-child { position: absolute; inset: 0; margin: auto; width: fit-content; height: fit-content; }
 /* A heavy map's picture from the build, until the reader draws the live map. */
@@ -534,7 +535,7 @@ button.link:hover { text-decoration: underline; }
 .sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--rule); padding-bottom: 1px; }
 .status { font-size: 13px; color: var(--ink-muted); white-space: pre-wrap; text-align: right; }
 .usage-scope { font-size: 13px; color: var(--ink-muted); }
-.catalog-chart { position: relative; min-height: var(--chart-h, 240px); }
+.catalog-chart { position: relative; }
 /* SVG's delegated handlers can make the browser highlight the entire chart on tap.
    Keep feedback on the linked mark, without suppressing keyboard focus or scrolling. */
 .catalog-chart svg { -webkit-tap-highlight-color: transparent; }
@@ -693,8 +694,7 @@ html:not(.js) :is(.filters, .browse-foot .more, #examples .seg, #examples .more,
   .chart-note { flex-direction: column; gap: 2px; }
   /* The legend sits above the plot, so the plot can use the width vega-embed keeps for its menu
      (vega-embed injects its own style after this sheet, hence the extra class). */
-  .browse .catalog-chart.has-actions { padding-right: 0; }
-  .catalog-chart { min-height: var(--chart-h-phone, 214px); }
+  .browse .catalog-chart .vega-embed.has-actions { padding-right: 0; }
   .chart-static-wide { display: none; }
   .chart-static-phone { display: block; }
   html.js .cards:not([data-managed]):not([data-expanded]) > .card:nth-child(n+5) { display: none; }

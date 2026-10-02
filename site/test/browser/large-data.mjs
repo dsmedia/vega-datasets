@@ -277,6 +277,9 @@ try {
       for (const width of [1024, 900, 768, 390]) {
         await page.setViewport({ width, height: 900 });
         await sleep(150);
+        // Crossing the phone breakpoint rebuilds the chart. Check the completed
+        // layout, including its replacement bindings, rather than a fixed delay.
+        await page.waitForFunction(() => !document.querySelector('#explore [aria-busy]') && document.querySelectorAll('#explore .binds .vega-bind').length === 2, { timeout: 60_000 });
         const m = await page.evaluate(() => {
           const binds = document.querySelector('#explore .binds');
           const select = binds.querySelector('select');
