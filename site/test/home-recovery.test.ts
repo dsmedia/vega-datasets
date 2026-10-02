@@ -8,6 +8,7 @@ import { loadCatalog, REPO } from './catalog';
 
 const mount = vi.hoisted(() => vi.fn());
 vi.mock('../src/client/embed', () => ({ loadVega: vi.fn(async () => ({})) }));
+vi.mock('../src/client/dom', async (original) => ({ ...await original<typeof import('../src/client/dom')>(), afterPaint: async () => {} }));
 vi.mock('../src/client/catalog-chart', () => ({ mountCatalogChart: mount }));
 afterEach(() => vi.unstubAllGlobals());
 

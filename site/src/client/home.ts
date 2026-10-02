@@ -27,7 +27,7 @@ import {
 } from "../lib/home-model";
 import { onceUnlessFailed } from "../lib/once";
 import type { MountedChart } from "./catalog-chart";
-import { $, h, placeInOrder, whenIdle } from "./dom";
+import { $, afterPaint, h, placeInOrder, whenIdle } from "./dom";
 import { loadVega } from "./embed";
 import { prepareOnIntent } from "./intent";
 import { token } from "./theme";
@@ -57,17 +57,16 @@ const empty = $(".cards-empty");
 const more = $<HTMLButtonElement>(".browse-foot .more");
 const chartHost = $("[data-chart]");
 // The fallback SVG scales with its column. Preserve that outer height when it becomes
-// live, allowing for the unscaled axis labels; a fixed plot height visibly grew on hover.
+// live; a fixed plot height visibly grew on hover at narrower desktop widths.
 const chartFrames = ["wide", "phone"].map((size) => {
   const svg = $<SVGSVGElement>(`.chart-static-${size} svg`, chartHost);
   return { width: Number(svg.getAttribute("width")), height: Number(svg.getAttribute("height")) };
 });
-const chartHeight = () => {
+const chartFrameHeight = () => {
   const small = phone.matches;
   const frame = chartFrames[small ? 1 : 0]!;
-  const plot = small ? 214 : 240;
   const width = chartHost.clientWidth - (small ? 0 : 38);
-  return width > 0 ? Math.max(80, Math.round(frame.height * width / frame.width - (frame.height - plot))) : plot;
+  return width > 0 ? Math.round(frame.height * width / frame.width) : frame.height;
 };
 const usageScope = $("[data-usage-scope]");
 const formatChips = [...document.querySelectorAll<HTMLButtonElement>(".chip[data-format]")];
@@ -289,11 +288,16 @@ function hydrate(): Promise<void> {
     };
     const options = () => ({
       brush: !phone.matches,
-      height: chartHeight(),
+      height: phone.matches ? 214 : 240,
+      frameHeight: chartFrameHeight(),
       labels: phone.matches ? 5 : 9,
       galleries: GALLERIES.filter((g) => filters.galleries.has(g)),
+      matched: isFiltered({ ...filters, brush: null }) ? baseMatches(c, filters).map((d) => d.name) : null,
       monoFont: token("--font-mono"),
     });
+    // Prepared modules can resolve immediately. Paint the selected filter before Vega
+    // compiles and draws, rather than putting all of that work into the input event.
+    await afterPaint();
     chart = await mountCatalogChart(chartHost, chartRows(c, formatBytes), options, onBrush, chartError);
     update();
   })().catch((err: unknown) => {

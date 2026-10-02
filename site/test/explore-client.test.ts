@@ -11,7 +11,7 @@ vi.mock('../src/client/embed', () => ({
   ChartCodeError: class extends Error {},
 }));
 vi.mock('../src/client/theme', () => ({ onThemeChange: mocks.theme }));
-vi.mock('../src/client/dom', async (original) => ({ ...await original(), afterPaint: async () => {} }));
+vi.mock('../src/client/dom', async (original) => ({ ...await original<typeof import('../src/client/dom')>(), afterPaint: async () => {} }));
 const catalog = loadCatalog();
 let phone: { matches: boolean; addEventListener: ReturnType<typeof vi.fn> };
 const section = () => document.querySelector<HTMLElement>('section')!;

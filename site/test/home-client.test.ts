@@ -25,6 +25,7 @@ const settle = () => new Promise((r) => setTimeout(r, 0));
 const scrollIntoView = vi.fn();
 const mounted = vi.hoisted(() => ({ redraw: vi.fn(async () => {}), setMatches: vi.fn(), setGalleries: vi.fn(), clearBrush: vi.fn(), destroy: vi.fn() }));
 vi.mock('../src/client/embed', () => ({ loadVega: vi.fn(async () => ({})) }));
+vi.mock('../src/client/dom', async (original) => ({ ...await original<typeof import('../src/client/dom')>(), afterPaint: async () => {} }));
 let brushChange: (b: import('../src/lib/home-model').Brush | null) => void;
 vi.mock('../src/client/catalog-chart', () => ({
   mountCatalogChart: vi.fn(async (_host, _rows, _options, onBrush) => {

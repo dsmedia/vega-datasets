@@ -38,7 +38,7 @@ async function open(route = '', width = 390, measured = false) {
     await page.evaluateOnNewDocument(() => {
       window.__events = [];
       new PerformanceObserver((list) => {
-        for (const e of list.getEntries()) if (e.interactionId) window.__events.push({ type: e.name, at: e.startTime, duration: e.duration, processing: e.processingEnd - e.processingStart });
+        for (const e of list.getEntries()) if (e.interactionId) window.__events.push({ id: e.interactionId, type: e.name, at: e.startTime, duration: e.duration, processing: e.processingEnd - e.processingStart });
       }).observe({ type: 'event', buffered: true, durationThreshold: 16 });
     });
   }
@@ -82,7 +82,10 @@ async function arm(page, kind) {
 async function result(page) {
   await page.waitForFunction(() => window.__clickResult, { timeout: 60_000 });
   await pause(150); // Event Timing is delivered after the next paint.
-  return page.evaluate(() => ({ ...window.__clickResult, events: window.__events.filter((e) => e.at >= window.__clickResult.at - 5) }));
+  return page.evaluate(() => {
+    const click = window.__events.find((e) => e.type === 'click' && Math.abs(e.at - window.__clickResult.at) < 2);
+    return { ...window.__clickResult, events: click ? window.__events.filter((e) => e.id === click.id) : [] };
+  });
 }
 
 try {
@@ -104,6 +107,8 @@ try {
       assert.equal(after.overflow, 0);
       assert.deepEqual(errors, []);
       results.checks.push({ name: `Stable activation at ${width}px`, before, after });
+      console.log(`Stable chart size at ${width}px: ${before.height.toFixed(1)} → ${after.height.toFixed(1)}px`);
+      if (args.output && [390, 1000].includes(width)) await (await page.$('[data-chart]')).screenshot({ path: args.output.replace(/\.json$/, `-${width}.png`) });
       if (width === 1000) {
         await page.setViewport({ width: 800, height: 844 });
         await pause(500);
@@ -161,6 +166,7 @@ try {
     await page.select('#explore .binds select[name="xField"]', 'Horsepower');
     await page.select('#explore .binds select[name="yField"]', 'Weight_in_lbs');
     await page.waitForFunction(() => document.querySelector('#explore .chart-caption .hint').textContent.includes('400 of 406'));
+    if (args.output) await page.tracing.start({ path: args.output.replace(/\.json$/, '-cars-trace.json') });
     for (let i = 0; i < 3; i++) for (const mode of ['time', 'scatter']) {
       await arm(page, 'cars');
       await page.tap(`#explore [data-mode="${mode}"]`);
@@ -168,6 +174,7 @@ try {
       results.cars.push(sample);
       console.log(`Cars ${mode}: ${sample.readyMs.toFixed(0)}ms to chart, ${Math.max(0, ...sample.events.map((e) => e.duration))}ms interaction`);
     }
+    if (args.output) await page.tracing.stop();
     assert.deepEqual(errors, []);
     await context.close();
   }
