@@ -61,6 +61,7 @@ const noindex = keepOut(process.env);
       </details>
     </div>
     <div class="vg-primary">
+      <a href={path === "" ? "#browse" : `${base}#browse`} data-browse aria-current={path === "" ? "page" : undefined}>Browse Datasets</a>
       <a href={`${base}${STATUS_PATH}`} aria-current={path === STATUS_PATH ? "page" : undefined}>{STATUS_TITLE}</a>
     </div>
     <div class="vg-secondary">

@@ -101,15 +101,16 @@ const about = readmeItems.flatMap(([id, title, hint, heading]) => {
       <label class="sort" for="home-sort">Sort<select id="home-sort">{(Object.keys(SORT_LABEL) as Sort[]).map((s) => <option value={s}>{SORT_LABEL[s]}</option>)}</select></label>
     </div>
     <noscript><div class="format-key" aria-label="Chart formats">{FORMAT_GROUPS.map((g) => <span><span class="format-swatch" style={`background-color: ${FORMAT_COLORS[g]}`} aria-hidden="true"></span>{g}</span>)}</div></noscript>
-    <p class="usage-scope" data-usage-scope aria-live="polite">Gallery examples across all three libraries</p>
     <style is:inline set:html={chartCSS} />
-    <div class="catalog-chart" data-chart>
-      {charts.map((chart, i) => <div class="chart-static" data-layout={i} set:html={chart.svg} />)}
-    </div>
-    <div class="chart-note">
-      <span class="hint"><span class="wide-only">Drag across the chart to filter the list. Click a point to open its dataset.</span><span class="phone-only">Tap a point to open its dataset.</span></span>
-      <span class="mono">Vega-Lite · <span class="wide-only">interval selection · </span>href channel · log x · sqrt y</span>
-    </div>
+    <figure class="catalog-figure">
+      <p class="usage-scope" data-usage-scope aria-live="polite">Gallery examples across all three libraries</p>
+      <div class="catalog-chart" data-chart>
+        {charts.map((chart, i) => <div class="chart-static" data-layout={i} set:html={chart.svg} />)}
+      </div>
+      <figcaption class="chart-note">
+        <span class="wide-only">Drag to filter datasets. Click a point to open it.</span><span class="phone-only">Tap a point to open its dataset.</span>
+      </figcaption>
+    </figure>
     <div class="cards">
       {list.map((d) => <DatasetCard catalog={c} dataset={d} max={max} />)}
     </div>

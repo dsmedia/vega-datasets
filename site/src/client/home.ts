@@ -311,7 +311,12 @@ phone.addEventListener("change", () => {
 
 // --- Links into the page ------------------------------------------------------------------
 // "Browse Datasets" jumps to the list; the search box takes focus.
-$("[data-browse]").addEventListener("click", () => setTimeout(() => search.focus({ preventScroll: true })));
+document.querySelectorAll<HTMLAnchorElement>("[data-browse]").forEach((link) => {
+  link.addEventListener("click", (event) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    setTimeout(() => search.focus({ preventScroll: true }));
+  });
+});
 // Reveal before the browser follows an in-page link, including a repeated link to
 // the current hash after its item was closed. Keep native URL/history navigation.
 const openTarget = (hash = location.hash, scroll = false) => {

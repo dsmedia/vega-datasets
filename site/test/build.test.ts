@@ -143,7 +143,8 @@ describe('metadata gaps (DECISIONS D6)', () => {
   test('the home page links to Metadata Coverage from the menu and Contribute box', () => {
     const home = html(path.join(dist, 'index.html'));
     expect(home.match(/href="\/vega-datasets\/metadata\/"/g)).toHaveLength(2);
-    expect(home).toMatch(/<div class="vg-primary">\s*<a href="\/vega-datasets\/metadata\/">Metadata Coverage<\/a>/);
+    const primary = home.match(/<div class="vg-primary">([\s\S]*?)<\/div>/)?.[1];
+    expect(primary).toContain('<a href="/vega-datasets/metadata/">Metadata Coverage</a>');
     expect(home).toMatch(/<aside class="contribute"[\s\S]*href="\/vega-datasets\/metadata\/"[\s\S]*<\/aside>/);
   });
 });

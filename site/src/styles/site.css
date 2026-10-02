@@ -534,7 +534,8 @@ button.link:hover { text-decoration: underline; }
 .use h2 { border-bottom: 1px solid var(--rule); padding-bottom: 1px; }
 .sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--rule); padding-bottom: 1px; }
 .status { font-size: 13px; color: var(--ink-muted); white-space: pre-wrap; text-align: right; }
-.usage-scope { font-size: 13px; color: var(--ink-muted); }
+.catalog-figure { min-width: 0; margin: 0 0 12px; }
+.usage-scope { margin-bottom: 8px; font-size: 13px; color: var(--ink-muted); }
 .catalog-chart { position: relative; container: catalog / inline-size; }
 /* SVG's delegated handlers can make the browser highlight the entire chart on tap.
    Keep feedback on the linked mark, without suppressing keyboard focus or scrolling. */
@@ -546,8 +547,7 @@ button.link:hover { text-decoration: underline; }
 .chart-static { display: none; padding-right: 38px; }
 .catalog-chart .chart-live { width: 100%; }
 .chart-live.pending { position: absolute; inset: 0; visibility: hidden; }
-.chart-note { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; font-size: 13px; color: var(--ink-muted); }
-.chart-note .mono { font-size: 12px; white-space: nowrap; }
+.chart-note { margin-top: 4px; font-size: 13px; color: var(--ink-muted); text-align: center; }
 
 .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 4px; }
 .filters input[type="search"] {
@@ -660,17 +660,19 @@ html:not(.js) :is(.filters, .browse-foot .more, #examples .seg, #examples .more,
   .use-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-/* Phone header (as on the family sites): the title on one row, the links below. */
-@media (max-width: 640px) {
+/* Keep the two main destinations together below the title and GitHub on small screens. */
+@media (max-width: 760px) {
   .vg-nav { padding: 6px 16px 8px; gap: 2px 18px; min-height: 0; }
   .vg-primary, .vg-secondary { display: contents; }
   .vg-header a { line-height: 28px; font-size: 15px; }
   .vg-header a.vg-title { font-size: 19px; line-height: 40px; padding: 0; }
   .vg-nav::after { content: ""; order: 2; flex-basis: 100%; }
   .vg-primary a { order: 3; }
-  .vg-secondary a { order: 4; }
+  .vg-secondary a { order: 1; margin-left: auto; }
   .vg-secondary a[data-wide] { display: none; }
   .vg-switcher-menu { left: -16px; }
+}
+@media (max-width: 640px) {
   .wrap { padding-inline: 16px; }
   .lede { font-size: 1.15em; }
   .wide-only, .chip-label, .use-link { display: none; }
@@ -691,7 +693,6 @@ html:not(.js) :is(.filters, .browse-foot .more, #examples .seg, #examples .more,
   .browse, .use, .about { padding-top: 36px; }
   .browse { gap: 12px; }
   .browse h2, .use h2, .about h2 { font-size: 24px; }
-  .chart-note { flex-direction: column; gap: 2px; }
   /* The legend sits above the plot, so the plot can use the width vega-embed keeps for its menu
      (vega-embed injects its own style after this sheet, hence the extra class). */
   .browse .catalog-chart .vega-embed.has-actions { padding-right: 0; }
