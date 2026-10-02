@@ -176,7 +176,8 @@ code, .mono { font-family: var(--font-mono); font-size: 0.85em; }
 
 /* vega-embed actions menu */
 .vega-embed { width: 100%; }
-.vega-embed summary { opacity: 0.6; }
+/* Embed injects a faded default later; keep this control visible without hover on touch. */
+.vega-embed.has-actions > details > summary { opacity: 1; }
 .vega-embed .vega-actions {
   background: var(--surface); border: 1px solid var(--rule-soft); border-radius: var(--radius-button);
   box-shadow: var(--shadow-pop); font-family: var(--font-sans);
