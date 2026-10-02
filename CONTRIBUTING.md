@@ -184,6 +184,20 @@ npm run build
 
 ### Code Quality Checks
 
+The version-scoped `overrides` in `package.json` patch the release tool's
+development dependencies: [Undici 7.29.1](https://github.com/nodejs/undici/releases/tag/v7.29.1)
+and [basic-ftp 6.2.1](https://github.com/patrickjuchli/basic-ftp/releases/tag/v6.2.1).
+Checked on 2026-10-02: release-it 21.1.0 still selects vulnerable versions, so an
+upgrade alone does not resolve the audit findings. Reassess these exceptions
+when updating release-it or get-uri; remove them once the upstream dependency
+chain selects patched versions and `npm audit` passes. The overrides select
+Undici 7.29.0 and get-uri 8.0.1 within release-it's dependency tree; audit again
+when either dependency changes.
+basic-ftp 6 also rejects separate passive-transfer hosts by default; unusual
+FTP-hosted proxy configurations may be affected. This repository does not
+configure one. Validate release tooling with Node 24.15+ and a dry run before
+publishing.
+
 Run these checks before submitting (using `uv run` ensures correct tool versions from `uv.lock` are used):
 
 ```bash
