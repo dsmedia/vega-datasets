@@ -19,7 +19,7 @@ const { datasets, entry } = Astro.props;
 const base = import.meta.env.BASE_URL;
 const rows = byGaps(datasets.map((dataset) => ({ dataset, status: completeness(dataset) })));
 ---
-<div class="table-scroll status-scroll" tabindex="0" role="region" aria-label="Metadata status of every dataset">
+<div class="table-scroll status-scroll" tabindex="0" role="region" aria-label="Metadata coverage of every dataset">
   <table class="status">
     <thead>
       <tr>

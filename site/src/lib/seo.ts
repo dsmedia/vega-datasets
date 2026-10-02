@@ -40,9 +40,9 @@ export function siteRepo(env: Record<string, string | undefined>): string {
   return `https://github.com/${repo && /^[\w.-]+\/[\w.-]+$/.test(repo) ? repo : DEFAULT_SITE_REPO}`;
 }
 
-/** The metadata status page: its path relative to the home page, and its title. */
+/** The metadata coverage page: its path relative to the home page, and its title. */
 export const STATUS_PATH = "metadata/";
-export const STATUS_TITLE = "Metadata Status";
+export const STATUS_TITLE = "Metadata Coverage";
 
 /** A dataset's row on the status page: namespaced, so no dataset name can collide with the layout's ids (main#page). */
 export function statusRowId(name: string): string {

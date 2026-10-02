@@ -1,32 +1,29 @@
 ---
 /**
  * Every page: the head (title, description, canonical URL, link-preview tags), the Vega
- * family header, the footer, and the page's JSON-LD (at the end, so the head stays short). Scripts are external files only (the CSP
- * allows nothing else); theme-init.js runs before the stylesheet so a saved dark
- * choice paints without a flash.
+ * family header, the footer, and the page's JSON-LD (at the end, so the head stays short).
+ * Scripts are external files only (the CSP allows nothing else); page-init.js enables
+ * the expandable lists before the stylesheet paints them.
  */
 import "../styles/site.css";
-import { HOME_URL, jsonForScript, noindex as keepOut, SITE_NAME } from "../lib/seo";
+import { HOME_URL, jsonForScript, noindex as keepOut, REPO, SITE_NAME, STATUS_PATH, STATUS_TITLE } from "../lib/seo";
 
 interface Props {
   title: string;
   description: string;
   /** The page's path relative to the home page ("" for home). */
   path: string;
-  /** Which header link is current: the home page, or a page inside Datasets. */
-  section: "home" | "dataset" | "none";
   jsonLd?: Record<string, unknown>[];
 }
 
-const { title, description, path, section, jsonLd = [] } = Astro.props;
+const { title, description, path, jsonLd = [] } = Astro.props;
 const base = import.meta.env.BASE_URL;
 const canonical = new URL(path, HOME_URL).href;
 // Deployments other than vega/vega-datasets (forks, previews) stay out of search results.
 const noindex = keepOut(process.env);
-const current = section === "home" ? "page" : section === "dataset" ? "true" : undefined;
 ---
 <!doctype html>
-<html lang="en" data-theme="light">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -44,14 +41,14 @@ const current = section === "home" ? "page" : section === "dataset" ? "true" : u
 <meta name="theme-color" content="#234a3b">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23234a3b'/%3E%3Cpath d='M4 11h2V7H4zm3 0h2V4H7zm3 0h2V8h-2z' fill='%23fff'/%3E%3C/svg%3E">
 <link rel="sitemap" type="application/xml" href={`${base}sitemap.xml`}>
-<script is:inline src={`${base}theme-init.js`}></script>
+<script is:inline src={`${base}page-init.js`}></script>
 <slot name="head" />
 </head>
 <body>
 <header class="vg-header">
   <nav class="vg-nav" aria-label="Site">
     <div class="vg-switcher">
-      <a class="vg-title" href={base}>vega-datasets</a>
+      <a class="vg-title" href={base} aria-current={path === "" ? "page" : undefined}>vega-datasets</a>
       <div class="vg-switcher-menu">
         <a href="https://vega.github.io/vega/">Vega</a>
         <a href="https://vega.github.io/vega-lite/">Vega-Lite</a>
@@ -60,17 +57,11 @@ const current = section === "home" ? "page" : section === "dataset" ? "true" : u
       </div>
     </div>
     <div class="vg-primary">
-      <a href={base} aria-current={current}>Datasets</a>
-      <a href="https://github.com/vega/vega-datasets/blob/main/CONTRIBUTING.md">Contributing</a>
+      <a href={`${base}${STATUS_PATH}`} aria-current={path === STATUS_PATH ? "page" : undefined}>{STATUS_TITLE}</a>
     </div>
     <div class="vg-secondary">
-      <a href="https://github.com/vega/vega-datasets">GitHub</a>
+      <a href={REPO}>GitHub</a>
       <a href="https://vega.github.io/editor/" data-wide>Try Online</a>
-      <a href="https://vega.github.io/">About Vega</a>
-      <button class="vg-theme" id="theme-toggle" type="button" aria-pressed="false" aria-label="Dark mode" title="Dark mode">
-        <svg class="icon-moon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M13.5 10.2A6 6 0 0 1 5.8 2.5a6 6 0 1 0 7.7 7.7z" fill="currentColor"/></svg>
-        <svg class="icon-sun" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="3.2" fill="currentColor"/><path d="M8 1v1.6M8 13.4V15M1 8h1.6M13.4 8H15M3.05 3.05l1.13 1.13M11.82 11.82l1.13 1.13M3.05 12.95l1.13-1.13M11.82 4.18l1.13-1.13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-      </button>
     </div>
   </nav>
 </header>

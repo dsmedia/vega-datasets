@@ -20,8 +20,9 @@ function files(dir: string): string[] {
   });
 }
 
-test('the page starts in light mode', () => {
-  expect(layout).toMatch(/<html [^>]*data-theme="light"/);
+test('the page uses a single light palette', () => {
+  expect(ruleBody(':root')).toMatch(/color-scheme:\s*light;/);
+  expect(layout).not.toContain('data-theme');
 });
 
 test('no web fonts: system stacks only, and the CSP blocks font loads', () => {
@@ -97,13 +98,6 @@ test('every token the stylesheet and scripts use is defined', () => {
   for (const name of ['--chart-h', '--chart-h-phone']) used.delete(name);
   expect(used.size).toBeGreaterThan(20);
   expect([...used].filter((name) => !defined.has(name))).toEqual([]);
-});
-
-test('dark mode only overrides tokens that light mode defines', () => {
-  const light = declared(ruleBody(':root'));
-  const dark = declared(ruleBody(':root[data-theme="dark"]'));
-  expect(dark.size).toBeGreaterThan(20);
-  expect([...dark].filter((name) => !light.has(name))).toEqual([]);
 });
 
 test('forced colors: data colors kept; chart text and rules, built or live, take the mode\'s colors', () => {

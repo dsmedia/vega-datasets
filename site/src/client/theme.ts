@@ -1,6 +1,6 @@
 /**
- * Resolve theme tokens and notify when the viewer's theme changes (data-theme toggle, OS
- * setting, or a forced-colors mode such as Windows High Contrast turning on, off or over).
+ * Resolve page tokens and notify when forced colors (such as Windows High Contrast)
+ * turn on, off or switch palettes. The site itself uses one light palette.
  */
 import { type ChartInk, forcedInk, type SystemColors, tokenInk } from "../lib/vega-theme";
 
@@ -46,22 +46,15 @@ export function chartInk(): ChartInk {
   return forcedColors() ? forcedInk(systemColors()) : tokenInk(token);
 }
 
-export function isDark(): boolean {
-  const attr = document.documentElement.getAttribute("data-theme");
-  if (attr === "dark") return true;
-  if (attr === "light") return false;
-  return matchMedia("(prefers-color-scheme: dark)").matches;
-}
-
-/** What the charts' colors depend on: the theme, or in forced colors the system palette. */
+/** Only forced colors can change the charts' palette. */
 function themeState(): string {
-  return forcedColors() ? `forced ${JSON.stringify(systemColors())}` : isDark() ? "dark" : "light";
+  return forcedColors() ? `forced ${JSON.stringify(systemColors())}` : "light";
 }
 
 /**
- * Call `fn` when the charts' colors change: the theme button, the OS light/dark setting, or a
- * forced-colors mode turning on or off or switching palettes (which also flips the scheme
- * the OS reports).
+ * Call `fn` when forced colors turn on or off or switch palettes. Keep the OS scheme
+ * listener because switching between light and dark high-contrast palettes changes it;
+ * ordinary OS scheme changes leave themeState unchanged and never redraw a chart.
  */
 export function onThemeChange(fn: () => void): () => void {
   let last = themeState();
@@ -72,37 +65,11 @@ export function onThemeChange(fn: () => void): () => void {
       fn();
     }
   };
-  const observer = new MutationObserver(check);
-  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   const media = [matchMedia("(prefers-color-scheme: dark)"), matchMedia(FORCED)];
   for (const m of media) m.addEventListener("change", check);
   return () => {
-    observer.disconnect();
     for (const m of media) m.removeEventListener("change", check);
   };
-}
-
-const STORAGE_KEY = "vega-datasets-theme";
-
-/**
- * Wire the light/dark button. The page starts light (like the other Vega sites);
- * site/public/theme-init.js restores a saved dark choice before first paint.
- * It is a toggle button: the label stays "Dark mode" and aria-pressed carries the state.
- */
-export function initThemeToggle(button: HTMLButtonElement): void {
-  const sync = () => button.setAttribute("aria-pressed", String(isDark()));
-  sync();
-  button.addEventListener("click", () => {
-    const next = isDark() ? "light" : "dark";
-    document.documentElement.setAttribute("data-theme", next);
-    try {
-      if (next === "dark") localStorage.setItem(STORAGE_KEY, "dark");
-      else localStorage.removeItem(STORAGE_KEY);
-    } catch {
-      // Storage blocked: the choice lasts for this page view only.
-    }
-    sync();
-  });
 }
 
 export function reducedMotion(): boolean {

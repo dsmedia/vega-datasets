@@ -1,6 +1,6 @@
 /**
  * The light theme's tokens, read from site.css, for what the build draws: charts
- * rendered to SVG before any stylesheet exists. (Dark mode restyles them with CSS.)
+ * rendered to SVG before any stylesheet exists.
  */
 import css from "../styles/site.css?raw";
 

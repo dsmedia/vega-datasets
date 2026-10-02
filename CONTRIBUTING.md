@@ -256,9 +256,11 @@ npm run site:check-links  # every outbound link; needs the network
 |---|---|
 | `lib/` | DOM-free models, used at build time and in the browser: the catalog, home and Explore models, starter-chart rules, formatting, field profiles, Markdown, the catalog chart and gapminder specs, SEO and JSON-LD |
 | `pages/`, `layouts/`, `components/` | The Astro pages, the shared page shell (`layouts/Base.astro`: head, CSP, header, footer) and their parts |
-| `client/` | The browser scripts: theme switch, home filters and live catalog chart, Explore, the gapminder animation, snippets, histograms |
+| `client/` | The browser scripts: home filters and live catalog chart, Explore, the gapminder animation, snippets, histograms, system-color accessibility |
 | `prerender/` | Build-time only: the catalog chart drawn to SVG, density overviews of long tables, pictures of heavy maps |
-| `styles/site.css` | The stylesheet, including the rules that theme Vega's SVG for dark mode and forced colors |
+| `styles/site.css` | The stylesheet, including the rules that adapt Vega's SVG to forced colors |
+
+The site uses one light palette to limit maintenance and follows the [Vega](https://vega.github.io/vega/) and [Vega-Lite](https://vega.github.io/vega-lite/) header conventions: GitHub and Try Online, with Metadata Coverage as the dataset site's primary link. Contribution guidance belongs in the page text. These conventions were checked on 2026-10-01. Preserve [forced-colors support](https://www.w3.org/TR/css-color-adjust-1/#forced-colors-mode), including changes between light and dark system palettes, so Windows High Contrast remains usable.
 
 The page's Content Security Policy allows only same-origin scripts and no `eval`, so charts run Vega's expression interpreter (`ast: true`, `vega-interpreter`), and tables are read with d3-dsv's `parseRows` and handed to Vega as values rather than through Vega's CSV reader, which compiles a row function. Builds with `SITE_NOINDEX=1` (site.yml sets it outside `vega/vega-datasets`) add `noindex`, so a fork's deploy stays out of search results.
 
@@ -266,7 +268,7 @@ Where to add a test:
 
 - Logic in `lib/`: a unit test in `site/test/`, next to its neighbors (`dataset.test.ts` for Explore and the dataset page's models, `home.test.ts`, `format.test.ts`, `dates.test.ts`, `markdown.test.ts`, `seo.test.ts`, `keys.test.ts`, `motion.test.ts`). Every chart the site draws is compiled and drawn from the real file there: it must compile without Vega-Lite warnings, and scatter plots must plot the file's own values.
 - What a built page says or links to: `site/test/build.test.ts`, which reads `site/dist` (so run `npm run site:build` or `site:pages` first).
-- The page shell and stylesheet (CSP, tokens, dark mode, forced colors): `site/test/shell.test.ts`; chart colors in forced-colors mode: `site/test/theme.test.ts`. A test that needs a DOM starts with `// @vitest-environment jsdom`.
+- The page shell and stylesheet (CSP, tokens, forced colors): `site/test/shell.test.ts`; chart colors in forced-colors mode: `site/test/theme.test.ts`. A test that needs a DOM starts with `// @vitest-environment jsdom`.
 - The catalog builder: `tests/test_build_site_catalog.py` (`uv run pytest tests/test_build_site_catalog.py`).
 
 A snapshot test lists the starter chart each dataset gets. If a change alters one on purpose, check the new chart and update the snapshot with `npx vitest run --config site/vitest.config.ts --project unit -u`.

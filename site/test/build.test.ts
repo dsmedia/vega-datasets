@@ -57,8 +57,8 @@ describe.each(all.map((f) => [path.relative(dist, f).replace(/\\/g, '/'), f] as 
     }
   });
 
-  test('theme-init.js runs before the stylesheet', () => {
-    const init = text.indexOf('theme-init.js');
+  test('page-init.js enables expandable lists before the stylesheet', () => {
+    const init = text.indexOf('page-init.js');
     expect(init).toBeGreaterThan(-1);
     expect(init).toBeLessThan(text.indexOf('rel="stylesheet"'));
   });
@@ -99,7 +99,8 @@ describe('metadata gaps (DECISIONS D6)', () => {
   const rows = [...status.matchAll(/<tr id="ds-([^"]+)">([\s\S]*?)<\/tr>/g)].map(([, id, body]) => ({ id: id!, body: body! }));
 
   test('the status page: a row per dataset, most gaps first, ties by name, each linking to its page and entry', () => {
-    expect(status).toContain('<title>Metadata Status · Vega Datasets</title>');
+    expect(status).toContain('<title>Metadata Coverage · Vega Datasets</title>');
+    expect(status).toContain('<a href="/vega-datasets/metadata/" aria-current="page">Metadata Coverage</a>');
     expect(rows.map((r) => r.id).sort()).toEqual(catalog.datasets.map((d) => d.name).sort());
     const gaps = rows.map((r) => ({ id: r.id, n: completeness(catalog.dataset(r.id)!).gaps }));
     expect(gaps).toEqual([...gaps].sort((a, b) => b.n - a.n || a.id.localeCompare(b.id)));
@@ -139,9 +140,10 @@ describe('metadata gaps (DECISIONS D6)', () => {
     }
   });
 
-  test('the home page links to the status page from its Contribute box only', () => {
+  test('the home page links to Metadata Coverage from the menu and Contribute box', () => {
     const home = html(path.join(dist, 'index.html'));
-    expect(home.match(/href="\/vega-datasets\/metadata\/"/g)).toHaveLength(1);
+    expect(home.match(/href="\/vega-datasets\/metadata\/"/g)).toHaveLength(2);
+    expect(home).toMatch(/<div class="vg-primary">\s*<a href="\/vega-datasets\/metadata\/">Metadata Coverage<\/a>/);
     expect(home).toMatch(/<aside class="contribute"[\s\S]*href="\/vega-datasets\/metadata\/"[\s\S]*<\/aside>/);
   });
 });

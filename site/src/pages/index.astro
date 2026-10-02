@@ -47,7 +47,7 @@ const about = readmeItems.flatMap(([id, title, hint, heading]) => {
   return md === null ? [] : [{ id, title, hint, html: markdownToHtml(md) }];
 });
 ---
-<Base title={HOME_TITLE} description={HOME_DESCRIPTION} path="" section="home" jsonLd={catalogJsonLd(c)}>
+<Base title={HOME_TITLE} description={HOME_DESCRIPTION} path="" jsonLd={catalogJsonLd(c)}>
   <header class="wrap home-heading">
     <h1 class="home-title"><b>Vega Datasets</b></h1>
     <p class="home-lead">Explore the data behind {formatCount(counts.examplesWithData)} examples from the Vega, Vega-Lite and Altair galleries.</p>
@@ -153,7 +153,7 @@ const about = readmeItems.flatMap(([id, title, hint, heading]) => {
     <aside class="contribute" aria-labelledby="contribute-h">
       <h3 id="contribute-h">Contribute</h3>
       <p>Add a dataset, document one, or fix an error. Existing files rarely change: Vega, Vega-Lite and the Vega Editor test against them.</p>
-      <a href={`${REPO}/blob/main/CONTRIBUTING.md`}>Contribution Guidelines</a>
+      <p>See the <a href={`${REPO}/blob/main/CONTRIBUTING.md`}>contribution guidelines</a> to get started.</p>
       <a href={`${import.meta.env.BASE_URL}${STATUS_PATH}`}>{STATUS_TITLE}</a>
     </aside>
   </section>

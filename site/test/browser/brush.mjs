@@ -1,9 +1,9 @@
 // The home page's catalog chart brush is see-through. Vega-Lite draws an interval brush as
 // two rects: a faint fill behind (brush_brush_bg) and a transparent frame on top
 // (brush_brush). A theming rule once filled both with the ink color, so the frame hid the
-// points it selected under a solid box. Checked in the light theme, after a switch to the
-// dark one (the site starts light; the toggle sets dark), and in forced colors (where the
-// brush takes Highlight).
+// points it selected under a solid box. Checked in the light palette, with an old saved
+// dark choice and dark OS preference, and in both forced-color palettes (where the brush
+// takes Highlight).
 // Not part of `npm run site:test` (it needs Chrome and a built site).
 //
 // Usage, after `npm run site:build`:
@@ -40,9 +40,10 @@ function serve() {
 
 /** The display modes checked: the brush must be see-through in each. */
 const MODES = {
-  light: { features: [], toggle: false },
-  dark: { features: [], toggle: true },
-  'forced colors': { features: [{ name: 'forced-colors', value: 'active' }], toggle: false },
+  light: { features: [] },
+  'dark preference and saved choice': { features: [{ name: 'prefers-color-scheme', value: 'dark' }], savedDark: true },
+  'forced colors, light': { features: [{ name: 'forced-colors', value: 'active' }, { name: 'prefers-color-scheme', value: 'light' }] },
+  'forced colors, dark': { features: [{ name: 'forced-colors', value: 'active' }, { name: 'prefers-color-scheme', value: 'dark' }] },
 };
 
 /** In the page: each brush layer's painted fill, as its alpha times fill-opacity. */
@@ -73,24 +74,28 @@ function check(name, ok, detail) {
 }
 
 try {
-  for (const [mode, { features, toggle }] of Object.entries(MODES)) {
+  for (const [mode, { features, savedDark }] of Object.entries(MODES)) {
     const page = await browser.newPage();
     await page.setViewport({ width: 1360, height: 900 });
     // Through the protocol: puppeteer's own helper refuses forced-colors.
     const cdp = await page.createCDPSession();
     await cdp.send('Emulation.setEmulatedMedia', { features });
+    if (savedDark) await page.evaluateOnNewDocument(() => localStorage.setItem('vega-datasets-theme', 'dark'));
     await page.goto(base, { waitUntil: 'networkidle0' });
+    if (savedDark) {
+      const state = await page.evaluate(() => ({
+        background: getComputedStyle(document.body).backgroundColor,
+        expandable: document.documentElement.classList.contains('js'),
+        saved: localStorage.getItem('vega-datasets-theme'),
+      }));
+      check('saved dark choice: page stays light and expandable lists initialize', state.background === 'rgb(255, 255, 255)' && state.expandable && state.saved === 'dark', state);
+    }
     await page.evaluate(() => document.querySelector('.catalog-chart')?.scrollIntoView({ block: 'center' }));
     const box = await (await page.$('.catalog-chart')).boundingBox();
     // The chart goes live when the pointer first reaches it.
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.waitForSelector('.catalog-chart .vega-embed svg', { timeout: 15000 });
     await new Promise((res) => setTimeout(res, 500));
-    if (toggle) {
-      await page.click('#theme-toggle');
-      await page.waitForFunction(() => document.documentElement.getAttribute('data-theme') === 'dark');
-      await new Promise((res) => setTimeout(res, 500));
-    }
     const x = box.x + box.width * 0.35;
     const y = box.y + box.height * 0.25;
     await page.mouse.move(x, y);

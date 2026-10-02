@@ -1,11 +1,11 @@
 /**
- * Vega config built from the page's theme tokens, so charts match light and dark mode,
- * or from the system colors in a forced-colors mode (Windows High Contrast). Marks keep
+ * Vega config built from the page's light palette, or from the system colors in a
+ * forced-colors mode (Windows High Contrast). Marks keep
  * Vega's defaults (tableau10, which the --chart-* tokens mirror); only the chrome around
  * them (axes, legends, text) follows the page. No DOM here: the build resolves tokens from
  * site.css, the browser from the live stylesheet and the forced palette (client/theme.ts).
  *
- * SVG charts also follow a theme switch without redrawing: site.css restyles Vega's axis,
+ * SVG charts also follow forced-color changes without redrawing: site.css restyles Vega's axis,
  * legend and label classes from the same tokens (see "Vega's SVG" there), and in forced
  * colors with the system colors, which also reaches the charts drawn at build time.
  * Canvas charts paint pixels that CSS can't reach, so they take every color from here.
@@ -83,7 +83,7 @@ export function luminance(color: string): number {
 /**
  * The sequential ramp for heatmaps (the density overview), from few to many: the fewest
  * rows sit closest to the ground and the most stand out, so it runs light to dark on a
- * light ground and dim to bright on a dark one (the page's dark theme, or a dark forced palette).
+ * light ground and dim to bright on a dark forced-colors ground.
  */
 export const HEATMAP_ON_LIGHT = ["#deebf7", "#6baed6", "#08306b"] as const;
 export const HEATMAP_ON_DARK = ["#1b3150", "#3b7dc4", "#d4e8ff"] as const;
