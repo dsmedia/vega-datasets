@@ -7,6 +7,7 @@ import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {parseArgs} from 'node:util';
 import {writeFileSync} from 'node:fs';
+import assert from 'node:assert/strict';
 const {values:args}=parseArgs({options:{baseline:{type:'string'},base:{type:'string'},output:{type:'string'},runs:{type:'string',default:'5'}}});
 if(!args.baseline || !args.base) throw new Error('Provide --baseline and --base URLs');
 const where=process.env.PUPPETEER_CORE;
@@ -16,6 +17,10 @@ const results={chrome:await browser.version(),conditions:{cpu:4,downloadBytesPer
 try {
  for(const width of [390,800]) for(let run=1;run<=Number(args.runs);run++) for(const name of (run%2?['baseline','candidate']:['candidate','baseline'])) {
   const context=await browser.createBrowserContext(); const page=await context.newPage();
+  const errors=[];
+  page.on('pageerror',e=>errors.push(String(e)));
+  page.on('requestfailed',r=>errors.push(`${r.url()}: ${r.failure()?.errorText}`));
+  page.on('response',r=>{if(r.status()>=400)errors.push(`${r.status()}: ${r.url()}`);});
   await page.setViewport({width,height:900,deviceScaleFactor:1,isMobile:width<=640,hasTouch:width<=640});
   await page.setCacheEnabled(false); const cdp=await page.createCDPSession();
   await cdp.send('Emulation.setCPUThrottlingRate',{rate:4});
@@ -27,9 +32,10 @@ try {
     new PerformanceObserver(list=>{for(const e of list.getEntries()){window.__lab.tbt+=Math.max(e.duration-50,0);window.__lab.longTasks++;}}).observe({type:'longtask',buffered:true});
   });
   await page.goto(name==='baseline'?args.baseline:args.base,{waitUntil:'networkidle0',timeout:120000});
+  assert.deepEqual(errors,[], 'A comparison requires complete assets on both builds');
   const initial=await page.evaluate(()=>{
     const nav=performance.getEntriesByType('navigation')[0],res=performance.getEntriesByType('resource');
-    return {...window.__lab,domContentLoaded:nav.domContentLoadedEventEnd,transfer:nav.transferSize+res.reduce((n,e)=>n+e.transferSize,0),htmlTransfer:nav.transferSize,jsDecoded:res.filter(e=>e.name.endsWith('.js')).reduce((n,e)=>n+e.decodedBodySize,0),runtime:res.some(e=>e.name.endsWith('.js')&&e.decodedBodySize>100000)};
+    return {...window.__lab,domContentLoaded:nav.domContentLoadedEventEnd,transfer:nav.transferSize+res.reduce((n,e)=>n+e.transferSize,0),htmlTransfer:nav.transferSize,jsDecoded:res.filter(e=>e.name.endsWith('.js')).reduce((n,e)=>n+e.decodedBodySize,0),runtime:res.some(e=>e.name.endsWith('.js')&&e.decodedBodySize>100000),resources:res.map(e=>({url:e.name,bytes:e.transferSize}))};
   });
   await page.$eval('[data-chart]',e=>e.scrollIntoView({block:'center'}));
   const approachMs=run<=3?0:2000;
@@ -54,8 +60,9 @@ try {
   if(width>640)await page.hover('[data-chart]');else await page.tap('[data-gallery="vega"]');
   await page.waitForFunction(()=>window.__activation!==null,{timeout:60000});
   const activationMs=await page.evaluate(()=>window.__activation);
+  assert.deepEqual(errors,[]);
   const result={name,width,run,approachMs,initial,activationMs};results.runs.push(result);
   if(args.output) writeFileSync(args.output,JSON.stringify(results,null,2));
-  console.log(JSON.stringify(result));await context.close();
+  console.log(JSON.stringify({...result,initial:{...initial,resources:undefined}}));await context.close();
  }
 }finally{await browser.close();}
